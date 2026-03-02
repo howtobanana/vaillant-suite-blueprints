@@ -2012,8 +2012,8 @@ action:
               - conditions:
                   - "{{ helper_input_trigger_entity != '' }}"
                   - >
-                    {% set so = expand([helper_input_trigger_entity]) | first %}
-                    {% if so is not none and so.last_changed is defined %}
+                    {% set so = states[helper_input_trigger_entity] %}
+                    {% if so is defined and so.last_changed is defined %}
                       {{ as_timestamp(so.last_changed, 0) > ((helper_input_trigger_ts | float(0)) + 0.5) }}
                     {% else %}
                       {{ false }}
@@ -2038,8 +2038,8 @@ action:
                 {% set delay_s = inputs.window_heat_delay | float(30) %}
                 {% set ns = namespace(active=false) %}
                 {% if inputs.room2_window | string != '' and is_state(inputs.room2_window, 'on') %}
-                  {% set w = expand([inputs.room2_window]) | first %}
-                  {% if w is not none and w.last_changed is defined and w.last_changed is not none %}
+                  {% set w = states[inputs.room2_window] %}
+                  {% if w is defined and w.last_changed is defined and w.last_changed is not none %}
                     {% set open_ts = as_timestamp(w.last_changed, now_ts) | float(now_ts) %}
                     {% if (now_ts - open_ts) >= delay_s %}
                       {% set ns.active = true %}
@@ -2127,8 +2127,8 @@ action:
                 {% set delay_s = inputs.window_heat_delay | float(30) %}
                 {% set ns = namespace(active=false) %}
                 {% if inputs.room3_window | string != '' and is_state(inputs.room3_window, 'on') %}
-                  {% set w = expand([inputs.room3_window]) | first %}
-                  {% if w is not none and w.last_changed is defined and w.last_changed is not none %}
+                  {% set w = states[inputs.room3_window] %}
+                  {% if w is defined and w.last_changed is defined and w.last_changed is not none %}
                     {% set open_ts = as_timestamp(w.last_changed, now_ts) | float(now_ts) %}
                     {% if (now_ts - open_ts) >= delay_s %}
                       {% set ns.active = true %}
@@ -2216,8 +2216,8 @@ action:
                 {% set delay_s = inputs.window_heat_delay | float(30) %}
                 {% set ns = namespace(active=false) %}
                 {% if inputs.room4_window | string != '' and is_state(inputs.room4_window, 'on') %}
-                  {% set w = expand([inputs.room4_window]) | first %}
-                  {% if w is not none and w.last_changed is defined and w.last_changed is not none %}
+                  {% set w = states[inputs.room4_window] %}
+                  {% if w is defined and w.last_changed is defined and w.last_changed is not none %}
                     {% set open_ts = as_timestamp(w.last_changed, now_ts) | float(now_ts) %}
                     {% if (now_ts - open_ts) >= delay_s %}
                       {% set ns.active = true %}
@@ -2305,8 +2305,8 @@ action:
                 {% set delay_s = inputs.window_heat_delay | float(30) %}
                 {% set ns = namespace(active=false) %}
                 {% if inputs.room5_window | string != '' and is_state(inputs.room5_window, 'on') %}
-                  {% set w = expand([inputs.room5_window]) | first %}
-                  {% if w is not none and w.last_changed is defined and w.last_changed is not none %}
+                  {% set w = states[inputs.room5_window] %}
+                  {% if w is defined and w.last_changed is defined and w.last_changed is not none %}
                     {% set open_ts = as_timestamp(w.last_changed, now_ts) | float(now_ts) %}
                     {% if (now_ts - open_ts) >= delay_s %}
                       {% set ns.active = true %}
@@ -2386,8 +2386,8 @@ action:
                 {% if inputs.follower1_window | string != '' and is_state(inputs.follower1_window, 'on') %}
                   {% set now_ts = as_timestamp(now()) | float(0) %}
                   {% set delay_s = inputs.window_heat_delay | float(30) %}
-                  {% set fw = expand([inputs.follower1_window]) | first %}
-                  {% if fw is not none and fw.last_changed is defined and fw.last_changed is not none %}
+                  {% set fw = states[inputs.follower1_window] %}
+                  {% if fw is defined and fw.last_changed is defined and fw.last_changed is not none %}
                     {% set opened_ts = as_timestamp(fw.last_changed, now_ts) | float(now_ts) %}
                     {{ (now_ts - opened_ts) >= delay_s }}
                   {% else %}
@@ -2438,8 +2438,8 @@ action:
                 {% if inputs.follower2_window | string != '' and is_state(inputs.follower2_window, 'on') %}
                   {% set now_ts = as_timestamp(now()) | float(0) %}
                   {% set delay_s = inputs.window_heat_delay | float(30) %}
-                  {% set fw = expand([inputs.follower2_window]) | first %}
-                  {% if fw is not none and fw.last_changed is defined and fw.last_changed is not none %}
+                  {% set fw = states[inputs.follower2_window] %}
+                  {% if fw is defined and fw.last_changed is defined and fw.last_changed is not none %}
                     {% set opened_ts = as_timestamp(fw.last_changed, now_ts) | float(now_ts) %}
                     {{ (now_ts - opened_ts) >= delay_s }}
                   {% else %}
@@ -2579,17 +2579,31 @@ action:
                   {% set target_raw = master_target_final | float(0) %}
                 {% endif %}
                 {{ [target_raw | float(0), master_safety_floor | float(12)] | max }}
-              weather_compensation_add: >
-                {% if not (inputs.enable_weather_compensation | bool(false)) %}
+              effective_outdoor_temp: >
+                {% set p_id = inputs.weather_predictive_sensor | string %}
+                {% set a_id = inputs.weather_average_sensor | string %}
+                {% set o_id = inputs.outdoor_temp_sensor | string %}
+
+                {% if p_id != '' and states(p_id) not in ['unknown', 'unavailable', 'none'] %}
+                  {{ states(p_id) | float(99.0) }}
+                {% elif a_id != '' and states(a_id) not in ['unknown', 'unavailable', 'none'] %}
+                  {{ states(a_id) | float(99.0) }}
+                {% elif o_id != '' and states(o_id) not in ['unknown', 'unavailable', 'none'] %}
+                  {{ states(o_id) | float(99.0) }}
+                {% else %}
+                  99.0
+                {% endif %}
+
+              weather_modifier: >
+                {% set temp = effective_outdoor_temp | float(99.0) %}
+                {% if not (inputs.enable_weather_compensation | bool(false)) or temp == 99.0 %}
                   0.0
-                {% elif not (outdoor_temp_valid | bool(false)) %}
-                  0.0
-                {% elif (outdoor_temp | float(0)) <= 0 %}
-                  2.0
-                {% elif (outdoor_temp | float(0)) <= 5 %}
-                  1.0
-                {% elif (outdoor_temp | float(0)) <= 10 %}
-                  0.5
+                {% elif temp <= -10.0 %}
+                  {{ inputs.weather_boost_zone1 | float(3.0) }}
+                {% elif temp <= 0.0 %}
+                  {{ inputs.weather_boost_zone2 | float(2.0) }}
+                {% elif temp <= 10.0 %}
+                  {{ inputs.weather_boost_zone3 | float(1.0) }}
                 {% else %}
                   0.0
                 {% endif %}
@@ -2597,7 +2611,7 @@ action:
                 {% if master_forced_min_active | bool(false) %}
                   {{ inputs.min_trv_temp | float(12) }}
                 {% else %}
-                  {{ [((master_base_required_target | float(0)) + (weather_compensation_add | float(0))), (master_safety_floor | float(12))] | max }}
+                  {{ [master_base_required_target | float(0), master_safety_floor | float(12)] | max }}
                 {% endif %}
               master_min: "{{ state_attr(inputs.master_climate, 'min_temp') | float(inputs.min_trv_temp | float(12)) }}"
               master_max: "{{ state_attr(inputs.master_climate, 'max_temp') | float(30) }}"
