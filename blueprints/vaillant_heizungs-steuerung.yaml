@@ -50,6 +50,17 @@ blueprint:
             entity:
               domain: sensor
               device_class: temperature
+        forecast_sensor:
+          name: "🌤️ Wettervorhersage Sensor (optional)"
+          description: |
+
+            Optionaler Sensor mit Temperaturvorhersage in 4-6h. Blueprint wendet prädiktive Dämpfung an.
+
+          default: ""
+          selector:
+            entity:
+              domain: sensor
+              device_class: temperature
         presence_activation_delay:
           name: "⏱️ Präsenz Aktivierung (min)"
           description: |
@@ -1445,6 +1456,7 @@ action:
       # ===== GROUP 1: INPUTS & HELPERS =====
       inputs:
         outdoor_temp_sensor: !input outdoor_temp_sensor
+        forecast_sensor: !input forecast_sensor
         summer_threshold: !input summer_threshold
         summer_hysteresis: !input summer_hysteresis
         summer_mode_helper: !input summer_mode_helper
@@ -1892,7 +1904,17 @@ action:
           {{ 50 }}
         {% endif %}
       humidity_compensation_active: >
-        {{ inputs.enable_humidity_compensation and master_humidity > 60 and master_humidity < 65 }}
+        {% if inputs.enable_humidity_compensation | bool(false) %}
+          {% if (master_humidity | float(50)) > 60 %}
+            {{ true }}
+          {% elif (master_humidity | float(50)) < 58 %}
+            {{ false }}
+          {% else %}
+            {{ false }}
+          {% endif %}
+        {% else %}
+          {{ false }}
+        {% endif %}
       master_target_with_humidity: >
         {% if humidity_compensation_active | bool(false) %}
           {{ (master_target_temp | float(21)) - 0.5 }}
@@ -1901,28 +1923,36 @@ action:
         {% endif %}
 
       # ===== GROUP 5: SAFETY & STATUS =====
-      outdoor_temp_sensor_configured: >
-        {{ inputs.outdoor_temp_sensor != '' }}
-      outdoor_temp: >
-        {% set raw = states(inputs.outdoor_temp_sensor) if outdoor_temp_sensor_configured else '' %}
-        {% if outdoor_temp_sensor_configured | bool(false) and raw | string not in ['unknown', 'unavailable', 'none', ''] %}
-          {{ raw | float(0) }}
+      outdoortempsensorconfigured: >
+        {{ (inputs.outdoor_temp_sensor | string | lower) not in ['', 'none'] }}
+      outdoortemp_raw: >
+        {{ states(inputs.outdoor_temp_sensor) if outdoortempsensorconfigured | bool(false) else '0' }}
+      outdoortemp: >
+        {{ outdoortemp_raw | float(0) if (outdoortemp_raw | string) not in ['unknown', 'unavailable', 'none', ''] else 0 }}
+      outdoortemp_valid: >
+        {{ (outdoortempsensorconfigured | bool(false)) and ((outdoortemp_raw | string) not in ['unknown', 'unavailable', 'none', '']) }}
+      forecastsensorconfigured: >
+        {{ (inputs.forecast_sensor | string | lower) not in ['', 'none'] }}
+      forecast_temp_raw: >
+        {{ states(inputs.forecast_sensor) if forecastsensorconfigured | bool(false) else '0' }}
+      forecast_temp: >
+        {{ forecast_temp_raw | float(0) if (forecast_temp_raw | string) not in ['unknown', 'unavailable', 'none', ''] else (outdoortemp | float(0)) }}
+      predictive_outdoor_temp: >
+        {% if (forecastsensorconfigured | bool(false)) and ((forecast_temp | float(0)) > ((outdoortemp | float(0)) + 2)) %}
+          {{ forecast_temp | float(0) }}
         {% else %}
-          {{ 0 }}
+          {{ outdoortemp | float(0) }}
         {% endif %}
-      outdoor_temp_valid: >
-        {% set raw = states(inputs.outdoor_temp_sensor) if outdoor_temp_sensor_configured else '' %}
-        {{ (outdoor_temp_sensor_configured | bool(false)) and (raw | string not in ['unknown', 'unavailable', 'none', '']) }}
       summer_mode: >
         {% set ns = namespace(helper_on=false) %}
         {% set helper_id = inputs.summer_mode_helper | string %}
         {% if (helper_id | lower) not in ['', 'none'] and (states[helper_id] is defined) %}
           {% set ns.helper_on = (states(helper_id) == 'on') %}
         {% endif %}
-        {% set outdoor_now = outdoor_temp | float(99) %}
+        {% set outdoor_now = outdoortemp | float(99) %}
         {% set threshold = inputs.summer_threshold | float(18) %}
         {% set hysteresis = inputs.summer_hysteresis | float(1.0) %}
-        {% if not (outdoor_temp_valid | bool(false)) %}
+        {% if not (outdoortemp_valid | bool(false)) %}
           {{ false }}
         {% elif ns.helper_on | bool(false) %}
           {{ outdoor_now >= (threshold - hysteresis) }}
@@ -2572,15 +2602,16 @@ action:
               weather_compensation_add: >
                 {% if not (inputs.enable_weather_compensation | bool(false)) %}
                   0.0
-                {% elif not (outdoor_temp_valid | bool(false)) %}
+                {% elif not (outdoortemp_valid | bool(false)) %}
                   0.0
-                {% elif (outdoor_temp | float(0)) <= 0 %}
+                {% elif (predictive_outdoor_temp | float(0)) <= 0 %}
                   2.0
-                {% elif (outdoor_temp | float(0)) >= 10 %}
-                  0.0
+                {% elif (predictive_outdoor_temp | float(0)) <= 5 %}
+                  1.0
+                {% elif (predictive_outdoor_temp | float(0)) <= 10 %}
+                  0.5
                 {% else %}
-                  {% set linear_boost = ((10 - (outdoor_temp | float(0))) / 10) * 2 %}
-                  {{ [[linear_boost, 0.0] | max, 2.0] | min }}
+                  0.0
                 {% endif %}
               master_required_target_raw: >
                 {% if master_forced_min_active | bool(false) %}
@@ -2791,13 +2822,24 @@ action:
                 {% set base = master_required_target | float(20) %}
                 {% set boost = master_boost_amount | float(0) %}
                 {{ base + boost }}
-              master_target_delta_abs: "{{ ((master_required_target_with_boost | float(0)) - (master_set_now | float(0))) | abs }}"
+              master_pure_target: >
+                {% if master_forced_min_active | bool(false) %}
+                  {% set pure_required = inputs.min_trv_temp | float(12) %}
+                {% else %}
+                  {% set humidity_reset = 0.5 if (humidity_compensation_active | bool(false)) else 0.0 %}
+                  {% set pure_raw = [((master_base_required_target | float(0)) + (humidity_reset | float(0))), (master_safety_floor | float(12))] | max %}
+                  {% set pure_hi = [pure_raw | float(0), master_max | float(30)] | min %}
+                  {% set pure_required = [pure_hi, master_min | float(inputs.min_trv_temp | float(12))] | max %}
+                {% endif %}
+                {% set pure_boost = master_boost_amount | float(0) %}
+                {{ (pure_required | float(0)) + pure_boost }}
+              master_target_delta_abs: "{{ ((master_pure_target | float(0)) - (master_set_now | float(0))) | abs }}"
               master_needs_global_boost: >
                 {{ (not (away_mode_active_effective | bool(false))) and ((master_set_now | float(0)) < ((global_max_demand | float(0)) - 0.1)) }}
               master_needs_global_drop: >
-                {{ (not (away_mode_active_effective | bool(false))) and ((master_set_now | float(0)) > ((global_max_demand | float(0)) + 0.1)) }}
+                {{ (not (away_mode_active_effective | bool(false))) and ((master_set_now | float(0)) > ((master_pure_target | float(0)) + 0.1)) }}
               master_significant_drop: >
-                {{ ((master_set_now | float(0)) - (master_required_target_with_boost | float(0))) > 2.0 }}
+                {{ ((master_set_now | float(0)) - (master_pure_target | float(0))) > 2.0 }}
               effective_max_changes_per_hour: "{{ [inputs.max_changes_per_hour | float(3), 2] | max }}"
               # API Write Tracking: Letzter erfolgreicher Write an Master-Thermostat
               master_last_update_age_step55: >
@@ -2813,7 +2855,7 @@ action:
               master_change_cooldown_ok_step55: >
                 {{ (master_last_update_age_step55 | float(999999)) >= (3600 / (effective_max_changes_per_hour | float(3))) }}
               master_needs_raise: >
-                {{ (master_required_target_with_boost | float(0)) > ((master_set_now | float(0)) + (inputs.hysteresis | float(0.6))) }}
+                {{ (master_pure_target | float(0)) > ((master_set_now | float(0)) + (inputs.hysteresis | float(0.6))) }}
               master_stuck_protection_active: >
                 {{ (master_needs_raise | bool(false)) and ((master_last_update_age_step55 | float(0)) >= 1800) }}
               master_raise_allowed: >
