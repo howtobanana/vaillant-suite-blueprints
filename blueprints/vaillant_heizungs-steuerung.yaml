@@ -50,17 +50,6 @@ blueprint:
             entity:
               domain: sensor
               device_class: temperature
-        forecast_sensor:
-          name: "🌤️ Wettervorhersage Sensor (optional)"
-          description: |
-
-            Optionaler Sensor mit Temperaturvorhersage in 4-6h. Blueprint wendet prädiktive Dämpfung an.
-
-          default: ""
-          selector:
-            entity:
-              domain: sensor
-              device_class: temperature
         presence_activation_delay:
           name: "⏱️ Präsenz Aktivierung (min)"
           description: |
@@ -1456,7 +1445,6 @@ action:
       # ===== GROUP 1: INPUTS & HELPERS =====
       inputs:
         outdoor_temp_sensor: !input outdoor_temp_sensor
-        forecast_sensor: !input forecast_sensor
         summer_threshold: !input summer_threshold
         summer_hysteresis: !input summer_hysteresis
         summer_mode_helper: !input summer_mode_helper
@@ -1923,36 +1911,28 @@ action:
         {% endif %}
 
       # ===== GROUP 5: SAFETY & STATUS =====
-      outdoortempsensorconfigured: >
-        {{ (inputs.outdoor_temp_sensor | string | lower) not in ['', 'none'] }}
-      outdoortemp_raw: >
-        {{ states(inputs.outdoor_temp_sensor) if outdoortempsensorconfigured | bool(false) else '0' }}
-      outdoortemp: >
-        {{ outdoortemp_raw | float(0) if (outdoortemp_raw | string) not in ['unknown', 'unavailable', 'none', ''] else 0 }}
-      outdoortemp_valid: >
-        {{ (outdoortempsensorconfigured | bool(false)) and ((outdoortemp_raw | string) not in ['unknown', 'unavailable', 'none', '']) }}
-      forecastsensorconfigured: >
-        {{ (inputs.forecast_sensor | string | lower) not in ['', 'none'] }}
-      forecast_temp_raw: >
-        {{ states(inputs.forecast_sensor) if forecastsensorconfigured | bool(false) else '0' }}
-      forecast_temp: >
-        {{ forecast_temp_raw | float(0) if (forecast_temp_raw | string) not in ['unknown', 'unavailable', 'none', ''] else (outdoortemp | float(0)) }}
-      predictive_outdoor_temp: >
-        {% if (forecastsensorconfigured | bool(false)) and ((forecast_temp | float(0)) > ((outdoortemp | float(0)) + 2)) %}
-          {{ forecast_temp | float(0) }}
+      outdoor_temp_sensor_configured: >
+        {{ inputs.outdoor_temp_sensor != '' }}
+      outdoor_temp: >
+        {% set raw = states(inputs.outdoor_temp_sensor) if outdoor_temp_sensor_configured else '' %}
+        {% if outdoor_temp_sensor_configured | bool(false) and raw | string not in ['unknown', 'unavailable', 'none', ''] %}
+          {{ raw | float(0) }}
         {% else %}
-          {{ outdoortemp | float(0) }}
+          {{ 0 }}
         {% endif %}
+      outdoor_temp_valid: >
+        {% set raw = states(inputs.outdoor_temp_sensor) if outdoor_temp_sensor_configured else '' %}
+        {{ (outdoor_temp_sensor_configured | bool(false)) and (raw | string not in ['unknown', 'unavailable', 'none', '']) }}
       summer_mode: >
         {% set ns = namespace(helper_on=false) %}
         {% set helper_id = inputs.summer_mode_helper | string %}
         {% if (helper_id | lower) not in ['', 'none'] and (states[helper_id] is defined) %}
           {% set ns.helper_on = (states(helper_id) == 'on') %}
         {% endif %}
-        {% set outdoor_now = outdoortemp | float(99) %}
+        {% set outdoor_now = outdoor_temp | float(99) %}
         {% set threshold = inputs.summer_threshold | float(18) %}
         {% set hysteresis = inputs.summer_hysteresis | float(1.0) %}
-        {% if not (outdoortemp_valid | bool(false)) %}
+        {% if not (outdoor_temp_valid | bool(false)) %}
           {{ false }}
         {% elif ns.helper_on | bool(false) %}
           {{ outdoor_now >= (threshold - hysteresis) }}
@@ -2602,13 +2582,13 @@ action:
               weather_compensation_add: >
                 {% if not (inputs.enable_weather_compensation | bool(false)) %}
                   0.0
-                {% elif not (outdoortemp_valid | bool(false)) %}
+                {% elif not (outdoor_temp_valid | bool(false)) %}
                   0.0
-                {% elif (predictive_outdoor_temp | float(0)) <= 0 %}
+                {% elif (outdoor_temp | float(0)) <= 0 %}
                   2.0
-                {% elif (predictive_outdoor_temp | float(0)) <= 5 %}
+                {% elif (outdoor_temp | float(0)) <= 5 %}
                   1.0
-                {% elif (predictive_outdoor_temp | float(0)) <= 10 %}
+                {% elif (outdoor_temp | float(0)) <= 10 %}
                   0.5
                 {% else %}
                   0.0
