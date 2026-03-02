@@ -2798,21 +2798,38 @@ action:
                 {% else %}
                   {{ 0.0 }}
                 {% endif %}
-              master_required_target_with_boost: >
-                {% set base = master_required_target | float(20) %}
-                {% set boost = master_boost_amount | float(0) %}
-                {{ base + boost }}
-              master_pure_target: >
+              # === Final Modification Pipeline ===
+              # 1. Base Target lowered by Humidity
+              master_humidity_drop: >
+                {{ -0.5 if (humidity_compensation_active | bool(false)) else 0.0 }}
+
+              # 2. Raw Target (incorporating safety floors)
+              master_pure_raw: >
                 {% if master_forced_min_active | bool(false) %}
-                  {% set pure_required = inputs.min_trv_temp | float(12) %}
+                  {{ inputs.min_trv_temp | float(12) }}
                 {% else %}
-                  {% set humidity_reset = 0.5 if (humidity_compensation_active | bool(false)) else 0.0 %}
-                  {% set pure_raw = [((master_base_required_target | float(0)) + (humidity_reset | float(0))), (master_safety_floor | float(12))] | max %}
-                  {% set pure_hi = [pure_raw | float(0), master_max | float(30)] | min %}
-                  {% set pure_required = [pure_hi, master_min | float(inputs.min_trv_temp | float(12))] | max %}
+                  {{ [((master_base_required_target | float(0)) + (master_humidity_drop | float(0))), (master_safety_floor | float(12))] | max }}
                 {% endif %}
-                {% set pure_boost = master_boost_amount | float(0) %}
-                {{ (pure_required | float(0)) + pure_boost }}
+
+              # 3. Apply Max/Min Bounds to Raw Base
+              master_pure_bounded: >
+                {% set hi = [master_pure_raw | float(0), master_max | float(30)] | min %}
+                {{ [hi, master_min | float(inputs.min_trv_temp | float(12))] | max }}
+
+              # 4. The Turbo Package (Only active when heating is needed)
+              master_active_modifier: >
+                {% if master_boost_active | bool(false) %}
+                  {{ (master_boost_amount | float(0)) + (weather_modifier | float(0)) }}
+                {% else %}
+                  0.0
+                {% endif %}
+
+              # 5. Final Targets
+              master_pure_target: >
+                {{ (master_pure_bounded | float(0)) + (master_active_modifier | float(0)) }}
+
+              master_required_target_with_boost: >
+                {{ master_pure_target | float(0) }}
               master_target_delta_abs: "{{ ((master_pure_target | float(0)) - (master_set_now | float(0))) | abs }}"
               master_needs_global_boost: >
                 {{ (not (away_mode_active_effective | bool(false))) and ((master_set_now | float(0)) < ((global_max_demand | float(0)) - 0.1)) }}
@@ -2823,12 +2840,15 @@ action:
               effective_max_changes_per_hour: "{{ [inputs.max_changes_per_hour | float(3), 2] | max }}"
               # API Write Tracking: Letzter erfolgreicher Write an Master-Thermostat
               master_last_update_age_step55: >
-                {% set helper = inputs.master_last_write_helper %}
-                {% if helper | string != '' and states(helper) | string not in ['unavailable', 'unknown', ''] %}
-                  {% set last_write_str = states(helper) %}
-                  {% set last_write_ts = as_timestamp(strptime(last_write_str, '%Y-%m-%d %H:%M:%S')) | float(0) %}
+                {% set entity = inputs.master_last_write_helper | string %}
+                {% if entity != '' and states[entity] is defined and states(entity) not in ['unknown', 'unavailable', 'none'] %}
+                  {% set last_write_ts = state_attr(entity, 'timestamp') | float(0) %}
                   {% set now_ts = as_timestamp(now()) | float(0) %}
-                  {{ now_ts - last_write_ts }}
+                  {% if (last_write_ts | float(0)) > 0 %}
+                    {{ now_ts - (last_write_ts | float(0)) }}
+                  {% else %}
+                    {{ 999999 }}
+                  {% endif %}
                 {% else %}
                   {{ 999999 }}
                 {% endif %}
@@ -2908,11 +2928,12 @@ action:
                       datetime: "{{ now() }}"
                     continue_on_error: true
 
-              # PATH B (CRITICAL): highest bidder boost or significant drop bypasses cooldown
+              # PATH B (CRITICAL): highest bidder boost or significant drop WITH strict cooldown
               - conditions:
                   - "{{ not (master_forced_min_active | bool(false)) }}"
                   - "{{ (master_needs_global_boost | bool(false)) or (master_significant_drop | bool(false)) }}"
                   - "{{ (master_target_delta_abs | float(0)) > 0.1 }}"
+                  - "{{ master_change_cooldown_ok_step55 | bool(false) }}"
                 sequence:
                   - if:
                       - condition: template
@@ -2958,9 +2979,10 @@ action:
                     data:
                       datetime: "{{ now() }}"
                     continue_on_error: true
-              # PATH C (COMFORT): regular writes follow cooldown policy
+              # PATH C (COMFORT): regular writes with strict cooldown guard
               - conditions:
                   - "{{ master_write_allowed }}"
+                  - "{{ master_change_cooldown_ok_step55 | bool(false) }}"
                 sequence:
                   - if:
                       - condition: template
