@@ -1525,12 +1525,7 @@ action:
         follower2_window: !input follower2_window
         follower2_temp_sensor: !input follower2_temp_sensor
       helper_input_settle_seconds: !input helper_input_settle_seconds
-      trigger_id_safe: >
-        {% if trigger is defined and trigger is not none and trigger.id is defined %}
-          {{ trigger.id }}
-        {% else %}
-
-        {% endif %}
+      trigger_id_safe: "{{ trigger.id if trigger is defined and trigger is not none and trigger.id is defined else '' }}"
       helper_input_trigger: >
         {{
           (trigger_id_safe in [
@@ -2877,9 +2872,9 @@ action:
               master_stuck_protection_active: >
                 {{ (master_needs_raise | bool(false)) and ((master_last_update_age_step55 | float(0)) >= 1800) }}
               master_raise_allowed: >
-                {{ (master_needs_raise | bool(false)) and ((master_change_cooldown_ok_step55 | bool(false)) or ((master_target_delta_abs | float(0)) > 3.0) or (master_stuck_protection_active | bool(false))) }}
+                {{ (master_needs_raise | bool(false)) and ((master_change_cooldown_ok_step55 | bool(false)) or (helper_input_trigger | bool(false)) or ((master_target_delta_abs | float(0)) > 3.0) or (master_stuck_protection_active | bool(false))) }}
               master_drop_allowed: >
-                {{ (master_needs_global_drop | bool(false)) and (master_change_cooldown_ok_step55 | bool(false)) }}
+                {{ (master_needs_global_drop | bool(false)) and ((master_change_cooldown_ok_step55 | bool(false)) or (helper_input_trigger | bool(false))) }}
               master_write_allowed: >
                 {{ (not (master_forced_min_active | bool(false))) and ((master_raise_allowed | bool(false)) or (master_drop_allowed | bool(false))) }}
           # ════════════════════════════════════════════════════════════
@@ -2924,7 +2919,7 @@ action:
                   - "{{ not (master_forced_min_active | bool(false)) }}"
                   - "{{ (master_needs_global_boost | bool(false)) or (master_significant_drop | bool(false)) }}"
                   - "{{ (master_target_delta_abs | float(0)) > 0.1 }}"
-                  - "{{ master_change_cooldown_ok_step55 | bool(false) }}"
+                  - "{{ (master_change_cooldown_ok_step55 | bool(false)) or (helper_input_trigger | bool(false)) }}"
                 sequence:
                   - service: climate.set_temperature
                     target:
@@ -2945,8 +2940,7 @@ action:
                     continue_on_error: true
               # PATH C (COMFORT): regular writes with strict cooldown guard
               - conditions:
-                  - "{{ master_write_allowed }}"
-                  - "{{ master_change_cooldown_ok_step55 | bool(false) }}"
+                  - "{{ master_write_allowed | bool(false) }}"
                 sequence:
                   - service: climate.set_temperature
                     target:
@@ -2984,29 +2978,37 @@ action:
       - service: persistent_notification.create
         data:
           notification_id: "vaillant_leitstand"
-          title: "🔥 Vaillant Leitstand Update"
-          message: >
-            *Update: {{ now().strftime('%H:%M:%S') }} | Auslöser: {{ trigger.id | default('manual') }}*
+          title: "🔥 Vaillant Leitstand ({{ now().strftime('%H:%M:%S') }})"
+          message: |
+            MASTER THERMOSTAT
+            Trigger: {{ trigger_id_safe | default('manual', true) }}
+            Entity: {{ inputs.master_climate | default('Vaillant_Wien Zone 1', true) }}
+            Target: {{ master_required_target_with_boost | float(0) | round(1) }}°C
+            Base: {{ master_base_required_target | float(0) | round(1) }}°C
+            Modus: {{ 'Not-Aus' if (master_forced_min_active | bool(false)) else ('Abwesend' if (away_mode_entity_on | bool(false)) else 'Heizbetrieb') }}
 
-            ### 🏠 MASTER THERMOSTAT
-            **{{ (state_attr(inputs.master_climate, 'friendly_name') | default('Master', true)) }}**
-            * **Modus:** {{ '❄️ Not-Aus (Fenster+Sturz)' if (master_forced_min_active | bool(false)) else ('🏖️ Abwesend' if (away_mode_entity_on | bool(false)) else '🔥 Heizbetrieb') }}
-            * **Target:** `{{ master_required_target_with_boost | float(0) | round(1) }} °C` *(Base: `{{ master_base_required_target | float(0) | round(1) }} °C`)*
-            * **Modifiers:** 🚀 Boost: {{ 'ACTIVE' if master_boost_active | bool(false) else 'OFF' }} | 🌦️ Weather: `+{{ weather_modifier | float(0) | round(1) }} °C` | 💧 Humidity: `{{ master_humidity_drop | float(0) | round(1) }} °C`
+            MODIFIERS
+            Boost: {{ 'ACTIVE' if (master_boost_active | bool(false)) else 'OFF' }}
+            Weather: {{ weather_modifier | float(0) | round(1) }}°C
+            Humidity: {{ master_humidity_drop | float(0) | round(1) }}°C
 
-            ### 🚪 RAUM STATUS
-            | Raum | Modus | Ziel | Boost | Fenster |
-            | :--- | :--- | :--- | :--- | :--- |
-            {% set now_ts = as_timestamp(now()) | float(0) %}{% set d_s = inputs.window_heat_delay | float(30) %}
-            {% if inputs.room2_enabled | bool(false) %}{% set w2 = inputs.room2_window | string %}{% set on2 = (w2 != '' and states[w2] is defined and states(w2) == 'on') %}{% set ts2 = as_timestamp(states[w2].last_changed, now_ts) | float(now_ts) if on2 else now_ts %}{% set L2 = (on2 and (now_ts - ts2) >= d_s) %}| **{{ state_attr(inputs.room2_climate, 'friendly_name') | default('Room 2', true) }}** | {{ '❄️ Frost' if L2 else ('👤 Präsenz' if room2_presence_for_demand | bool(false) else ('🗓️ Zeitplan' if room2_schedule_active_for_demand | bool(false) else ('✋ Manuell' if room2_is_manual | bool(false) else '📭 Standby (ECO)'))) }} | {{ room2_demand | float(0) | round(1) }}°C | {{ '✅' if room2_needs_boost | bool(false) else '❌' }} | {{ '⚠️ Frost' if L2 else ('🪟 Offen' if on2 else '🔒 Zu') }} |
-            {% endif %}{% if inputs.room3_enabled | bool(false) %}{% set w3 = inputs.room3_window | string %}{% set on3 = (w3 != '' and states[w3] is defined and states(w3) == 'on') %}{% set ts3 = as_timestamp(states[w3].last_changed, now_ts) | float(now_ts) if on3 else now_ts %}{% set L3 = (on3 and (now_ts - ts3) >= d_s) %}| **{{ state_attr(inputs.room3_climate, 'friendly_name') | default('Room 3', true) }}** | {{ '❄️ Frost' if L3 else ('👤 Präsenz' if room3_presence_for_demand | bool(false) else ('🗓️ Zeitplan' if room3_schedule_active_for_demand | bool(false) else ('✋ Manuell' if room3_is_manual | bool(false) else '📭 Standby (ECO)'))) }} | {{ room3_demand | float(0) | round(1) }}°C | {{ '✅' if room3_needs_boost | bool(false) else '❌' }} | {{ '⚠️ Frost' if L3 else ('🪟 Offen' if on3 else '🔒 Zu') }} |
-            {% endif %}{% if inputs.room4_enabled | bool(false) %}{% set w4 = inputs.room4_window | string %}{% set on4 = (w4 != '' and states[w4] is defined and states(w4) == 'on') %}{% set ts4 = as_timestamp(states[w4].last_changed, now_ts) | float(now_ts) if on4 else now_ts %}{% set L4 = (on4 and (now_ts - ts4) >= d_s) %}| **{{ state_attr(inputs.room4_climate, 'friendly_name') | default('Room 4', true) }}** | {{ '❄️ Frost' if L4 else ('👤 Präsenz' if room4_presence_for_demand | bool(false) else ('🗓️ Zeitplan' if room4_schedule_active_for_demand | bool(false) else ('✋ Manuell' if room4_is_manual | bool(false) else '📭 Standby (ECO)'))) }} | {{ room4_demand | float(0) | round(1) }}°C | {{ '✅' if room4_needs_boost | bool(false) else '❌' }} | {{ '⚠️ Frost' if L4 else ('🪟 Offen' if on4 else '🔒 Zu') }} |
-            {% endif %}{% if inputs.room5_enabled | bool(false) %}{% set w5 = inputs.room5_window | string %}{% set on5 = (w5 != '' and states[w5] is defined and states(w5) == 'on') %}{% set ts5 = as_timestamp(states[w5].last_changed, now_ts) | float(now_ts) if on5 else now_ts %}{% set L5 = (on5 and (now_ts - ts5) >= d_s) %}| **{{ state_attr(inputs.room5_climate, 'friendly_name') | default('Room 5', true) }}** | {{ '❄️ Frost' if L5 else ('👤 Präsenz' if room5_presence_for_demand | bool(false) else ('🗓️ Zeitplan' if room5_schedule_active_for_demand | bool(false) else ('✋ Manuell' if room5_is_manual | bool(false) else '📭 Standby (ECO)'))) }} | {{ room5_demand | float(0) | round(1) }}°C | {{ '✅' if room5_needs_boost | bool(false) else '❌' }} | {{ '⚠️ Frost' if L5 else ('🪟 Offen' if on5 else '🔒 Zu') }} |
+            RAUM STATUS
+            {% if inputs.room2_enabled | bool(false) %}
+            Schlafzimmer: {{ room2_final_temp | float(0) | round(1) }}°C | {{ 'Zeitplan' if (room2_schedule_active | bool(false)) else ('Praesenz' if (room2_presence | bool(false)) else 'Eco') }} | Boost {{ 'ON' if (room2_needs_boost | bool(false)) else 'OFF' }}
+            {% endif %}
+            {% if inputs.room3_enabled | bool(false) %}
+            Office: {{ room3_final_temp | float(0) | round(1) }}°C | {{ 'Zeitplan' if (room3_schedule_active | bool(false)) else ('Praesenz' if (room3_presence | bool(false)) else 'Eco') }} | Boost {{ 'ON' if (room3_needs_boost | bool(false)) else 'OFF' }}
+            {% endif %}
+            {% if inputs.room4_enabled | bool(false) %}
+            Raum4: {{ room4_final_temp | float(0) | round(1) }}°C | {{ 'Zeitplan' if (room4_schedule_active | bool(false)) else ('Praesenz' if (room4_presence | bool(false)) else 'Eco') }} | Boost {{ 'ON' if (room4_needs_boost | bool(false)) else 'OFF' }}
+            {% endif %}
+            {% if inputs.room5_enabled | bool(false) %}
+            Raum5: {{ room5_final_temp | float(0) | round(1) }}°C | {{ 'Zeitplan' if (room5_schedule_active | bool(false)) else ('Praesenz' if (room5_presence | bool(false)) else 'Eco') }} | Boost {{ 'ON' if (room5_needs_boost | bool(false)) else 'OFF' }}
             {% endif %}
 
-            ### 🌐 API GATEWAY LIMITS
-            * **Erlaubt:** `{{ effective_max_changes_per_hour | float(0) | round(0) }}` Writes/h (Min. Intervall `{{ 3600 / effective_max_changes_per_hour | float(3) | round(0) }}s`)
-            * **Letzter Write:** vor `{{ master_last_update_age_step55 | float(0) | round(0) }}s`
+            API GATEWAY
+            Limit: {{ effective_max_changes_per_hour | float(0) | round(0) }} Writes/h
+            Last Write: vor {{ master_last_update_age_step55 | float(0) | round(0) }}s
 
 mode: queued
 max: 5
