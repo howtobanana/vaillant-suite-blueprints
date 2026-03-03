@@ -1,5 +1,5 @@
 blueprint:
-  name: "(Vaillant) Heizungssteuerung"
+  name: "(Vaillant) Heizungs-Steuerung"
   description: |
     **Zentrale Heizungslogik für Vaillant-Systeme**
 
@@ -8,6 +8,7 @@ blueprint:
     **Kern-Funktionen:**
     *   🛡️ **Dynamic Safety:** Unterscheidet zwischen Kälteeinbruch (Not-Aus) und Luftaustausch (Weiterheizen).
     *   🔗 **Smart Follower:** Dynamische Offset-Steuerung für Nebenräume (folgen dem Master).
+    *   🌦️ **Gebäude-Kompensation:** Plan A per Template-Sensor (empfohlen), Plan B per Außensensor-Fallback; wirkt als Aufschlag auf den Master-Sollwert.
     *   ⚡ **Echtzeit-Reaktion:** Sofortige Anpassung bei Statusänderungen ohne Latenz.
     *   🧠 **Fail-Safe:** Mehrstufige Sicherheitslogik (Debounce, Frostschutz, 60min Time-Guard).
 
@@ -33,30 +34,14 @@ blueprint:
     section_global:
       name: "🌍 Basisparameter"
       description: |
-
-        Grundlegende Einstellungen für Wetterfühler, Sommer-Logik, Abwesenheitsstatus und API-Limits.
-        Diese Parameter definieren globale Grenzen und Fallback-Werte der Regelung.
-
+        Grundlegende Sicherheitsnetze, Timer, Abwesenheits-Stati und Regel-Schwellen.
+        Diese Parameter bilden das stabile Fundament der Automation.
       collapsed: false
       input:
-        outdoor_temp_sensor:
-          name: "🌡️ Außentemperatur"
-          description: |
-
-            Optionaler Außentemperatursensor für Sommermodus, Frostlogik und Wetterkompensation.
-
-          default: ""
-          selector:
-            entity:
-              domain: sensor
-              device_class: temperature
         presence_activation_delay:
           name: "⏱️ Präsenz Aktivierung (min)"
           description: |
-
-            Globale Verzögerung bis Präsenz als aktiv bewertet wird (gilt für alle Räume).
-            Sensor muss diese Zeit durchgehend ON sein bevor Komfort aktiviert wird.
-
+            Verzögerung, bis ein Raum als belegt gilt. Verhindert kurzes Aufheizen bei Durchqueren.
           default: 2
           selector:
             number:
@@ -67,10 +52,7 @@ blueprint:
         presence_deactivation_delay:
           name: "⏱️ Präsenz Nachlauf (min)"
           description: |
-
-            Globale Nachlaufzeit bis Rückfall auf Eco nach letzter Präsenz (gilt für alle Räume).
-            Nach dieser Zeit ohne Erkennung wird Eco aktiviert.
-
+            Nachlaufzeit, nachdem keine Bewegung mehr erkannt wurde, bevor der Raum auf Eco abfällt.
           default: 30
           selector:
             number:
@@ -78,48 +60,10 @@ blueprint:
               max: 120
               step: 5
               unit_of_measurement: "min"
-        summer_threshold:
-          name: "🌡️ Sommer-Grenzwert (°C)"
-          description: |
-
-            Schwellwert für den Sommer-Modus. Oberhalb dieses Werts wird Heizbetrieb reduziert.
-
-          default: 18
-          selector:
-            number:
-              min: 15
-              max: 22
-              step: 1
-              unit_of_measurement: "°C"
-        summer_hysteresis:
-          name: "↕️ Sommer-Hysterese (°C)"
-          description: |
-
-            Verhindert schnelles Takten im Grenzbereich. Hysterese für den Sommer-Modus.
-
-          default: 1.0
-          selector:
-            number:
-              min: 0.5
-              max: 3.0
-              step: 0.5
-              unit_of_measurement: "°C"
-        summer_mode_helper:
-          name: "Sommer-Modus Helper (Pflicht)"
-          description: |
-
-            Erforderlicher Helfer-Typ: Umschalter (input_boolean). Speichert den Sommerzustand inkl. Hysterese.
-
-          selector:
-            entity:
-              domain: input_boolean
         panic_mode_enabled:
           name: "🚨 Panic Mode Helper (opt)"
           description: |
-
-            Globaler Notfall-Schalter. Erzwingt Komfort-Temperatur bei Sensor-Ausfall.
-            Erforderlicher Helfer-Typ: **Umschalter** (input_boolean).
-
+            Ein Input Boolean, der bei Aktivierung alle Thermostate zwanghaft auf Komfort stellt.
           default: ""
           selector:
             entity:
@@ -127,10 +71,7 @@ blueprint:
         eco_temp_input:
           name: "🌡️ Eco-Temp Helper (opt)"
           description: |
-
-            Optionaler Helper für die Eco-Solltemperatur. Überschreibt den Fixwert.
-            Erforderlicher Helfer-Typ: **Schieberegler** (input_number).
-
+            Optionaler Slider (input_number) für die globale Eco-Temperatur. Hat Vorrang vor dem Fixwert.
           default: "sensor.none"
           selector:
             entity:
@@ -138,9 +79,7 @@ blueprint:
         eco_temp_fixed:
           name: "🌡️ Eco-Temp Fix (°C)"
           description: |
-
-            Fallback-Solltemperatur für Eco-Betrieb ohne Helper.
-
+            Fallback-Solltemperatur für den Eco-Betrieb (Standby).
           default: 19
           selector:
             number:
@@ -151,10 +90,7 @@ blueprint:
         away_temp_input:
           name: "🌡️ Away-Temp Helper (opt)"
           description: |
-
-            Optionaler Helper für die Away-Solltemperatur. Überschreibt den Fixwert.
-            Erforderlicher Helfer-Typ: **Schieberegler** (input_number).
-
+            Optionaler Slider (input_number) für die globale Away-Temperatur.
           default: "sensor.none"
           selector:
             entity:
@@ -162,9 +98,7 @@ blueprint:
         away_temp_fixed:
           name: "🌡️ Away-Temp Fix (°C)"
           description: |
-
-            Fallback-Solltemperatur für Abwesenheitsbetrieb ohne Helper.
-
+            Fallback-Solltemperatur für längere Abwesenheiten.
           default: 16
           selector:
             number:
@@ -172,26 +106,74 @@ blueprint:
               max: 18
               step: 0.5
               unit_of_measurement: "°C"
-
         away_mode_boolean:
           name: "Away-Mode Helper (input_boolean)"
           description: |
-
-            Globaler Abwesenheits-Schalter. Aktiviert sofort den Away-Sollwert. Mehrere Entitys werden als ODER ausgewertet.
-            Erforderlicher Helfer-Typ: **Umschalter** (input_boolean).
-
+            Globaler Urlaubsschalter. Setzt die gesamte Wohnung auf Away-Temp.
           default: []
           selector:
             entity:
               domain: input_boolean
               multiple: true
-        max_changes_per_hour:
-          name: "🔧 Max Änderungen/h"
+        min_trv_temp:
+          name: "♨️ TRV Minimum (°C)"
           description: |
-
-            Maximale Anzahl Master-Schreibvorgänge pro Stunde.
-            Hohe Werte erlauben bei netzbetriebenen Geräten nahezu sofortige Aktualisierungen.
-
+            Hartes Limit nach unten. Wird bei Frostschutz und offenen Fenstern genutzt.
+          default: 12
+          selector:
+            number:
+              min: 5
+              max: 15
+              step: 0.5
+              unit_of_measurement: "°C"
+        window_heat_delay:
+          name: "⏱️ Fenster-Delay (s)"
+          description: |
+            Sekunden, die ein Fenster offen sein muss, bevor der Raum auf Frostschutz (TRV Min) fällt.
+          default: 30
+          selector:
+            number:
+              min: 10
+              max: 300
+              step: 5
+              unit_of_measurement: "s"
+        smart_drop_threshold:
+          name: "📉 Smart-Drop Schwelle (°C)"
+          description: |
+            Temperatursturz-Sicherung: Schaltet Master ab, wenn der Ist-Wert um X °C unter den Eco-Anker fällt.
+          default: 2.0
+          selector:
+            number:
+              min: 0.0
+              max: 5.0
+              step: 0.5
+              unit_of_measurement: "°C"
+        hysteresis:
+          name: "⚙️ Hysterese (°C)"
+          description: |
+            Latenz-Schutz: Ein TRV-Sollwert muss sich um mindestens diesen Wert ändern, bevor gesendet wird.
+          default: 0.6
+          selector:
+            number:
+              min: 0.1
+              max: 1.0
+              step: 0.1
+              unit_of_measurement: "°C"
+        helper_input_settle_seconds:
+          name: "⏳ Debounce Latenz (s)"
+          description: |
+            Sicherheitspuffer, falls du am UI-Slider ziehst. Wartet X Sekunden, bevor die API gefeuert wird.
+          default: 30
+          selector:
+            number:
+              min: 5
+              max: 120
+              step: 5
+              unit_of_measurement: "s"
+        max_changes_per_hour:
+          name: "🔧 API: Max Writes/h"
+          description: |
+            Absoluter Deckel für Vaillant Cloud Aufrufe pro Stunde (Empfehlung: 10).
           default: 10
           selector:
             number:
@@ -310,20 +292,6 @@ blueprint:
           selector:
             entity:
               domain: input_boolean
-        room_boost_amount:
-          name: "⚡ Room-Boost Höhe (°C)"
-          description: |
-
-            Zusätzliche Erhöhung des Master-Sollwerts bei aktivem Boost.
-            0 = aus, 1 = konservativ, 2 = empfohlen, 3 = aggressiv.
-
-          default: 2.0
-          selector:
-            number:
-              min: 0
-              max: 3.0
-              step: 0.5
-              unit_of_measurement: "°C"
         master_temp_sensor:
           name: "🌡️ Master Temperatursensor"
           description: |
@@ -907,131 +875,160 @@ blueprint:
 
 
     section_smart_functions:
-      name: "🧠 Regelungsparameter & Smarte Funktionen"
+      name: "🧠 Smarte Funktionen"
       description: |
-
-        Feinparameter für Sicherheitsabsenkung, Hysterese und adaptive Sollwertlogik.
-        Diese Einstellungen steuern Reaktionsgeschwindigkeit und Stabilität der Regelung.
-
+        Optionale Zusatzmodule für Sommerbetrieb, Gebäude-Kompensation und Komfort.
+        Alle Funktionen hier sind optional und additiv zur Basisregelung.
       collapsed: true
       input:
-        enable_room_boost:
-          name: "🚀 Raum-Boost (Alle Räume & Master)"
+        outdoor_temp_sensor:
+          name: "☀️ Außentemperatur (Basis-Sensor, opt)"
           description: |
-
-            Aktiviert die +2°C Boost-Funktion bei großer Temperaturdifferenz.
-
-          default: true
+            Basis-Außensensor für Sommerlogik und Plan-B-Fallback der Gebäude-Kompensation.
+          default: ""
           selector:
-            boolean:
-        room_boost_activation_threshold:
-          name: "🚀 Boost-Aktivierung ab Differenz (°C)"
+            entity:
+              domain: sensor
+        summer_threshold:
+          name: "☀️ Sommer-Grenzwert (°C)"
           description: |
-
-            Mindestdifferenz zwischen Ziel- und Ist-Temperatur für Boost-Aktivierung.
-            Dient als Aktivierungsschwelle der Hysterese.
-
+            Ab diesem Wert wird Sommerbetrieb aktiv.
+          default: 18
+          selector:
+            number:
+              min: 15
+              max: 22
+              step: 0.5
+              unit_of_measurement: "°C"
+        summer_hysteresis:
+          name: "☀️ Sommer-Hysterese (°C)"
+          description: |
+            Abschaltpunkt liegt bei (Sommer-Grenzwert - Hysterese), um Takten zu vermeiden.
           default: 1.0
           selector:
             number:
-              min: 1.0
+              min: 0.5
               max: 3.0
               step: 0.5
               unit_of_measurement: "°C"
-        min_trv_temp:
-          name: "♨️ TRV Minimum (°C)"
+        summer_mode_helper:
+          name: "☀️ Sommer-Modus Helper (Pflicht für Feature)"
           description: |
-
-            Mindest-Solltemperatur für Frostschutz und Sicherheitsabsenkung.
-
-          default: 12
+            Speichert den Sommerzustand (input_boolean) systemweit.
           selector:
-            number:
-              min: 5
-              max: 15
-              step: 0.5
-              unit_of_measurement: "°C"
-        window_heat_delay:
-          name: "⏱️ Fenster-Delay (s)"
+            entity:
+              domain: input_boolean
+        enable_weather_compensation:
+          name: "🌦️ Gebäude-Kompensation aktiv"
           description: |
-
-            Verzögerung für Open-Window-Mode in Sekunden.
-            Erst wenn ein Fenster so lange durchgehend offen ist, wird abgesenkt.
-
-          default: 30
+            Aktiviert den dynamischen Aufschlag auf den Master-Sollwert an sehr kalten oder windigen Tagen.
+          default: false
           selector:
-            number:
-              min: 10
-              max: 300
-              step: 5
-              unit_of_measurement: "s"
-        smart_drop_threshold:
-          name: "📉 Smart-Drop Schwelle (°C)"
+            boolean:
+        weather_compensation_sensor:
+          name: "🌦️ Kompensations-Sensor (Plan A: Template)"
           description: |
-
-            Temperatursturz-Erkennung. Schaltet Heizung ab, wenn Ist-Wert um X °C unter dem Eco-Anker liegt.
-
-          default: 2.0
+            Plan A (empfohlen): Nutze einen Sensor, der direkt den Aufschlag auf den Master-Sollwert in °C liefert.
+            Plan B (Fallback): Wenn leer oder ungültig, wird der Basis-Außensensor genutzt und über Zone 1-3 geregelt.
+            Plan B quantisiert den Außentemperatur-Pfad auf 0,5°C Schritte, um Jitter zu reduzieren.
+          default: ""
+          selector:
+            entity:
+              domain: sensor
+        weather_boost_zone1:
+          name: "❄️ Kompensation Zone 1 (unter -10°C)"
+          description: |
+            Aufschlag auf den Master-Sollwert bei extremer Kälte (<= -10°C).
+          default: 0.0
           selector:
             number:
               min: 0.0
               max: 5.0
               step: 0.5
               unit_of_measurement: "°C"
-        hysteresis:
-          name: "⚙️ Hysterese (°C)"
+        weather_boost_zone2:
+          name: "🥶 Kompensation Zone 2 (-10°C bis 0°C)"
           description: |
-
-            Mindestabweichung zwischen aktuellem und neuem Sollwert vor Schreibvorgang.
-
-          default: 0.6
+            Aufschlag auf den Master-Sollwert bei Frost (<= 0°C).
+          default: 0.0
           selector:
             number:
-              min: 0.1
-              max: 1.0
-              step: 0.1
+              min: 0.0
+              max: 5.0
+              step: 0.5
               unit_of_measurement: "°C"
-        enable_weather_compensation:
-          name: "🌦️ Wetter-Kompensation aktiv"
+        weather_boost_zone3:
+          name: "🧥 Kompensation Zone 3 (0°C bis +10°C)"
           description: |
-
-            Aktiviert lineare Sollwertanhebung bei niedriger Außentemperatur.
-
-          default: false
-          selector:
-            boolean:
-        enable_humidity_compensation:
-          name: "🔘 Feuchte-Kompensation"
-          description: |
-
-            Aktiviert Sollwertabsenkung bei hoher Luftfeuchte im Master-Raum.
-
-          default: false
-          selector:
-            boolean:
-        enable_debug_notifications:
-          name: "📣 Debug-Benachrichtigungen aktivieren"
-          description: |
-
-            Erstellt bei aktivem Schalter persistente Debug-Benachrichtigungen mit Master- und Raumstatus.
-
-          default: false
-          selector:
-            boolean:
-        helper_input_settle_seconds:
-          name: "⏳ Debounce für Helper-Änderungen (s)"
-          description: |
-
-            Verzögerung nach Helper-Änderungen, bevor neue Sollwerte verarbeitet werden.
-            Reduziert Flattern bei schnell aufeinanderfolgenden Eingabe-Updates.
-
-          default: 30
+            Aufschlag auf den Master-Sollwert an kühlen Tagen (<= +10°C). Über 10°C ist der Aufschlag 0°C (Zone 4).
+          default: 0.0
           selector:
             number:
-              min: 5
-              max: 120
-              step: 5
-              unit_of_measurement: "s"
+              min: 0.0
+              max: 5.0
+              step: 0.5
+              unit_of_measurement: "°C"
+        enable_room_boost:
+          name: "🚀 Boost aktiv"
+          description: |
+            Erlaubt es Räumen, temporär über ihr normales Ziel hinauszuschießen, um schneller warm zu werden.
+          default: true
+          selector:
+            boolean:
+        room_boost_activation_threshold:
+          name: "🚀 Boost-Aktivierung ab Differenz (°C)"
+          description: |
+            Wie viel Grad muss die Raumtemperatur UNTER dem Ziel liegen, damit Boost greift?
+          default: 1.0
+          selector:
+            number:
+              min: 0.5
+              max: 3.0
+              step: 0.5
+              unit_of_measurement: "°C"
+        room_boost_amount:
+          name: "🚀 Boost Höhe (°C)"
+          description: |
+            Wie viel Grad extra feuert die Heizung im Boost-Modus?
+          default: 2.0
+          selector:
+            number:
+              min: 0.5
+              max: 3.0
+              step: 0.5
+              unit_of_measurement: "°C"
+        enable_humidity_compensation:
+          name: "🔘 Feuchte-Kompensation aktiv"
+          description: |
+            Reduziert die Heizleistung, wenn die Luftfeuchtigkeit im Master-Raum > 60% liegt.
+          default: false
+          selector:
+            boolean:
+        humidity_drop_amount:
+          name: "🔘 Feuchte-Kompensation Absenkung (°C)"
+          description: |
+            Um wie viel Grad soll das Target bei hoher Feuchtigkeit gedrosselt werden?
+          default: 0.5
+          selector:
+            number:
+              min: 0.5
+              max: 2.0
+              step: 0.5
+              unit_of_measurement: "°C"
+
+    section_debug:
+      name: "🛠️ System & Debugging"
+      description: |
+        Leitstand und Administrator-Tools.
+      collapsed: true
+      input:
+        enable_debug_notifications:
+          name: "📣 Live-Leitstand (Debug) aktivieren"
+          description: |
+            Erstellt eine sich im Hintergrund aktualisierende Leitstand-Notification.
+          default: false
+          selector:
+            boolean:
 
 trigger_variables:
   tv_room2_window: !input room2_window
@@ -1461,7 +1458,12 @@ action:
         hysteresis: !input hysteresis
         max_changes_per_hour: !input max_changes_per_hour
         enable_weather_compensation: !input enable_weather_compensation
+        weather_compensation_sensor: !input weather_compensation_sensor
+        weather_boost_zone1: !input weather_boost_zone1
+        weather_boost_zone2: !input weather_boost_zone2
+        weather_boost_zone3: !input weather_boost_zone3
         enable_humidity_compensation: !input enable_humidity_compensation
+        humidity_drop_amount: !input humidity_drop_amount
         enable_debug_notifications: !input enable_debug_notifications
         master_climate: !input master_climate
         master_last_write_helper: !input master_last_write_helper
@@ -1892,38 +1894,41 @@ action:
           {{ 50 }}
         {% endif %}
       humidity_compensation_active: >
-        {% if inputs.enable_humidity_compensation | bool(false) %}
-          {% if (master_humidity | float(50)) > 60 %}
-            {{ true }}
-          {% elif (master_humidity | float(50)) < 58 %}
-            {{ false }}
-          {% else %}
-            {{ false }}
-          {% endif %}
+        {{ (inputs.enable_humidity_compensation | bool(false)) and ((master_humidity | float(50)) > 50) }}
+      master_humidity_dynamic_drop: >
+        {% if humidity_compensation_active | bool(false) %}
+          {% set hum_diff = (master_humidity | float(50)) - 50 %}
+          {% set dynamic_drop_raw = (hum_diff / 10.0) * (inputs.humidity_drop_amount | float(0.5)) %}
+          {% set dynamic_drop = [[((dynamic_drop_raw * 2) | round(0) / 2), 0.0] | max, 2.0] | min %}
+          {{ dynamic_drop | float(0) }}
         {% else %}
-          {{ false }}
+          0.0
         {% endif %}
       master_target_with_humidity: >
-        {% if humidity_compensation_active | bool(false) %}
-          {{ (master_target_temp | float(21)) - 0.5 }}
-        {% else %}
-          {{ master_target_temp | float(21) }}
-        {% endif %}
+        {% set target_raw = (master_target_temp | float(21)) - (master_humidity_dynamic_drop | float(0)) %}
+        {{ ((target_raw * 2) | round(0) / 2) }}
 
       # ===== GROUP 5: SAFETY & STATUS =====
       outdoor_temp_sensor_configured: >
         {{ inputs.outdoor_temp_sensor != '' }}
+      outdoor_temp_raw: >
+        {% set o_id = inputs.outdoor_temp_sensor | string %}
+        {% if o_id != '' and states(o_id) not in ['unknown', 'unavailable', 'none'] %}
+          {{ state_attr(o_id, 'temperature') if o_id.startswith('weather.') else states(o_id) }}
+        {% else %}
+          none
+        {% endif %}
       outdoor_temp: >
-        {% set raw = states(inputs.outdoor_temp_sensor) if outdoor_temp_sensor_configured else '' %}
-        {% if outdoor_temp_sensor_configured | bool(false) and raw | string not in ['unknown', 'unavailable', 'none', ''] %}
+        {% set raw = outdoor_temp_raw %}
+        {% if outdoor_temp_sensor_configured | bool(false) and raw | string not in ['unknown', 'unavailable', 'none', 'None', ''] %}
           {{ raw | float(0) }}
         {% else %}
           {{ 0 }}
         {% endif %}
       outdoor_temp_valid: >
-        {% set raw = states(inputs.outdoor_temp_sensor) if outdoor_temp_sensor_configured else '' %}
-        {{ (outdoor_temp_sensor_configured | bool(false)) and (raw | string not in ['unknown', 'unavailable', 'none', '']) }}
-      summer_mode: >
+        {% set raw = outdoor_temp_raw %}
+        {{ (outdoor_temp_sensor_configured | bool(false)) and (raw | string not in ['unknown', 'unavailable', 'none', 'None', '']) }}
+      summer_mode_should_be: >
         {% set ns = namespace(helper_on=false) %}
         {% set helper_id = inputs.summer_mode_helper | string %}
         {% if (helper_id | lower) not in ['', 'none'] and (states[helper_id] is defined) %}
@@ -1932,15 +1937,16 @@ action:
         {% set outdoor_now = outdoor_temp | float(99) %}
         {% set threshold = inputs.summer_threshold | float(18) %}
         {% set hysteresis = inputs.summer_hysteresis | float(1.0) %}
+        {% set off_threshold = (threshold - hysteresis) %}
         {% if not (outdoor_temp_valid | bool(false)) %}
           {{ false }}
         {% elif ns.helper_on | bool(false) %}
-          {{ outdoor_now >= (threshold - hysteresis) }}
-        {% elif outdoor_now > threshold %}
-          {{ true }}
+          {{ outdoor_now > off_threshold }}
         {% else %}
-          {{ false }}
+          {{ outdoor_now >= threshold }}
         {% endif %}
+      summer_mode: >
+        {{ summer_mode_should_be | bool(false) }}
       global_window_open: >
         {% set ns = namespace(is_open=false) %}
         {% for w_id in [
@@ -1985,7 +1991,7 @@ action:
   - choose:
       - conditions:
           - "{{ inputs.summer_mode_helper | string != '' }}"
-          - "{{ summer_mode | bool(false) }}"
+          - "{{ summer_mode_should_be | bool(false) }}"
           - "{{ is_state(inputs.summer_mode_helper, 'off') }}"
         sequence:
           - service: input_boolean.turn_on
@@ -1994,7 +2000,7 @@ action:
             continue_on_error: true
       - conditions:
           - "{{ inputs.summer_mode_helper | string != '' }}"
-          - "{{ not (summer_mode | bool(false)) }}"
+          - "{{ not (summer_mode_should_be | bool(false)) }}"
           - "{{ is_state(inputs.summer_mode_helper, 'on') }}"
         sequence:
           - service: input_boolean.turn_off
@@ -2037,10 +2043,10 @@ action:
                 {% set now_ts = as_timestamp(now()) | float(0) %}
                 {% set delay_s = inputs.window_heat_delay | float(30) %}
                 {% set ns = namespace(active=false) %}
-                {% if inputs.room2_window | string != '' and is_state(inputs.room2_window, 'on') %}
-                  {% set w = states[inputs.room2_window] %}
-                  {% if w is defined and w.last_changed is defined and w.last_changed is not none %}
-                    {% set open_ts = as_timestamp(w.last_changed, now_ts) | float(now_ts) %}
+                {% set w_id = inputs.room2_window | string %}
+                {% if w_id != '' and is_state(w_id, 'on') %}
+                  {% if states[w_id] is defined and states[w_id].last_changed is not none %}
+                    {% set open_ts = as_timestamp(states[w_id].last_changed, now_ts) | float(now_ts) %}
                     {% if (now_ts - open_ts) >= delay_s %}
                       {% set ns.active = true %}
                     {% endif %}
@@ -2126,10 +2132,10 @@ action:
                 {% set now_ts = as_timestamp(now()) | float(0) %}
                 {% set delay_s = inputs.window_heat_delay | float(30) %}
                 {% set ns = namespace(active=false) %}
-                {% if inputs.room3_window | string != '' and is_state(inputs.room3_window, 'on') %}
-                  {% set w = states[inputs.room3_window] %}
-                  {% if w is defined and w.last_changed is defined and w.last_changed is not none %}
-                    {% set open_ts = as_timestamp(w.last_changed, now_ts) | float(now_ts) %}
+                {% set w_id = inputs.room3_window | string %}
+                {% if w_id != '' and is_state(w_id, 'on') %}
+                  {% if states[w_id] is defined and states[w_id].last_changed is not none %}
+                    {% set open_ts = as_timestamp(states[w_id].last_changed, now_ts) | float(now_ts) %}
                     {% if (now_ts - open_ts) >= delay_s %}
                       {% set ns.active = true %}
                     {% endif %}
@@ -2215,10 +2221,10 @@ action:
                 {% set now_ts = as_timestamp(now()) | float(0) %}
                 {% set delay_s = inputs.window_heat_delay | float(30) %}
                 {% set ns = namespace(active=false) %}
-                {% if inputs.room4_window | string != '' and is_state(inputs.room4_window, 'on') %}
-                  {% set w = states[inputs.room4_window] %}
-                  {% if w is defined and w.last_changed is defined and w.last_changed is not none %}
-                    {% set open_ts = as_timestamp(w.last_changed, now_ts) | float(now_ts) %}
+                {% set w_id = inputs.room4_window | string %}
+                {% if w_id != '' and is_state(w_id, 'on') %}
+                  {% if states[w_id] is defined and states[w_id].last_changed is not none %}
+                    {% set open_ts = as_timestamp(states[w_id].last_changed, now_ts) | float(now_ts) %}
                     {% if (now_ts - open_ts) >= delay_s %}
                       {% set ns.active = true %}
                     {% endif %}
@@ -2304,10 +2310,10 @@ action:
                 {% set now_ts = as_timestamp(now()) | float(0) %}
                 {% set delay_s = inputs.window_heat_delay | float(30) %}
                 {% set ns = namespace(active=false) %}
-                {% if inputs.room5_window | string != '' and is_state(inputs.room5_window, 'on') %}
-                  {% set w = states[inputs.room5_window] %}
-                  {% if w is defined and w.last_changed is defined and w.last_changed is not none %}
-                    {% set open_ts = as_timestamp(w.last_changed, now_ts) | float(now_ts) %}
+                {% set w_id = inputs.room5_window | string %}
+                {% if w_id != '' and is_state(w_id, 'on') %}
+                  {% if states[w_id] is defined and states[w_id].last_changed is not none %}
+                    {% set open_ts = as_timestamp(states[w_id].last_changed, now_ts) | float(now_ts) %}
                     {% if (now_ts - open_ts) >= delay_s %}
                       {% set ns.active = true %}
                     {% endif %}
@@ -2579,34 +2585,31 @@ action:
                   {% set target_raw = master_target_final | float(0) %}
                 {% endif %}
                 {{ [target_raw | float(0), master_safety_floor | float(12)] | max }}
-              effective_outdoor_temp: >
-                {% set p_id = inputs.weather_predictive_sensor | string %}
-                {% set a_id = inputs.weather_average_sensor | string %}
-                {% set o_id = inputs.outdoor_temp_sensor | string %}
-
-                {% if p_id != '' and states(p_id) not in ['unknown', 'unavailable', 'none'] %}
-                  {{ states(p_id) | float(99.0) }}
-                {% elif a_id != '' and states(a_id) not in ['unknown', 'unavailable', 'none'] %}
-                  {{ states(a_id) | float(99.0) }}
-                {% elif o_id != '' and states(o_id) not in ['unknown', 'unavailable', 'none'] %}
-                  {{ states(o_id) | float(99.0) }}
+              weather_compensation_add: >
+                {% if not (inputs.enable_weather_compensation | bool(false)) %}
+                  0.0
                 {% else %}
-                  99.0
+                  {% set c_id = inputs.weather_compensation_sensor | string %}
+                  {% if c_id != '' and states(c_id) not in ['unknown', 'unavailable', 'none', ''] %}
+                    {{ states(c_id) | float(0) }}
+                  {% elif outdoor_temp_valid | bool(false) %}
+                    {% set outdoor_q = (((outdoor_temp | float(0)) * 2) | round(0) / 2) %}
+                    {% if outdoor_q <= -10.0 %}
+                      {{ inputs.weather_boost_zone1 | float(0) }}
+                    {% elif outdoor_q <= 0.0 %}
+                      {{ inputs.weather_boost_zone2 | float(0) }}
+                    {% elif outdoor_q < 10.0 %}
+                      {{ inputs.weather_boost_zone3 | float(0) }}
+                    {% else %}
+                      0.0
+                    {% endif %}
+                  {% else %}
+                    0.0
+                  {% endif %}
                 {% endif %}
 
               weather_modifier: >
-                {% set temp = effective_outdoor_temp | float(99.0) %}
-                {% if not (inputs.enable_weather_compensation | bool(false)) or temp == 99.0 %}
-                  0.0
-                {% elif temp <= -10.0 %}
-                  {{ inputs.weather_boost_zone1 | float(3.0) }}
-                {% elif temp <= 0.0 %}
-                  {{ inputs.weather_boost_zone2 | float(2.0) }}
-                {% elif temp <= 10.0 %}
-                  {{ inputs.weather_boost_zone3 | float(1.0) }}
-                {% else %}
-                  0.0
-                {% endif %}
+                {{ weather_compensation_add | float(0) }}
               master_required_target_raw: >
                 {% if master_forced_min_active | bool(false) %}
                   {{ inputs.min_trv_temp | float(12) }}
@@ -2815,7 +2818,7 @@ action:
               # === Final Modification Pipeline ===
               # 1. Base Target lowered by Humidity
               master_humidity_drop: >
-                {{ -0.5 if (humidity_compensation_active | bool(false)) else 0.0 }}
+                {{ (master_humidity_dynamic_drop | float(0)) * -1 }}
 
               # 2. Raw Target (incorporating safety floors)
               master_pure_raw: >
@@ -2840,7 +2843,8 @@ action:
 
               # 5. Final Targets
               master_pure_target: >
-                {{ (master_pure_bounded | float(0)) + (master_active_modifier | float(0)) }}
+                {% set final_value = (master_pure_bounded | float(0)) + (master_active_modifier | float(0)) %}
+                {{ ((final_value * 2) | round(0) / 2) }}
 
               master_required_target_with_boost: >
                 {{ master_pure_target | float(0) }}
@@ -2897,33 +2901,6 @@ action:
                   - "{{ master_forced_min_active | bool(false) }}"
                   - "{{ (master_target_delta_abs | float(0)) > 0.5 }}"
                 sequence:
-                  - if:
-                      - condition: template
-                        value_template: "{{ inputs.enable_debug_notifications | bool(false) }}"
-                    then:
-                      - service: persistent_notification.create
-                        data:
-                          title: "🔥 Vaillant Debug"
-                          message: |
-                            Time: {{ now().strftime('%H:%M:%S') }}
-                            
-                            Master:
-                            - Base: {{ master_base_required_target }}
-                            - Final: {{ master_required_target_with_boost }}
-                            - Boost Active: {{ master_boost_active }}
-                            
-                            {% if inputs.room2_enabled | bool(false) %}
-                            Room 2: P={{ room2_presence }} | D={{ room2_demand }} | B={{ room2_needs_boost }}
-                            {% endif %}
-                            {% if inputs.room3_enabled | bool(false) %}
-                            Room 3: P={{ room3_presence }} | D={{ room3_demand }} | B={{ room3_needs_boost }}
-                            {% endif %}
-                            {% if inputs.room4_enabled | bool(false) %}
-                            Room 4: P={{ room4_presence }} | D={{ room4_demand }} | B={{ room4_needs_boost }}
-                            {% endif %}
-                            {% if inputs.room5_enabled | bool(false) %}
-                            Room 5: P={{ room5_presence }} | D={{ room5_demand }} | B={{ room5_needs_boost }}
-                            {% endif %}
                   - service: climate.set_temperature
                     target:
                       entity_id: "{{ inputs.master_climate }}"
@@ -2949,33 +2926,6 @@ action:
                   - "{{ (master_target_delta_abs | float(0)) > 0.1 }}"
                   - "{{ master_change_cooldown_ok_step55 | bool(false) }}"
                 sequence:
-                  - if:
-                      - condition: template
-                        value_template: "{{ inputs.enable_debug_notifications | bool(false) }}"
-                    then:
-                      - service: persistent_notification.create
-                        data:
-                          title: "🔥 Vaillant Debug"
-                          message: |
-                            Time: {{ now().strftime('%H:%M:%S') }}
-                            
-                            Master:
-                            - Base: {{ master_base_required_target }}
-                            - Final: {{ master_required_target_with_boost }}
-                            - Boost Active: {{ master_boost_active }}
-                            
-                            {% if inputs.room2_enabled | bool(false) %}
-                            Room 2: P={{ room2_presence }} | D={{ room2_demand }} | B={{ room2_needs_boost }}
-                            {% endif %}
-                            {% if inputs.room3_enabled | bool(false) %}
-                            Room 3: P={{ room3_presence }} | D={{ room3_demand }} | B={{ room3_needs_boost }}
-                            {% endif %}
-                            {% if inputs.room4_enabled | bool(false) %}
-                            Room 4: P={{ room4_presence }} | D={{ room4_demand }} | B={{ room4_needs_boost }}
-                            {% endif %}
-                            {% if inputs.room5_enabled | bool(false) %}
-                            Room 5: P={{ room5_presence }} | D={{ room5_demand }} | B={{ room5_needs_boost }}
-                            {% endif %}
                   - service: climate.set_temperature
                     target:
                       entity_id: "{{ inputs.master_climate }}"
@@ -2998,33 +2948,6 @@ action:
                   - "{{ master_write_allowed }}"
                   - "{{ master_change_cooldown_ok_step55 | bool(false) }}"
                 sequence:
-                  - if:
-                      - condition: template
-                        value_template: "{{ inputs.enable_debug_notifications | bool(false) }}"
-                    then:
-                      - service: persistent_notification.create
-                        data:
-                          title: "🔥 Vaillant Debug"
-                          message: |
-                            Time: {{ now().strftime('%H:%M:%S') }}
-                            
-                            Master:
-                            - Base: {{ master_base_required_target }}
-                            - Final: {{ master_required_target_with_boost }}
-                            - Boost Active: {{ master_boost_active }}
-                            
-                            {% if inputs.room2_enabled | bool(false) %}
-                            Room 2: P={{ room2_presence }} | D={{ room2_demand }} | B={{ room2_needs_boost }}
-                            {% endif %}
-                            {% if inputs.room3_enabled | bool(false) %}
-                            Room 3: P={{ room3_presence }} | D={{ room3_demand }} | B={{ room3_needs_boost }}
-                            {% endif %}
-                            {% if inputs.room4_enabled | bool(false) %}
-                            Room 4: P={{ room4_presence }} | D={{ room4_demand }} | B={{ room4_needs_boost }}
-                            {% endif %}
-                            {% if inputs.room5_enabled | bool(false) %}
-                            Room 5: P={{ room5_presence }} | D={{ room5_demand }} | B={{ room5_needs_boost }}
-                            {% endif %}
                   - service: climate.set_temperature
                     target:
                       entity_id: "{{ inputs.master_climate }}"
@@ -3042,6 +2965,48 @@ action:
                     data:
                       datetime: "{{ now() }}"
                     continue_on_error: true
+
+  # ════════════════════════════════════════════════════════════
+  # LIVE DEBUG LEITSTAND
+  # ════════════════════════════════════════════════════════════
+  - if:
+      - condition: template
+        value_template: >
+          {{
+            inputs.enable_debug_notifications | bool(false)
+            and (
+              trigger.id | default('manual') != 'scheduled'
+              or (master_write_allowed | bool(false) and master_change_cooldown_ok_step55 | bool(false))
+              or (master_forced_min_active | bool(false) and ((master_target_delta_abs | float(0)) > 0.5))
+            )
+          }}
+    then:
+      - service: persistent_notification.create
+        data:
+          notification_id: "vaillant_leitstand"
+          title: "🔥 Vaillant Leitstand Update"
+          message: >
+            *Update: {{ now().strftime('%H:%M:%S') }} | Auslöser: {{ trigger.id | default('manual') }}*
+
+            ### 🏠 MASTER THERMOSTAT
+            **{{ (state_attr(inputs.master_climate, 'friendly_name') | default('Master', true)) }}**
+            * **Modus:** {{ '❄️ Not-Aus (Fenster+Sturz)' if (master_forced_min_active | bool(false)) else ('🏖️ Abwesend' if (away_mode_entity_on | bool(false)) else '🔥 Heizbetrieb') }}
+            * **Target:** `{{ master_required_target_with_boost | float(0) | round(1) }} °C` *(Base: `{{ master_base_required_target | float(0) | round(1) }} °C`)*
+            * **Modifiers:** 🚀 Boost: {{ 'ACTIVE' if master_boost_active | bool(false) else 'OFF' }} | 🌦️ Weather: `+{{ weather_modifier | float(0) | round(1) }} °C` | 💧 Humidity: `{{ master_humidity_drop | float(0) | round(1) }} °C`
+
+            ### 🚪 RAUM STATUS
+            | Raum | Modus | Ziel | Boost | Fenster |
+            | :--- | :--- | :--- | :--- | :--- |
+            {% set now_ts = as_timestamp(now()) | float(0) %}{% set d_s = inputs.window_heat_delay | float(30) %}
+            {% if inputs.room2_enabled | bool(false) %}{% set w2 = inputs.room2_window | string %}{% set on2 = (w2 != '' and states[w2] is defined and states(w2) == 'on') %}{% set ts2 = as_timestamp(states[w2].last_changed, now_ts) | float(now_ts) if on2 else now_ts %}{% set L2 = (on2 and (now_ts - ts2) >= d_s) %}| **{{ state_attr(inputs.room2_climate, 'friendly_name') | default('Room 2', true) }}** | {{ '❄️ Frost' if L2 else ('👤 Präsenz' if room2_presence_for_demand | bool(false) else ('🗓️ Zeitplan' if room2_schedule_active_for_demand | bool(false) else ('✋ Manuell' if room2_is_manual | bool(false) else '📭 Standby (ECO)'))) }} | {{ room2_demand | float(0) | round(1) }}°C | {{ '✅' if room2_needs_boost | bool(false) else '❌' }} | {{ '⚠️ Frost' if L2 else ('🪟 Offen' if on2 else '🔒 Zu') }} |
+            {% endif %}{% if inputs.room3_enabled | bool(false) %}{% set w3 = inputs.room3_window | string %}{% set on3 = (w3 != '' and states[w3] is defined and states(w3) == 'on') %}{% set ts3 = as_timestamp(states[w3].last_changed, now_ts) | float(now_ts) if on3 else now_ts %}{% set L3 = (on3 and (now_ts - ts3) >= d_s) %}| **{{ state_attr(inputs.room3_climate, 'friendly_name') | default('Room 3', true) }}** | {{ '❄️ Frost' if L3 else ('👤 Präsenz' if room3_presence_for_demand | bool(false) else ('🗓️ Zeitplan' if room3_schedule_active_for_demand | bool(false) else ('✋ Manuell' if room3_is_manual | bool(false) else '📭 Standby (ECO)'))) }} | {{ room3_demand | float(0) | round(1) }}°C | {{ '✅' if room3_needs_boost | bool(false) else '❌' }} | {{ '⚠️ Frost' if L3 else ('🪟 Offen' if on3 else '🔒 Zu') }} |
+            {% endif %}{% if inputs.room4_enabled | bool(false) %}{% set w4 = inputs.room4_window | string %}{% set on4 = (w4 != '' and states[w4] is defined and states(w4) == 'on') %}{% set ts4 = as_timestamp(states[w4].last_changed, now_ts) | float(now_ts) if on4 else now_ts %}{% set L4 = (on4 and (now_ts - ts4) >= d_s) %}| **{{ state_attr(inputs.room4_climate, 'friendly_name') | default('Room 4', true) }}** | {{ '❄️ Frost' if L4 else ('👤 Präsenz' if room4_presence_for_demand | bool(false) else ('🗓️ Zeitplan' if room4_schedule_active_for_demand | bool(false) else ('✋ Manuell' if room4_is_manual | bool(false) else '📭 Standby (ECO)'))) }} | {{ room4_demand | float(0) | round(1) }}°C | {{ '✅' if room4_needs_boost | bool(false) else '❌' }} | {{ '⚠️ Frost' if L4 else ('🪟 Offen' if on4 else '🔒 Zu') }} |
+            {% endif %}{% if inputs.room5_enabled | bool(false) %}{% set w5 = inputs.room5_window | string %}{% set on5 = (w5 != '' and states[w5] is defined and states(w5) == 'on') %}{% set ts5 = as_timestamp(states[w5].last_changed, now_ts) | float(now_ts) if on5 else now_ts %}{% set L5 = (on5 and (now_ts - ts5) >= d_s) %}| **{{ state_attr(inputs.room5_climate, 'friendly_name') | default('Room 5', true) }}** | {{ '❄️ Frost' if L5 else ('👤 Präsenz' if room5_presence_for_demand | bool(false) else ('🗓️ Zeitplan' if room5_schedule_active_for_demand | bool(false) else ('✋ Manuell' if room5_is_manual | bool(false) else '📭 Standby (ECO)'))) }} | {{ room5_demand | float(0) | round(1) }}°C | {{ '✅' if room5_needs_boost | bool(false) else '❌' }} | {{ '⚠️ Frost' if L5 else ('🪟 Offen' if on5 else '🔒 Zu') }} |
+            {% endif %}
+
+            ### 🌐 API GATEWAY LIMITS
+            * **Erlaubt:** `{{ effective_max_changes_per_hour | float(0) | round(0) }}` Writes/h (Min. Intervall `{{ 3600 / effective_max_changes_per_hour | float(3) | round(0) }}s`)
+            * **Letzter Write:** vor `{{ master_last_update_age_step55 | float(0) | round(0) }}s`
 
 mode: queued
 max: 5
