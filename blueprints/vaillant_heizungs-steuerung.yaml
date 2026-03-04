@@ -1016,65 +1016,65 @@ trigger_variables:
   tv_follower1_window: !input follower1_window
   tv_follower2_window: !input follower2_window
 
-trigger:
+triggers:
   # ============================================
   # PRESENCE TRIGGERS
   # ============================================
-  - platform: state
+  - trigger: state
     entity_id: !input master_presence_sensors
     to: "on"
     for:
       minutes: !input presence_activation_delay
     id: master_presence_on
-  - platform: state
+  - trigger: state
     entity_id: !input master_presence_sensors
     to: "off"
     for:
       minutes: !input presence_deactivation_delay
     id: master_presence_off
-  - platform: state
+  - trigger: state
     entity_id: !input room2_presence_sensors
     to: "on"
     for:
       minutes: !input presence_activation_delay
     id: room2_presence_on
-  - platform: state
+  - trigger: state
     entity_id: !input room2_presence_sensors
     to: "off"
     for:
       minutes: !input presence_deactivation_delay
     id: room2_presence_off
-  - platform: state
+  - trigger: state
     entity_id: !input room3_presence_sensors
     to: "on"
     for:
       minutes: !input presence_activation_delay
     id: room3_presence_on
-  - platform: state
+  - trigger: state
     entity_id: !input room3_presence_sensors
     to: "off"
     for:
       minutes: !input presence_deactivation_delay
     id: room3_presence_off
-  - platform: state
+  - trigger: state
     entity_id: !input room4_presence_sensors
     to: "on"
     for:
       minutes: !input presence_activation_delay
     id: room4_presence_on
-  - platform: state
+  - trigger: state
     entity_id: !input room4_presence_sensors
     to: "off"
     for:
       minutes: !input presence_deactivation_delay
     id: room4_presence_off
-  - platform: state
+  - trigger: state
     entity_id: !input room5_presence_sensors
     to: "on"
     for:
       minutes: !input presence_activation_delay
     id: room5_presence_on
-  - platform: state
+  - trigger: state
     entity_id: !input room5_presence_sensors
     to: "off"
     for:
@@ -1084,63 +1084,63 @@ trigger:
   # ============================================
   # WINDOW TRIGGERS (30s OPEN-WINDOW MODE)
   # ============================================
-  - platform: template
+  - trigger: template
     value_template: >
       {{ (tv_room2_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room2_window, 'on') }}
     for:
       seconds: !input window_heat_delay
     id: room2_window_open_30s
-  - platform: template
+  - trigger: template
     value_template: >
       {{ (tv_room2_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room2_window, 'off') }}
     id: room2_window_closed
-  - platform: template
+  - trigger: template
     value_template: >
       {{ (tv_room3_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room3_window, 'on') }}
     for:
       seconds: !input window_heat_delay
     id: room3_window_open_30s
-  - platform: template
+  - trigger: template
     value_template: >
       {{ (tv_room3_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room3_window, 'off') }}
     id: room3_window_closed
-  - platform: template
+  - trigger: template
     value_template: >
       {{ (tv_room4_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room4_window, 'on') }}
     for:
       seconds: !input window_heat_delay
     id: room4_window_open_30s
-  - platform: template
+  - trigger: template
     value_template: >
       {{ (tv_room4_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room4_window, 'off') }}
     id: room4_window_closed
-  - platform: template
+  - trigger: template
     value_template: >
       {{ (tv_room5_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room5_window, 'on') }}
     for:
       seconds: !input window_heat_delay
     id: room5_window_open_30s
-  - platform: template
+  - trigger: template
     value_template: >
       {{ (tv_room5_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room5_window, 'off') }}
     id: room5_window_closed
-  - platform: template
+  - trigger: template
     value_template: >
       {{ tv_follower1_window | string not in ['', 'sensor.none', 'none'] and is_state(tv_follower1_window, 'on') }}
     for:
       seconds: !input window_heat_delay
     id: follower1_window_open_30s
-  - platform: template
+  - trigger: template
     value_template: >
       {{ tv_follower1_window | string not in ['', 'sensor.none', 'none'] and is_state(tv_follower1_window, 'off') }}
     id: follower1_window_closed
-  - platform: template
+  - trigger: template
     value_template: >
       {{ tv_follower2_window | string not in ['', 'sensor.none', 'none'] and is_state(tv_follower2_window, 'on') }}
     for:
       seconds: !input window_heat_delay
     id: follower2_window_open_30s
-  - platform: template
+  - trigger: template
     value_template: >
       {{ tv_follower2_window | string not in ['', 'sensor.none', 'none'] and is_state(tv_follower2_window, 'off') }}
     id: follower2_window_closed
@@ -1148,60 +1148,60 @@ trigger:
   # ============================================
   # HELPER INPUT TRIGGERS (IMMEDIATE REACTION)
   # ============================================
-  - platform: state
+  - trigger: state
     entity_id: !input eco_temp_input
     id: eco_temp_input_change
-  - platform: state
+  - trigger: state
     entity_id: !input away_temp_input
     id: away_temp_input_change
-  - platform: state
+  - trigger: state
     entity_id: !input master_comfort_input
     id: master_comfort_input_change
-  - platform: state
+  - trigger: state
     entity_id: !input room2_comfort_input
     id: room2_comfort_input_change
-  - platform: state
+  - trigger: state
     entity_id: !input room3_comfort_input
     id: room3_comfort_input_change
-  - platform: state
+  - trigger: state
     entity_id: !input room4_comfort_input
     id: room4_comfort_input_change
-  - platform: state
+  - trigger: state
     entity_id: !input room5_comfort_input
     id: room5_comfort_input_change
-  - platform: state
+  - trigger: state
     entity_id: !input away_mode_boolean
     id: away_mode_change
 
   # ============================================
   # PRESENCE HELPER TRIGGERS
   # ============================================
-  - platform: state
+  - trigger: state
     entity_id: !input master_presence_helper
     id: master_presence_helper_change
-  - platform: state
+  - trigger: state
     entity_id: !input room2_presence_helper
     id: room2_presence_helper_change
-  - platform: state
+  - trigger: state
     entity_id: !input room3_presence_helper
     id: room3_presence_helper_change
-  - platform: state
+  - trigger: state
     entity_id: !input room4_presence_helper
     id: room4_presence_helper_change
-  - platform: state
+  - trigger: state
     entity_id: !input room5_presence_helper
     id: room5_presence_helper_change
 
   # ============================================
   # SCHEDULED TRIGGER (for temp logic)
   # ============================================
-  - platform: time_pattern
+  - trigger: time_pattern
     minutes: "/5"
     id: scheduled
 
-condition: []
+conditions: []
 
-action:
+actions:
   # ============================================
   # PRESENCE STATE MANAGEMENT
   # ============================================
@@ -1223,14 +1223,14 @@ action:
               presence_helper_entity: !input master_presence_helper
           - condition: template
             value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
-          - service: input_boolean.turn_on
+          - action: input_boolean.turn_on
             target:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
                 value_template: "{{ enable_debug_notifications | bool(false) }}"
             then:
-              - service: system_log.write
+              - action: system_log.write
                 data:
                   message: "Vaillant Blueprint: Master Presence ACTIVATED (sensor ON >{{ presence_activation_delay }}min)"
                   level: info
@@ -1243,14 +1243,14 @@ action:
               presence_helper_entity: !input master_presence_helper
           - condition: template
             value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
-          - service: input_boolean.turn_off
+          - action: input_boolean.turn_off
             target:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
                 value_template: "{{ enable_debug_notifications | bool(false) }}"
             then:
-              - service: system_log.write
+              - action: system_log.write
                 data:
                   message: "Vaillant Blueprint: Master Presence DEACTIVATED (sensor OFF >{{ presence_deactivation_delay }}min)"
                   level: info
@@ -1263,14 +1263,14 @@ action:
               presence_helper_entity: !input room2_presence_helper
           - condition: template
             value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
-          - service: input_boolean.turn_on
+          - action: input_boolean.turn_on
             target:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
                 value_template: "{{ enable_debug_notifications | bool(false) }}"
             then:
-              - service: system_log.write
+              - action: system_log.write
                 data:
                   message: "Vaillant Blueprint: Room2 Presence ACTIVATED"
                   level: info
@@ -1283,14 +1283,14 @@ action:
               presence_helper_entity: !input room2_presence_helper
           - condition: template
             value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
-          - service: input_boolean.turn_off
+          - action: input_boolean.turn_off
             target:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
                 value_template: "{{ enable_debug_notifications | bool(false) }}"
             then:
-              - service: system_log.write
+              - action: system_log.write
                 data:
                   message: "Vaillant Blueprint: Room2 Presence DEACTIVATED"
                   level: info
@@ -1303,14 +1303,14 @@ action:
               presence_helper_entity: !input room3_presence_helper
           - condition: template
             value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
-          - service: input_boolean.turn_on
+          - action: input_boolean.turn_on
             target:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
                 value_template: "{{ enable_debug_notifications | bool(false) }}"
             then:
-              - service: system_log.write
+              - action: system_log.write
                 data:
                   message: "Vaillant Blueprint: Room3 Presence ACTIVATED"
                   level: info
@@ -1323,14 +1323,14 @@ action:
               presence_helper_entity: !input room3_presence_helper
           - condition: template
             value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
-          - service: input_boolean.turn_off
+          - action: input_boolean.turn_off
             target:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
                 value_template: "{{ enable_debug_notifications | bool(false) }}"
             then:
-              - service: system_log.write
+              - action: system_log.write
                 data:
                   message: "Vaillant Blueprint: Room3 Presence DEACTIVATED"
                   level: info
@@ -1343,14 +1343,14 @@ action:
               presence_helper_entity: !input room4_presence_helper
           - condition: template
             value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
-          - service: input_boolean.turn_on
+          - action: input_boolean.turn_on
             target:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
                 value_template: "{{ enable_debug_notifications | bool(false) }}"
             then:
-              - service: system_log.write
+              - action: system_log.write
                 data:
                   message: "Vaillant Blueprint: Room4 Presence ACTIVATED"
                   level: info
@@ -1363,14 +1363,14 @@ action:
               presence_helper_entity: !input room4_presence_helper
           - condition: template
             value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
-          - service: input_boolean.turn_off
+          - action: input_boolean.turn_off
             target:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
                 value_template: "{{ enable_debug_notifications | bool(false) }}"
             then:
-              - service: system_log.write
+              - action: system_log.write
                 data:
                   message: "Vaillant Blueprint: Room4 Presence DEACTIVATED"
                   level: info
@@ -1383,14 +1383,14 @@ action:
               presence_helper_entity: !input room5_presence_helper
           - condition: template
             value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
-          - service: input_boolean.turn_on
+          - action: input_boolean.turn_on
             target:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
                 value_template: "{{ enable_debug_notifications | bool(false) }}"
             then:
-              - service: system_log.write
+              - action: system_log.write
                 data:
                   message: "Vaillant Blueprint: Room5 Presence ACTIVATED"
                   level: info
@@ -1403,14 +1403,14 @@ action:
               presence_helper_entity: !input room5_presence_helper
           - condition: template
             value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
-          - service: input_boolean.turn_off
+          - action: input_boolean.turn_off
             target:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
                 value_template: "{{ enable_debug_notifications | bool(false) }}"
             then:
-              - service: system_log.write
+              - action: system_log.write
                 data:
                   message: "Vaillant Blueprint: Room5 Presence DEACTIVATED"
                   level: info
@@ -1636,7 +1636,7 @@ action:
       - condition: template
         value_template: "{{ inputs.enable_debug_notifications | bool(false) }}"
     then:
-      - service: system_log.write
+      - action: system_log.write
         continue_on_error: true
         data:
           message: >
@@ -1858,7 +1858,7 @@ action:
       - condition: template
         value_template: "{{ inputs.enable_debug_notifications | bool(false) }}"
     then:
-      - service: system_log.write
+      - action: system_log.write
         continue_on_error: true
         data:
           message: >
@@ -1971,7 +1971,7 @@ action:
           - "{{ summer_mode_should_be | bool(false) }}"
           - "{{ is_state(inputs.summer_mode_helper, 'off') }}"
         sequence:
-          - service: input_boolean.turn_on
+          - action: input_boolean.turn_on
             target:
               entity_id: "{{ inputs.summer_mode_helper }}"
             continue_on_error: true
@@ -1980,7 +1980,7 @@ action:
           - "{{ not (summer_mode_should_be | bool(false)) }}"
           - "{{ is_state(inputs.summer_mode_helper, 'on') }}"
         sequence:
-          - service: input_boolean.turn_off
+          - action: input_boolean.turn_off
             target:
               entity_id: "{{ inputs.summer_mode_helper }}"
             continue_on_error: true
@@ -2084,7 +2084,7 @@ action:
                   - "{{ inputs.room2_climate | string not in ['', 'sensor.none', 'none'] and states(inputs.room2_climate) not in ['unavailable', 'unknown'] }}"
                   - "{{ ((room2_temp_diff | float(0)) > (room2_setpoint_threshold | float(inputs.hysteresis | float(0.6)))) or (force_room2_setpoint_sync | bool(false)) }}"
                 sequence:
-                  - service: climate.set_temperature
+                  - action: climate.set_temperature
                     target:
                       entity_id: "{{ inputs.room2_climate }}"
                     data:
@@ -2171,7 +2171,7 @@ action:
                   - "{{ inputs.room3_climate | string not in ['', 'sensor.none', 'none'] and states(inputs.room3_climate) not in ['unavailable', 'unknown'] }}"
                   - "{{ ((room3_temp_diff | float(0)) > (room3_setpoint_threshold | float(inputs.hysteresis | float(0.6)))) or (force_room3_setpoint_sync | bool(false)) }}"
                 sequence:
-                  - service: climate.set_temperature
+                  - action: climate.set_temperature
                     target:
                       entity_id: "{{ inputs.room3_climate }}"
                     data:
@@ -2258,7 +2258,7 @@ action:
                   - "{{ inputs.room4_climate | string not in ['', 'sensor.none', 'none'] and states(inputs.room4_climate) not in ['unavailable', 'unknown'] }}"
                   - "{{ ((room4_temp_diff | float(0)) > (room4_setpoint_threshold | float(inputs.hysteresis | float(0.6)))) or (force_room4_setpoint_sync | bool(false)) }}"
                 sequence:
-                  - service: climate.set_temperature
+                  - action: climate.set_temperature
                     target:
                       entity_id: "{{ inputs.room4_climate }}"
                     data:
@@ -2345,7 +2345,7 @@ action:
                   - "{{ inputs.room5_climate | string not in ['', 'sensor.none', 'none'] and states(inputs.room5_climate) not in ['unavailable', 'unknown'] }}"
                   - "{{ ((room5_temp_diff | float(0)) > (room5_setpoint_threshold | float(inputs.hysteresis | float(0.6)))) or (force_room5_setpoint_sync | bool(false)) }}"
                 sequence:
-                  - service: climate.set_temperature
+                  - action: climate.set_temperature
                     target:
                       entity_id: "{{ inputs.room5_climate }}"
                     data:
@@ -2398,7 +2398,7 @@ action:
                   - "{{ inputs.follower1_climate | string not in ['', 'sensor.none', 'none'] and states(inputs.follower1_climate) not in ['unavailable', 'unknown'] }}"
                   - "{{ (follower1_temp_diff | float(0)) > (follower1_setpoint_threshold | float(inputs.hysteresis | float(0.6))) }}"
                 sequence:
-                  - service: climate.set_temperature
+                  - action: climate.set_temperature
                     target:
                       entity_id: "{{ inputs.follower1_climate }}"
                     data:
@@ -2451,7 +2451,7 @@ action:
                   - "{{ inputs.follower2_climate | string not in ['', 'sensor.none', 'none'] and states(inputs.follower2_climate) not in ['unavailable', 'unknown'] }}"
                   - "{{ (follower2_temp_diff | float(0)) > (follower2_setpoint_threshold | float(inputs.hysteresis | float(0.6))) }}"
                 sequence:
-                  - service: climate.set_temperature
+                  - action: climate.set_temperature
                     target:
                       entity_id: "{{ inputs.follower2_climate }}"
                     data:
@@ -2856,7 +2856,7 @@ action:
               - condition: template
                 value_template: "{{ inputs.enable_debug_notifications | bool(false) }}"
             then:
-              - service: system_log.write
+              - action: system_log.write
                 continue_on_error: true
                 data:
                   message: >
@@ -2868,13 +2868,13 @@ action:
                   - "{{ master_forced_min_active | bool(false) }}"
                   - "{{ (master_target_delta_abs | float(0)) > 0.5 }}"
                 sequence:
-                  - service: climate.set_temperature
+                  - action: climate.set_temperature
                     target:
                       entity_id: "{{ inputs.master_climate }}"
                     data:
                       temperature: "{{ master_final_target }}"
                     continue_on_error: true
-                  - service: input_datetime.set_datetime
+                  - action: input_datetime.set_datetime
                     target:
                       entity_id: "{{ inputs.master_last_write_helper }}"
                     data:
@@ -2891,7 +2891,7 @@ action:
                             ((((state_attr(inputs.master_climate, 'temperature') | float(0)) - (master_final_target | float(0))) | abs) > 0.11)
                           }}
                     then:
-                      - service: system_log.write
+                      - action: system_log.write
                         continue_on_error: true
                         data:
                           level: warning
@@ -2905,13 +2905,13 @@ action:
                   - "{{ (master_target_delta_abs | float(0)) > 0.1 }}"
                   - "{{ (master_change_cooldown_ok_step55 | bool(false)) or ((helper_input_trigger | bool(false)) and (master_needs_raise | bool(false))) }}"
                 sequence:
-                  - service: climate.set_temperature
+                  - action: climate.set_temperature
                     target:
                       entity_id: "{{ inputs.master_climate }}"
                     data:
                       temperature: "{{ master_final_target }}"
                     continue_on_error: true
-                  - service: input_datetime.set_datetime
+                  - action: input_datetime.set_datetime
                     target:
                       entity_id: "{{ inputs.master_last_write_helper }}"
                     data:
@@ -2928,7 +2928,7 @@ action:
                             ((((state_attr(inputs.master_climate, 'temperature') | float(0)) - (master_final_target | float(0))) | abs) > 0.11)
                           }}
                     then:
-                      - service: system_log.write
+                      - action: system_log.write
                         continue_on_error: true
                         data:
                           level: warning
@@ -2938,13 +2938,13 @@ action:
               - conditions:
                   - "{{ master_write_allowed | bool(false) }}"
                 sequence:
-                  - service: climate.set_temperature
+                  - action: climate.set_temperature
                     target:
                       entity_id: "{{ inputs.master_climate }}"
                     data:
                       temperature: "{{ master_final_target }}"
                     continue_on_error: true
-                  - service: input_datetime.set_datetime
+                  - action: input_datetime.set_datetime
                     target:
                       entity_id: "{{ inputs.master_last_write_helper }}"
                     data:
@@ -2961,7 +2961,7 @@ action:
                             ((((state_attr(inputs.master_climate, 'temperature') | float(0)) - (master_final_target | float(0))) | abs) > 0.11)
                           }}
                     then:
-                      - service: system_log.write
+                      - action: system_log.write
                         continue_on_error: true
                         data:
                           level: warning
@@ -2983,50 +2983,92 @@ action:
             )
           }}
     then:
-      - service: persistent_notification.create
+      - action: persistent_notification.create
         data:
           notification_id: "vaillant_leitstand"
           title: "🔥 Vaillant Leitstand ({{ now().strftime('%H:%M:%S') }})"
           message: |
             MASTER THERMOSTAT
+            BUILD: LEITSTAND_V2_MASTER_HEATING
+            RUNTIME_HINT: If you still see old layout, reload automations / restart HA
+            {% set m_target = master_final_target | default(0) | float(0) %}
+            {% set m_base = master_base_required_target | default(0) | float(0) %}
+            {% set m_forced = master_forced_min_active | default(false) | bool(false) %}
+            {% set m_away = away_mode_entity_on | default(false) | bool(false) %}
+            {% set m_boost = master_boost_active | default(false) | bool(false) %}
+            {% set m_weather = weather_modifier | default(0) | float(0) %}
+            {% set m_humidity = master_humidity_drop | default(0) | float(0) %}
             Trigger: {{ trigger_id_safe | default('manual', true) }}
             Entity: {{ inputs.master_climate | default('Vaillant_Wien Zone 1', true) }}
-            Target: {{ master_final_target | float(0) | round(1) }}°C
-            Base: {{ master_base_required_target | float(0) | round(1) }}°C
-            Modus: {{ 'Not-Aus' if (master_forced_min_active | bool(false)) else ('Abwesend' if (away_mode_entity_on | bool(false)) else 'Heizbetrieb') }}
+            Target: {{ m_target | round(1) }}°C
+            Base: {{ m_base | round(1) }}°C
+            Modus: {{ 'Not-Aus' if m_forced else ('Abwesend' if m_away else 'Heizbetrieb') }}
 
             MODIFIERS
-            Boost: {{ 'ACTIVE' if (master_boost_active | bool(false)) else 'OFF' }}
-            Weather: {{ weather_modifier | float(0) | round(1) }}°C
-            Humidity: {{ master_humidity_drop | float(0) | round(1) }}°C
+            Boost: {{ 'ACTIVE' if m_boost else 'OFF' }}
+            Weather: {{ m_weather | round(1) }}°C
+            Humidity: {{ m_humidity | round(1) }}°C
 
             RAUM STATUS
+            {% set hys = inputs.hysteresis | float(0.6) %}
             {% set climate_curr = state_attr(inputs.master_climate, 'current_temperature') | float(21) %}
-            {% set master_temp_id = inputs.master_temp_sensor | string %}
+            {% set master_temp_id = inputs.master_temp_sensor | default('') | string %}
             {% if master_temp_id not in ['', 'sensor.none', 'none'] and states(master_temp_id) not in ['unknown', 'unavailable', 'none', ''] %}
             {% set master_current_temp = states(master_temp_id) | float(climate_curr) %}
             {% else %}
             {% set master_current_temp = climate_curr %}
             {% endif %}
-            {% set master_mode = 'Zeitplan' if (master_schedule_active | bool(false)) else ('Praesenz' if (master_presence_detected | bool(false)) else ('Manual' if (master_is_manual | bool(false)) else 'Eco')) %}
-            {% set master_heating_on = ((master_final_target | float(0)) > ((master_current_temp | float(0)) + (inputs.hysteresis | float(0.6)))) and ((master_schedule_active | bool(false)) or (master_presence_detected | bool(false)) or (master_is_manual | bool(false))) %}
-            Wohnzimmer: {{ master_final_target | float(0) | round(1) }}°C | {{ master_mode }} | Heating {{ 'ON' if master_heating_on else 'OFF' }}
+            {% set master_target_safe = master_final_target | default(0) | float(0) %}
+            {% set master_sched_safe = master_schedule_active | default(false) | bool(false) %}
+            {% set master_pres_safe = master_presence_detected | default(false) | bool(false) %}
+            {% set master_man_safe = master_is_manual | default(false) | bool(false) %}
+            {% set master_mode = 'Zeitplan' if master_sched_safe else ('Praesenz' if master_pres_safe else ('Manual' if master_man_safe else 'Eco')) %}
+            {% set master_heating_on = (master_target_safe > ((master_current_temp | float(0)) + hys)) and (master_sched_safe or master_pres_safe or master_man_safe) %}
+            Wohnzimmer: {{ master_target_safe | round(1) }}°C | {{ master_mode }} | Heating {{ 'ON' if master_heating_on else 'OFF' }}
 
-            {% if inputs.room2_enabled | bool(false) %}
-            {% set room2_heating_on = (room2_active_for_demand | bool(false)) and ((room2_final_temp | float(0)) > ((room2_current_temp | default(0) | float(0)) + (inputs.hysteresis | float(0.6)))) %}
-            Schlafzimmer: {{ room2_final_temp | float(0) | round(1) }}°C | {{ 'Zeitplan' if (room2_schedule_active | bool(false)) else ('Praesenz' if (room2_presence | bool(false)) else ('Manual' if (room2_is_manual | bool(false)) else 'Eco')) }} | Boost {{ 'ON' if (room2_needs_boost | bool(false)) else 'OFF' }} | Heating {{ 'ON' if room2_heating_on else 'OFF' }}
+            {% if inputs.room2_enabled | default(false) | bool(false) %}
+            {% set r2_tgt = room2_final_temp | default(0) | float(0) %}
+            {% set r2_cur = room2_current_temp | default(21) | float(21) %}
+            {% set r2_sched = room2_schedule_active | default(false) | bool(false) %}
+            {% set r2_pres = room2_presence | default(false) | bool(false) %}
+            {% set r2_man = room2_is_manual | default(false) | bool(false) %}
+            {% set r2_act = room2_active_for_demand | default((r2_sched or r2_pres or r2_man)) | bool(false) %}
+            {% set r2_boost = room2_needs_boost | default(false) | bool(false) %}
+            {% set r2_heat = r2_act and (r2_tgt > (r2_cur + hys)) %}
+            Schlafzimmer: {{ r2_tgt | round(1) }}°C | {{ 'Zeitplan' if r2_sched else ('Praesenz' if r2_pres else ('Manual' if r2_man else 'Eco')) }} | Boost {{ 'ON' if r2_boost else 'OFF' }} | Heating {{ 'ON' if r2_heat else 'OFF' }}
             {% endif %}
-            {% if inputs.room3_enabled | bool(false) %}
-            {% set room3_heating_on = (room3_active_for_demand | bool(false)) and ((room3_final_temp | float(0)) > ((room3_current_temp | default(0) | float(0)) + (inputs.hysteresis | float(0.6)))) %}
-            Office: {{ room3_final_temp | float(0) | round(1) }}°C | {{ 'Zeitplan' if (room3_schedule_active | bool(false)) else ('Praesenz' if (room3_presence | bool(false)) else ('Manual' if (room3_is_manual | bool(false)) else 'Eco')) }} | Boost {{ 'ON' if (room3_needs_boost | bool(false)) else 'OFF' }} | Heating {{ 'ON' if room3_heating_on else 'OFF' }}
+            {% if inputs.room3_enabled | default(false) | bool(false) %}
+            {% set r3_tgt = room3_final_temp | default(0) | float(0) %}
+            {% set r3_cur = room3_current_temp | default(21) | float(21) %}
+            {% set r3_sched = room3_schedule_active | default(false) | bool(false) %}
+            {% set r3_pres = room3_presence | default(false) | bool(false) %}
+            {% set r3_man = room3_is_manual | default(false) | bool(false) %}
+            {% set r3_act = room3_active_for_demand | default((r3_sched or r3_pres or r3_man)) | bool(false) %}
+            {% set r3_boost = room3_needs_boost | default(false) | bool(false) %}
+            {% set r3_heat = r3_act and (r3_tgt > (r3_cur + hys)) %}
+            Office: {{ r3_tgt | round(1) }}°C | {{ 'Zeitplan' if r3_sched else ('Praesenz' if r3_pres else ('Manual' if r3_man else 'Eco')) }} | Boost {{ 'ON' if r3_boost else 'OFF' }} | Heating {{ 'ON' if r3_heat else 'OFF' }}
             {% endif %}
-            {% if inputs.room4_enabled | bool(false) %}
-            {% set room4_heating_on = (room4_active_for_demand | bool(false)) and ((room4_final_temp | float(0)) > ((room4_current_temp | default(0) | float(0)) + (inputs.hysteresis | float(0.6)))) %}
-            Raum4: {{ room4_final_temp | float(0) | round(1) }}°C | {{ 'Zeitplan' if (room4_schedule_active | bool(false)) else ('Praesenz' if (room4_presence | bool(false)) else ('Manual' if (room4_is_manual | bool(false)) else 'Eco')) }} | Boost {{ 'ON' if (room4_needs_boost | bool(false)) else 'OFF' }} | Heating {{ 'ON' if room4_heating_on else 'OFF' }}
+            {% if inputs.room4_enabled | default(false) | bool(false) %}
+            {% set r4_tgt = room4_final_temp | default(0) | float(0) %}
+            {% set r4_cur = room4_current_temp | default(21) | float(21) %}
+            {% set r4_sched = room4_schedule_active | default(false) | bool(false) %}
+            {% set r4_pres = room4_presence | default(false) | bool(false) %}
+            {% set r4_man = room4_is_manual | default(false) | bool(false) %}
+            {% set r4_act = room4_active_for_demand | default((r4_sched or r4_pres or r4_man)) | bool(false) %}
+            {% set r4_boost = room4_needs_boost | default(false) | bool(false) %}
+            {% set r4_heat = r4_act and (r4_tgt > (r4_cur + hys)) %}
+            Raum4: {{ r4_tgt | round(1) }}°C | {{ 'Zeitplan' if r4_sched else ('Praesenz' if r4_pres else ('Manual' if r4_man else 'Eco')) }} | Boost {{ 'ON' if r4_boost else 'OFF' }} | Heating {{ 'ON' if r4_heat else 'OFF' }}
             {% endif %}
-            {% if inputs.room5_enabled | bool(false) %}
-            {% set room5_heating_on = (room5_active_for_demand | bool(false)) and ((room5_final_temp | float(0)) > ((room5_current_temp | default(0) | float(0)) + (inputs.hysteresis | float(0.6)))) %}
-            Raum5: {{ room5_final_temp | float(0) | round(1) }}°C | {{ 'Zeitplan' if (room5_schedule_active | bool(false)) else ('Praesenz' if (room5_presence | bool(false)) else ('Manual' if (room5_is_manual | bool(false)) else 'Eco')) }} | Boost {{ 'ON' if (room5_needs_boost | bool(false)) else 'OFF' }} | Heating {{ 'ON' if room5_heating_on else 'OFF' }}
+            {% if inputs.room5_enabled | default(false) | bool(false) %}
+            {% set r5_tgt = room5_final_temp | default(0) | float(0) %}
+            {% set r5_cur = room5_current_temp | default(21) | float(21) %}
+            {% set r5_sched = room5_schedule_active | default(false) | bool(false) %}
+            {% set r5_pres = room5_presence | default(false) | bool(false) %}
+            {% set r5_man = room5_is_manual | default(false) | bool(false) %}
+            {% set r5_act = room5_active_for_demand | default((r5_sched or r5_pres or r5_man)) | bool(false) %}
+            {% set r5_boost = room5_needs_boost | default(false) | bool(false) %}
+            {% set r5_heat = r5_act and (r5_tgt > (r5_cur + hys)) %}
+            Raum5: {{ r5_tgt | round(1) }}°C | {{ 'Zeitplan' if r5_sched else ('Praesenz' if r5_pres else ('Manual' if r5_man else 'Eco')) }} | Boost {{ 'ON' if r5_boost else 'OFF' }} | Heating {{ 'ON' if r5_heat else 'OFF' }}
             {% endif %}
 
             API GATEWAY
