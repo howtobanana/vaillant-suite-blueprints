@@ -183,14 +183,6 @@ blueprint:
               min: 2
               max: 20
               step: 1
-        panic_mode_enabled:
-          name: "🚨 Panic Mode Helper (opt)"
-          description: |
-            Ein Input Boolean, der bei Aktivierung alle Thermostate zwanghaft auf Komfort stellt.
-          default: ""
-          selector:
-            entity:
-              domain: input_boolean
         master_hold_drop_after_raise_minutes:
           name: "⏱️ Hold Drop nach Raise (min)"
           description: |
@@ -1523,7 +1515,6 @@ actions:
         summer_threshold: !input summer_threshold
         summer_hysteresis: !input summer_hysteresis
         summer_mode_helper: !input summer_mode_helper
-        panic_mode_enabled: !input panic_mode_enabled
         eco_temp_input: !input eco_temp_input
         eco_temp_fixed: !input eco_temp_fixed
         away_temp_input: !input away_temp_input
@@ -1855,12 +1846,6 @@ actions:
         {% else %}
           {{ false }}
         {% endif %}
-      panic_mode_active: >
-        {% if inputs.panic_mode_enabled | string not in ['', 'sensor.none', 'none'] %}
-          {{ is_state(inputs.panic_mode_enabled, 'on') }}
-        {% else %}
-          {{ false }}
-        {% endif %}
       # ===== GROUP 3: DEMAND CALCULATION =====
       eco_temp: >
         {% if inputs.eco_temp_input | string not in ['', 'sensor.none', 'none'] %}
@@ -1955,12 +1940,10 @@ actions:
           room5_demand | float(eco_temp)
         ] | max }}
       master_target_temp: >
-        {% if panic_mode_active | bool(false) %}
-          {{ master_comfort_temp | float(inputs.master_comfort_fixed | float(21)) }}
-        {% elif away_mode_entity_on | bool(false) %}
+        {% if away_mode_entity_on | bool(false) %}
           {{ away_temp | float(inputs.away_temp_fixed | float(16)) }}
         {% else %}
-          {{ global_max_demand | float(eco_temp | float(inputs.eco_temp_fixed | float(19))) }}
+          {{ master_demand | float(eco_temp | float(inputs.eco_temp_fixed | float(19))) }}
         {% endif %}
   # ════════════════════════════════════════════════════════════
   # DEBUG LOG 2: Demand Calculation
@@ -2164,9 +2147,7 @@ actions:
                   {{ inputs.room2_comfort_fixed }}
                 {% endif %}
               room2_target_temp: >
-                {% if inputs.panic_mode_enabled | string not in ['', 'sensor.none', 'none'] and is_state(inputs.panic_mode_enabled, 'on') %}
-                  {{ inputs.room2_comfort_fixed }}
-                {% elif away_mode_entity_on | bool(false) %}
+                {% if away_mode_entity_on | bool(false) %}
                   {{ away_temp }}
                 {% elif room2_active_for_demand | bool(false) %}
                   {{ room2_comfort_temp }}
@@ -2269,9 +2250,7 @@ actions:
                   {{ inputs.room3_comfort_fixed }}
                 {% endif %}
               room3_target_temp: >
-                {% if inputs.panic_mode_enabled | string not in ['', 'sensor.none', 'none'] and is_state(inputs.panic_mode_enabled, 'on') %}
-                  {{ inputs.room3_comfort_fixed }}
-                {% elif away_mode_entity_on | bool(false) %}
+                {% if away_mode_entity_on | bool(false) %}
                   {{ away_temp }}
                 {% elif room3_active_for_demand | bool(false) %}
                   {{ room3_comfort_temp }}
@@ -2374,9 +2353,7 @@ actions:
                   {{ inputs.room4_comfort_fixed }}
                 {% endif %}
               room4_target_temp: >
-                {% if inputs.panic_mode_enabled | string not in ['', 'sensor.none', 'none'] and is_state(inputs.panic_mode_enabled, 'on') %}
-                  {{ inputs.room4_comfort_fixed }}
-                {% elif away_mode_entity_on | bool(false) %}
+                {% if away_mode_entity_on | bool(false) %}
                   {{ away_temp }}
                 {% elif room4_active_for_demand | bool(false) %}
                   {{ room4_comfort_temp }}
@@ -2479,9 +2456,7 @@ actions:
                   {{ inputs.room5_comfort_fixed }}
                 {% endif %}
               room5_target_temp: >
-                {% if inputs.panic_mode_enabled | string not in ['', 'sensor.none', 'none'] and is_state(inputs.panic_mode_enabled, 'on') %}
-                  {{ inputs.room5_comfort_fixed }}
-                {% elif away_mode_entity_on | bool(false) %}
+                {% if away_mode_entity_on | bool(false) %}
                   {{ away_temp }}
                 {% elif room5_active_for_demand | bool(false) %}
                   {{ room5_comfort_temp }}
@@ -3062,7 +3037,7 @@ actions:
               master_intent_gate_ok: >
                 {{ (not (intent_layer_enabled_effective | bool(false))) or (intent_target_changed_meaningfully | bool(false)) or (helper_triggered_raise_intent | bool(false)) }}
               master_needs_global_boost: >
-                {{ (not (away_mode_active_effective | bool(false))) and ((master_set_now | float(0)) < ((global_max_demand | float(0)) - 0.1)) }}
+                {{ (not (away_mode_active_effective | bool(false))) and ((master_set_now | float(0)) < ((master_base_required_target | float(0)) - 0.1)) }}
               master_needs_global_drop: >
                 {{ (not (away_mode_active_effective | bool(false))) and ((master_set_now | float(0)) > ((master_final_target | float(0)) + 0.1)) }}
               master_significant_drop: >
