@@ -176,11 +176,11 @@ blueprint:
         max_changes_per_hour:
           name: "🔧 API: Max Writes/h"
           description: |
-            Absoluter Deckel für Vaillant Cloud Aufrufe pro Stunde (Empfehlung: 10).
+            Absoluter Deckel für Vaillant Cloud Aufrufe pro Stunde (Empfehlung: 10/h ≈ 6 Minuten Mindestabstand).
           default: 10
           selector:
             number:
-              min: 2
+              min: 5
               max: 20
               step: 1
         master_hold_drop_after_raise_minutes:
@@ -197,7 +197,7 @@ blueprint:
         master_hold_raise_after_drop_minutes:
           name: "⏱️ Hold Raise nach Drop (min)"
           description: |
-            Nach einer Absenkung werden Erhöhungen für Y Minuten gesperrt (außer Helper-Raise oder Safety-Fällen).
+            Nach einer Absenkung werden Erhöhungen für Y Minuten gesperrt (außer Safety-Fällen).
           default: 10
           selector:
             number:
@@ -205,65 +205,6 @@ blueprint:
               max: 120
               step: 1
               unit_of_measurement: "min"
-        enable_intent_layer:
-          name: "🧠 Intent Layer aktiv"
-          description: |
-            Optionaler Coalescing-Layer: schreibt Ziel-Intent in Helper und aktiviert optional Token-Bucket-Limiter.
-          default: false
-          selector:
-            boolean: {}
-        master_intent_target_helper:
-          name: "🎯 Master Intent Target Helper (opt)"
-          description: |
-            Optionaler `input_number` für den zuletzt berechneten Master-Zielwert (Intent).
-          default: ""
-          selector:
-            entity:
-              domain: input_number
-        master_intent_reason_helper:
-          name: "📝 Master Intent Reason Helper (opt)"
-          description: |
-            Optionaler `input_text` Helper für den aktuellen Intent-Grundcode.
-          default: ""
-          selector:
-            entity:
-              domain: input_text
-        api_tokens_helper:
-          name: "🪙 API Tokens Helper (opt)"
-          description: |
-            Optionaler `input_number` Helper für verfügbares Token-Bucket-Guthaben.
-          default: ""
-          selector:
-            entity:
-              domain: input_number
-        api_tokens_last_refill_helper:
-          name: "🕒 API Tokens Last Refill (opt)"
-          description: |
-            Optionaler `input_datetime` Helper für den letzten Token-Refill-Zeitpunkt.
-          default: ""
-          selector:
-            entity:
-              domain: input_datetime
-        api_tokens_per_hour:
-          name: "🪙 API Tokens/h"
-          description: |
-            Refill-Rate des Token-Buckets pro Stunde (Default entspricht Standard-API-Limit).
-          default: 10
-          selector:
-            number:
-              min: 0.5
-              max: 40
-              step: 0.5
-        api_token_capacity:
-          name: "🪙 API Token Kapazität"
-          description: |
-            Maximal speicherbare Token im Bucket (Burst-Puffer).
-          default: 10
-          selector:
-            number:
-              min: 1
-              max: 80
-              step: 0.5
 
     section_master:
       name: "🏠 Master-Raum"
@@ -1288,7 +1229,7 @@ triggers:
   # SCHEDULED TRIGGER (for temp logic)
   # ============================================
   - trigger: time_pattern
-    minutes: "/5"
+    minutes: "/3"
     id: scheduled
 
 conditions: []
@@ -1529,13 +1470,6 @@ actions:
         max_changes_per_hour: !input max_changes_per_hour
         master_hold_drop_after_raise_minutes: !input master_hold_drop_after_raise_minutes
         master_hold_raise_after_drop_minutes: !input master_hold_raise_after_drop_minutes
-        enable_intent_layer: !input enable_intent_layer
-        master_intent_target_helper: !input master_intent_target_helper
-        master_intent_reason_helper: !input master_intent_reason_helper
-        api_tokens_helper: !input api_tokens_helper
-        api_tokens_last_refill_helper: !input api_tokens_last_refill_helper
-        api_tokens_per_hour: !input api_tokens_per_hour
-        api_token_capacity: !input api_token_capacity
         enable_weather_compensation: !input enable_weather_compensation
         weather_compensation_sensor: !input weather_compensation_sensor
         weather_boost_zone1: !input weather_boost_zone1
@@ -3022,27 +2956,15 @@ actions:
                 {% else %}
                   sync
                 {% endif %}
-              intent_layer_enabled_effective: >
-                {{ (inputs.enable_intent_layer | bool(false)) and (inputs.master_intent_target_helper | string not in ['', 'sensor.none', 'none']) }}
-              intent_reason_helper_configured: >
-                {{ inputs.master_intent_reason_helper | string not in ['', 'sensor.none', 'none'] }}
-              intent_target_changed_meaningfully: >
-                {% if not (intent_layer_enabled_effective | bool(false)) %}
-                  {{ true }}
-                {% else %}
-                  {{ (master_target_delta_abs | float(0)) > (inputs.hysteresis | float(0.6)) }}
-                {% endif %}
-              helper_triggered_raise_intent: >
-                {{ (helper_input_trigger | bool(false)) and ((master_final_target | float(0)) > ((master_set_now | float(0)) + (inputs.hysteresis | float(0.6)))) }}
-              master_intent_gate_ok: >
-                {{ (not (intent_layer_enabled_effective | bool(false))) or (intent_target_changed_meaningfully | bool(false)) or (helper_triggered_raise_intent | bool(false)) }}
               master_needs_global_boost: >
                 {{ (not (away_mode_active_effective | bool(false))) and ((master_set_now | float(0)) < ((master_base_required_target | float(0)) - 0.1)) }}
               master_needs_global_drop: >
                 {{ (not (away_mode_active_effective | bool(false))) and ((master_set_now | float(0)) > ((master_final_target | float(0)) + 0.1)) }}
               master_significant_drop: >
                 {{ ((master_set_now | float(0)) - (master_final_target | float(0))) > 2.0 }}
-              effective_max_changes_per_hour: "{{ [inputs.max_changes_per_hour | float(3), 2] | max }}"
+              max_changes_per_hour_effective: "{{ [[inputs.max_changes_per_hour | float(10), 5] | max, 20] | min }}"
+              cooldown_seconds: >
+                {{ 3600 / (max_changes_per_hour_effective | float(10)) }}
               # API Write Tracking: Letzter erfolgreicher Write an Master-Thermostat
               master_last_update_age_step55: >
                 {% set entity = inputs.master_last_write_helper | string %}
@@ -3058,7 +2980,7 @@ actions:
                   {{ 999999 }}
                 {% endif %}
               master_change_cooldown_ok_step55: >
-                {{ (master_last_update_age_step55 | float(999999)) >= (3600 / (effective_max_changes_per_hour | float(3))) }}
+                {{ (master_last_update_age_step55 | float(999999)) >= (cooldown_seconds | float(360)) }}
               master_last_write_kind_configured: >
                 {{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}
               master_last_write_kind: >
@@ -3083,78 +3005,16 @@ actions:
                   and
                   ((master_last_update_age_step55 | float(999999)) < (master_hold_raise_after_drop_seconds | float(600)))
                 }}
-              token_bucket_enabled: >
-                {{
-                  (intent_layer_enabled_effective | bool(false))
-                  and
-                  (inputs.api_tokens_helper | string not in ['', 'sensor.none', 'none'])
-                  and
-                  (inputs.api_tokens_last_refill_helper | string not in ['', 'sensor.none', 'none'])
-                }}
-              api_tokens_per_hour_effective: >
-                {% set tph = inputs.api_tokens_per_hour | float(inputs.max_changes_per_hour | float(10)) %}
-                {{ [tph, 0.1] | max }}
-              api_token_capacity_effective: >
-                {% set cap = inputs.api_token_capacity | float(api_tokens_per_hour_effective | float(10)) %}
-                {{ [cap, api_tokens_per_hour_effective | float(10)] | max }}
-              api_tokens_stored: >
-                {% if (token_bucket_enabled | bool(false)) and (states(inputs.api_tokens_helper) not in ['unknown', 'unavailable', 'none', '']) %}
-                  {% set raw = states(inputs.api_tokens_helper) | float(api_token_capacity_effective | float(0)) %}
-                {% else %}
-                  {% set raw = api_token_capacity_effective | float(0) %}
-                {% endif %}
-                {{ [[raw, 0.0] | max, api_token_capacity_effective | float(0)] | min }}
-              api_last_refill_ts: >
-                {% set now_ts = as_timestamp(now()) | float(0) %}
-                {% if (token_bucket_enabled | bool(false)) and (states[inputs.api_tokens_last_refill_helper] is defined) and (states(inputs.api_tokens_last_refill_helper) not in ['unknown', 'unavailable', 'none', '']) %}
-                  {% set ts = state_attr(inputs.api_tokens_last_refill_helper, 'timestamp') | float(now_ts) %}
-                  {{ ts if ts > 0 else now_ts }}
-                {% else %}
-                  {{ now_ts }}
-                {% endif %}
-              api_elapsed_seconds: >
-                {% set now_ts = as_timestamp(now()) | float(0) %}
-                {{ [0.0, (now_ts - (api_last_refill_ts | float(now_ts)))] | max }}
-              api_refill_tokens: >
-                {% if token_bucket_enabled | bool(false) %}
-                  {{ ((api_elapsed_seconds | float(0)) / 3600.0) * (api_tokens_per_hour_effective | float(0)) }}
-                {% else %}
-                  0.0
-                {% endif %}
-              api_tokens_recomputed: >
-                {% set merged = (api_tokens_stored | float(0)) + (api_refill_tokens | float(0)) %}
-                {{ [[merged, 0.0] | max, api_token_capacity_effective | float(0)] | min }}
-              api_tokens_should_persist: >
-                {{
-                  (token_bucket_enabled | bool(false))
-                  and
-                  ((((api_tokens_recomputed | float(0)) - (api_tokens_stored | float(0))) | abs) >= 0.1
-                  or ((api_elapsed_seconds | float(0)) >= 300))
-                }}
-              api_tokens_available_for_write: >
-                {% if token_bucket_enabled | bool(false) %}
-                  {{ api_tokens_recomputed | float(0) }}
-                {% else %}
-                  999.0
-                {% endif %}
-              api_tokens_after_write: >
-                {% set next_tokens = (api_tokens_available_for_write | float(0)) - 1.0 %}
-                {{ [[next_tokens, 0.0] | max, api_token_capacity_effective | float(0)] | min }}
-              master_token_gate_ok: >
-                {{ (not (token_bucket_enabled | bool(false))) or ((api_tokens_available_for_write | float(0)) >= 1.0) }}
               master_needs_raise: >
                 {{ (master_final_target | float(0)) > ((master_set_now | float(0)) + (inputs.hysteresis | float(0.6))) }}
-              master_stuck_protection_active: >
-                {{ (master_needs_raise | bool(false)) and ((master_last_update_age_step55 | float(0)) >= 1800) }}
               master_raise_allowed: >
                 {{
                   (master_needs_raise | bool(false))
                   and
-                  ((master_change_cooldown_ok_step55 | bool(false)) or (helper_input_trigger | bool(false)) or ((master_target_delta_abs | float(0)) > 3.0) or (master_stuck_protection_active | bool(false)))
+                  (master_change_cooldown_ok_step55 | bool(false))
                   and
                   (
                     (not (master_raise_hold_active | bool(false)))
-                    or (helper_input_trigger | bool(false))
                     or (master_forced_min_active | bool(false))
                     or (away_mode_active_effective | bool(false))
                   )
@@ -3163,7 +3023,7 @@ actions:
                 {{
                   (master_needs_global_drop | bool(false))
                   and
-                  ((master_change_cooldown_ok_step55 | bool(false)) or (helper_input_trigger | bool(false)))
+                  (master_change_cooldown_ok_step55 | bool(false))
                   and
                   (
                     (not (master_drop_hold_active | bool(false)))
@@ -3176,10 +3036,6 @@ actions:
                   (not (master_forced_min_active | bool(false)))
                   and
                   ((master_raise_allowed | bool(false)) or (master_drop_allowed | bool(false)))
-                  and
-                  (master_intent_gate_ok | bool(false))
-                  and
-                  (master_token_gate_ok | bool(false))
                 }}
               master_hvac_action: >
                 {{ state_attr(inputs.master_climate, 'hvac_action') | default('n/a', true) }}
@@ -3226,42 +3082,6 @@ actions:
                 {% else %}
                   {{ ns.items | join(',') }}
                 {% endif %}
-          - if:
-              - condition: template
-                value_template: "{{ intent_layer_enabled_effective | bool(false) }}"
-            then:
-              - action: input_number.set_value
-                target:
-                  entity_id: "{{ inputs.master_intent_target_helper }}"
-                data:
-                  value: "{{ master_final_target | float(0) }}"
-                continue_on_error: true
-              - if:
-                  - condition: template
-                    value_template: "{{ intent_reason_helper_configured | bool(false) }}"
-                then:
-                  - action: input_text.set_value
-                    target:
-                      entity_id: "{{ inputs.master_intent_reason_helper }}"
-                    data:
-                      value: "{{ master_reason | string }}"
-                    continue_on_error: true
-          - if:
-              - condition: template
-                value_template: "{{ api_tokens_should_persist | bool(false) }}"
-            then:
-              - action: input_number.set_value
-                target:
-                  entity_id: "{{ inputs.api_tokens_helper }}"
-                data:
-                  value: "{{ api_tokens_recomputed | float(0) }}"
-                continue_on_error: true
-              - action: input_datetime.set_datetime
-                target:
-                  entity_id: "{{ inputs.api_tokens_last_refill_helper }}"
-                data:
-                  datetime: "{{ now() }}"
-                continue_on_error: true
           # ════════════════════════════════════════════════════════════
           # DEBUG LOG 3: Boost Logic
           # ════════════════════════════════════════════════════════════
@@ -3287,22 +3107,6 @@ actions:
                     data:
                       temperature: "{{ master_final_target }}"
                     continue_on_error: true
-                  - if:
-                      - condition: template
-                        value_template: "{{ token_bucket_enabled | bool(false) }}"
-                    then:
-                      - action: input_number.set_value
-                        target:
-                          entity_id: "{{ inputs.api_tokens_helper }}"
-                        data:
-                          value: "{{ api_tokens_after_write | float(0) }}"
-                        continue_on_error: true
-                      - action: input_datetime.set_datetime
-                        target:
-                          entity_id: "{{ inputs.api_tokens_last_refill_helper }}"
-                        data:
-                          datetime: "{{ now() }}"
-                        continue_on_error: true
                   - if:
                       - condition: template
                         value_template: "{{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}"
@@ -3342,9 +3146,7 @@ actions:
                   - "{{ not (master_forced_min_active | bool(false)) }}"
                   - "{{ (master_needs_global_boost | bool(false)) or (master_significant_drop | bool(false)) }}"
                   - "{{ (master_target_delta_abs | float(0)) > 0.1 }}"
-                  - "{{ (master_change_cooldown_ok_step55 | bool(false)) or ((helper_input_trigger | bool(false)) and (master_needs_raise | bool(false))) }}"
-                  - "{{ master_intent_gate_ok | bool(false) }}"
-                  - "{{ master_token_gate_ok | bool(false) }}"
+                  - "{{ master_change_cooldown_ok_step55 | bool(false) }}"
                 sequence:
                   - action: climate.set_temperature
                     target:
@@ -3352,22 +3154,6 @@ actions:
                     data:
                       temperature: "{{ master_final_target }}"
                     continue_on_error: true
-                  - if:
-                      - condition: template
-                        value_template: "{{ token_bucket_enabled | bool(false) }}"
-                    then:
-                      - action: input_number.set_value
-                        target:
-                          entity_id: "{{ inputs.api_tokens_helper }}"
-                        data:
-                          value: "{{ api_tokens_after_write | float(0) }}"
-                        continue_on_error: true
-                      - action: input_datetime.set_datetime
-                        target:
-                          entity_id: "{{ inputs.api_tokens_last_refill_helper }}"
-                        data:
-                          datetime: "{{ now() }}"
-                        continue_on_error: true
                   - if:
                       - condition: template
                         value_template: "{{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}"
@@ -3411,22 +3197,6 @@ actions:
                     data:
                       temperature: "{{ master_final_target }}"
                     continue_on_error: true
-                  - if:
-                      - condition: template
-                        value_template: "{{ token_bucket_enabled | bool(false) }}"
-                    then:
-                      - action: input_number.set_value
-                        target:
-                          entity_id: "{{ inputs.api_tokens_helper }}"
-                        data:
-                          value: "{{ api_tokens_after_write | float(0) }}"
-                        continue_on_error: true
-                      - action: input_datetime.set_datetime
-                        target:
-                          entity_id: "{{ inputs.api_tokens_last_refill_helper }}"
-                        data:
-                          datetime: "{{ now() }}"
-                        continue_on_error: true
                   - if:
                       - condition: template
                         value_template: "{{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}"
@@ -3591,7 +3361,7 @@ actions:
             {% endif %}
 
             API GATEWAY
-            Limit: {{ effective_max_changes_per_hour | float(0) | round(0) }} Writes/h
+            Limit: {{ max_changes_per_hour_effective | float(0) | round(0) }} Writes/h
             Last Write: vor {{ master_last_update_age_step55 | float(0) | round(0) }}s
 
 mode: queued
