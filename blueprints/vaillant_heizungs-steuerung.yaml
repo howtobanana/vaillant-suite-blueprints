@@ -38,36 +38,6 @@ blueprint:
         Diese Parameter bilden das stabile Fundament der Automation.
       collapsed: false
       input:
-        presence_activation_delay:
-          name: "⏱️ Präsenz Aktivierung (min)"
-          description: |
-            Verzögerung, bis ein Raum als belegt gilt. Verhindert kurzes Aufheizen bei Durchqueren.
-          default: 2
-          selector:
-            number:
-              min: 0
-              max: 10
-              step: 1
-              unit_of_measurement: "min"
-        presence_deactivation_delay:
-          name: "⏱️ Präsenz Nachlauf (min)"
-          description: |
-            Nachlaufzeit, nachdem keine Bewegung mehr erkannt wurde, bevor der Raum auf Eco abfällt.
-          default: 30
-          selector:
-            number:
-              min: 15
-              max: 120
-              step: 5
-              unit_of_measurement: "min"
-        panic_mode_enabled:
-          name: "🚨 Panic Mode Helper (opt)"
-          description: |
-            Ein Input Boolean, der bei Aktivierung alle Thermostate zwanghaft auf Komfort stellt.
-          default: ""
-          selector:
-            entity:
-              domain: input_boolean
         eco_temp_input:
           name: "🌡️ Eco-Temp Helper (opt)"
           description: |
@@ -115,6 +85,17 @@ blueprint:
             entity:
               domain: input_boolean
               multiple: true
+        hysteresis:
+          name: "⚙️ Hysterese (°C)"
+          description: |
+            Latenz-Schutz: Ein TRV-Sollwert muss sich um mindestens diesen Wert ändern, bevor gesendet wird.
+          default: 0.6
+          selector:
+            number:
+              min: 0.1
+              max: 1.0
+              step: 0.1
+              unit_of_measurement: "°C"
         min_trv_temp:
           name: "♨️ TRV Minimum (°C)"
           description: |
@@ -137,6 +118,17 @@ blueprint:
               max: 300
               step: 5
               unit_of_measurement: "s"
+        window_close_settle_seconds:
+          name: "⏱️ Fenster-Zu Settling (s)"
+          description: |
+            Fenster muss X Sekunden geschlossen sein, bevor wieder auf Komfort hochgeregelt werden darf.
+          default: 180
+          selector:
+            number:
+              min: 0
+              max: 600
+              step: 5
+              unit_of_measurement: "s"
         smart_drop_threshold:
           name: "📉 Smart-Drop Schwelle (°C)"
           description: |
@@ -147,17 +139,6 @@ blueprint:
               min: 0.0
               max: 5.0
               step: 0.5
-              unit_of_measurement: "°C"
-        hysteresis:
-          name: "⚙️ Hysterese (°C)"
-          description: |
-            Latenz-Schutz: Ein TRV-Sollwert muss sich um mindestens diesen Wert ändern, bevor gesendet wird.
-          default: 0.6
-          selector:
-            number:
-              min: 0.1
-              max: 1.0
-              step: 0.1
               unit_of_measurement: "°C"
         helper_input_settle_seconds:
           name: "⏳ Debounce Latenz (s)"
@@ -170,6 +151,28 @@ blueprint:
               max: 120
               step: 5
               unit_of_measurement: "s"
+        presence_activation_delay:
+          name: "⏱️ Präsenz Aktivierung (min)"
+          description: |
+            Verzögerung, bis ein Raum als belegt gilt. Verhindert kurzes Aufheizen bei Durchqueren.
+          default: 2
+          selector:
+            number:
+              min: 0
+              max: 10
+              step: 1
+              unit_of_measurement: "min"
+        presence_deactivation_delay:
+          name: "⏱️ Präsenz Nachlauf (min)"
+          description: |
+            Nachlaufzeit, nachdem keine Bewegung mehr erkannt wurde, bevor der Raum auf Eco abfällt.
+          default: 30
+          selector:
+            number:
+              min: 15
+              max: 120
+              step: 5
+              unit_of_measurement: "min"
         max_changes_per_hour:
           name: "🔧 API: Max Writes/h"
           description: |
@@ -180,6 +183,95 @@ blueprint:
               min: 2
               max: 20
               step: 1
+        panic_mode_enabled:
+          name: "🚨 Panic Mode Helper (opt)"
+          description: |
+            Ein Input Boolean, der bei Aktivierung alle Thermostate zwanghaft auf Komfort stellt.
+          default: ""
+          selector:
+            entity:
+              domain: input_boolean
+        master_hold_drop_after_raise_minutes:
+          name: "⏱️ Hold Drop nach Raise (min)"
+          description: |
+            Nach einer Erhöhung werden Absenkungen für X Minuten gesperrt (außer Safety-Fällen).
+          default: 20
+          selector:
+            number:
+              min: 0
+              max: 120
+              step: 1
+              unit_of_measurement: "min"
+        master_hold_raise_after_drop_minutes:
+          name: "⏱️ Hold Raise nach Drop (min)"
+          description: |
+            Nach einer Absenkung werden Erhöhungen für Y Minuten gesperrt (außer Helper-Raise oder Safety-Fällen).
+          default: 10
+          selector:
+            number:
+              min: 0
+              max: 120
+              step: 1
+              unit_of_measurement: "min"
+        enable_intent_layer:
+          name: "🧠 Intent Layer aktiv"
+          description: |
+            Optionaler Coalescing-Layer: schreibt Ziel-Intent in Helper und aktiviert optional Token-Bucket-Limiter.
+          default: false
+          selector:
+            boolean: {}
+        master_intent_target_helper:
+          name: "🎯 Master Intent Target Helper (opt)"
+          description: |
+            Optionaler `input_number` für den zuletzt berechneten Master-Zielwert (Intent).
+          default: ""
+          selector:
+            entity:
+              domain: input_number
+        master_intent_reason_helper:
+          name: "📝 Master Intent Reason Helper (opt)"
+          description: |
+            Optionaler `input_text` Helper für den aktuellen Intent-Grundcode.
+          default: ""
+          selector:
+            entity:
+              domain: input_text
+        api_tokens_helper:
+          name: "🪙 API Tokens Helper (opt)"
+          description: |
+            Optionaler `input_number` Helper für verfügbares Token-Bucket-Guthaben.
+          default: ""
+          selector:
+            entity:
+              domain: input_number
+        api_tokens_last_refill_helper:
+          name: "🕒 API Tokens Last Refill (opt)"
+          description: |
+            Optionaler `input_datetime` Helper für den letzten Token-Refill-Zeitpunkt.
+          default: ""
+          selector:
+            entity:
+              domain: input_datetime
+        api_tokens_per_hour:
+          name: "🪙 API Tokens/h"
+          description: |
+            Refill-Rate des Token-Buckets pro Stunde (Default entspricht Standard-API-Limit).
+          default: 10
+          selector:
+            number:
+              min: 0.5
+              max: 40
+              step: 0.5
+        api_token_capacity:
+          name: "🪙 API Token Kapazität"
+          description: |
+            Maximal speicherbare Token im Bucket (Burst-Puffer).
+          default: 10
+          selector:
+            number:
+              min: 1
+              max: 80
+              step: 0.5
 
     section_master:
       name: "🏠 Master-Raum"
@@ -200,22 +292,6 @@ blueprint:
           selector:
             entity:
               domain: climate
-        master_last_write_helper:
-          name: "📝 Master Last Write Tracker"
-          description: |
-            **Pflicht-Helper für API-Cooldown-Tracking.**
-
-            **Typ:** `input_datetime` (mit Datum + Uhrzeit).
-
-            Dieser Helper speichert den Zeitstempel des letzten erfolgreichen API-Writes an den Master-Thermostat.
-
-            ⚠️ **NICHT manuell ändern!** Wird automatisch vom Blueprint verwaltet.
-
-            **Erstellen in Home Assistant:**
-            Einstellungen → Geräte & Dienste → Helfer → Helfer erstellen → Datum und/oder Uhrzeit → Name: "Vaillant Master Last Write" → Datum UND Uhrzeit aktivieren.
-          selector:
-            entity:
-              domain: input_datetime
         master_comfort_input:
           name: "🌡️ Master Komfort Helper (opt)"
           description: |
@@ -250,6 +326,26 @@ blueprint:
           selector:
             entity:
               domain: schedule
+        enable_master_presence_priority:
+          name: "👑 Master gewinnt bei Präsenz"
+          description: |
+
+            Aktiviert Vorrang des Master-Raums gegenüber isolierten Räumen bei Präsenz.
+
+          default: false
+          selector:
+            boolean:
+        master_presence_priority_helper:
+          name: "🧩 Master-Priorität Helper (opt)"
+          description: |
+
+            Optionaler Laufzeit-Override für Master-Priorität. ON = Vorrang aktiv.
+            Erforderlicher Helfer-Typ: **Umschalter** (input_boolean).
+
+          default: ""
+          selector:
+            entity:
+              domain: input_boolean
         master_presence_sensors:
           name: "👀 Master Präsenz"
           description: |
@@ -269,26 +365,6 @@ blueprint:
             Input boolean to store master presence state. Create manually: Settings -> Helpers -> Toggle -> Name: 'Heating: Master Presence Active'
 
           default: "sensor.none"
-          selector:
-            entity:
-              domain: input_boolean
-        enable_master_presence_priority:
-          name: "👑 Master gewinnt bei Präsenz"
-          description: |
-
-            Aktiviert Vorrang des Master-Raums gegenüber isolierten Räumen bei Präsenz.
-
-          default: false
-          selector:
-            boolean:
-        master_presence_priority_helper:
-          name: "🧩 Master-Priorität Helper (opt)"
-          description: |
-
-            Optionaler Laufzeit-Override für Master-Priorität. ON = Vorrang aktiv.
-            Erforderlicher Helfer-Typ: **Umschalter** (input_boolean).
-
-          default: ""
           selector:
             entity:
               domain: input_boolean
@@ -314,6 +390,30 @@ blueprint:
             entity:
               domain: sensor
               device_class: humidity
+        master_last_write_helper:
+          name: "📝 Master Last Write Tracker"
+          description: |
+            **Pflicht-Helper für API-Cooldown-Tracking.**
+
+            **Typ:** `input_datetime` (mit Datum + Uhrzeit).
+
+            Dieser Helper speichert den Zeitstempel des letzten erfolgreichen API-Writes an den Master-Thermostat.
+
+            ⚠️ **NICHT manuell ändern!** Wird automatisch vom Blueprint verwaltet.
+
+            **Erstellen in Home Assistant:**
+            Einstellungen → Geräte & Dienste → Helfer → Helfer erstellen → Datum und/oder Uhrzeit → Name: "Vaillant Master Last Write" → Datum UND Uhrzeit aktivieren.
+          selector:
+            entity:
+              domain: input_datetime
+        master_last_write_kind_helper:
+          name: "📝 Master Last Write Kind (opt)"
+          description: |
+            Optionaler `input_text` Helper für Write-Richtung (`raise`/`drop`/`sync`) zur Anti-Cycling-Logik.
+          default: ""
+          selector:
+            entity:
+              domain: input_text
 
     section_follower_1:
       name: "🔗 Verbundener Raum 1 (z.B. Flur)"
@@ -859,43 +959,6 @@ blueprint:
         Alle Funktionen hier sind optional und additiv zur Basisregelung.
       collapsed: true
       input:
-        outdoor_temp_sensor:
-          name: "☀️ Außentemperatur (Basis-Sensor, opt)"
-          description: |
-            Basis-Außensensor für Sommerlogik und Plan-B-Fallback der Gebäude-Kompensation.
-          default: ""
-          selector:
-            entity:
-              domain: sensor
-        summer_threshold:
-          name: "☀️ Sommer-Grenzwert (°C)"
-          description: |
-            Ab diesem Wert wird Sommerbetrieb aktiv.
-          default: 18
-          selector:
-            number:
-              min: 15
-              max: 22
-              step: 0.5
-              unit_of_measurement: "°C"
-        summer_hysteresis:
-          name: "☀️ Sommer-Hysterese (°C)"
-          description: |
-            Abschaltpunkt liegt bei (Sommer-Grenzwert - Hysterese), um Takten zu vermeiden.
-          default: 1.0
-          selector:
-            number:
-              min: 0.5
-              max: 3.0
-              step: 0.5
-              unit_of_measurement: "°C"
-        summer_mode_helper:
-          name: "☀️ Sommer-Modus Helper (Pflicht für Feature)"
-          description: |
-            Speichert den Sommerzustand (input_boolean) systemweit.
-          selector:
-            entity:
-              domain: input_boolean
         enable_weather_compensation:
           name: "🌦️ Gebäude-Kompensation aktiv"
           description: |
@@ -909,6 +972,14 @@ blueprint:
             Plan A (empfohlen): Nutze einen Sensor, der direkt den Aufschlag auf den Master-Sollwert in °C liefert.
             Plan B (Fallback): Wenn leer oder ungültig, wird der Basis-Außensensor genutzt und über Zone 1-3 geregelt.
             Plan B quantisiert den Außentemperatur-Pfad auf 0,5°C Schritte, um Jitter zu reduzieren.
+          default: ""
+          selector:
+            entity:
+              domain: sensor
+        outdoor_temp_sensor:
+          name: "☀️ Außentemperatur (Basis-Sensor, opt)"
+          description: |
+            Basis-Außensensor für Sommerlogik und Plan-B-Fallback der Gebäude-Kompensation.
           default: ""
           selector:
             entity:
@@ -975,6 +1046,35 @@ blueprint:
               max: 3.0
               step: 0.5
               unit_of_measurement: "°C"
+        summer_threshold:
+          name: "☀️ Sommer-Grenzwert (°C)"
+          description: |
+            Ab diesem Wert wird Sommerbetrieb aktiv.
+          default: 18
+          selector:
+            number:
+              min: 15
+              max: 22
+              step: 0.5
+              unit_of_measurement: "°C"
+        summer_hysteresis:
+          name: "☀️ Sommer-Hysterese (°C)"
+          description: |
+            Abschaltpunkt liegt bei (Sommer-Grenzwert - Hysterese), um Takten zu vermeiden.
+          default: 1.0
+          selector:
+            number:
+              min: 0.5
+              max: 3.0
+              step: 0.5
+              unit_of_measurement: "°C"
+        summer_mode_helper:
+          name: "☀️ Sommer-Modus Helper (Pflicht für Feature)"
+          description: |
+            Speichert den Sommerzustand (input_boolean) systemweit.
+          selector:
+            entity:
+              domain: input_boolean
         enable_humidity_compensation:
           name: "🔘 Feuchte-Kompensation aktiv"
           description: |
@@ -1432,9 +1532,19 @@ actions:
         room_boost_activation_threshold: !input room_boost_activation_threshold
         min_trv_temp: !input min_trv_temp
         window_heat_delay: !input window_heat_delay
+        window_close_settle_seconds: !input window_close_settle_seconds
         smart_drop_threshold: !input smart_drop_threshold
         hysteresis: !input hysteresis
         max_changes_per_hour: !input max_changes_per_hour
+        master_hold_drop_after_raise_minutes: !input master_hold_drop_after_raise_minutes
+        master_hold_raise_after_drop_minutes: !input master_hold_raise_after_drop_minutes
+        enable_intent_layer: !input enable_intent_layer
+        master_intent_target_helper: !input master_intent_target_helper
+        master_intent_reason_helper: !input master_intent_reason_helper
+        api_tokens_helper: !input api_tokens_helper
+        api_tokens_last_refill_helper: !input api_tokens_last_refill_helper
+        api_tokens_per_hour: !input api_tokens_per_hour
+        api_token_capacity: !input api_token_capacity
         enable_weather_compensation: !input enable_weather_compensation
         weather_compensation_sensor: !input weather_compensation_sensor
         weather_boost_zone1: !input weather_boost_zone1
@@ -1445,6 +1555,7 @@ actions:
         enable_debug_notifications: !input enable_debug_notifications
         master_climate: !input master_climate
         master_last_write_helper: !input master_last_write_helper
+        master_last_write_kind_helper: !input master_last_write_kind_helper
         master_comfort_input: !input master_comfort_input
         master_comfort_fixed: !input master_comfort_fixed
         master_schedule: !input master_schedule
@@ -2030,6 +2141,22 @@ actions:
                   {% endif %}
                 {% endif %}
                 {{ ns.active | bool(false) }}
+              room2_window_closed_recently: >
+                {% set now_ts = as_timestamp(now()) | float(0) %}
+                {% set settle_s = inputs.window_close_settle_seconds | float(180) %}
+                {% set w_id = inputs.room2_window | string %}
+                {% if settle_s <= 0 %}
+                  {{ false }}
+                {% elif w_id not in ['', 'sensor.none', 'none'] and is_state(w_id, 'off') %}
+                  {% if states[w_id] is defined and states[w_id].last_changed is not none %}
+                    {% set close_ts = as_timestamp(states[w_id].last_changed, now_ts) | float(now_ts) %}
+                    {{ (now_ts - close_ts) < settle_s }}
+                  {% else %}
+                    {{ false }}
+                  {% endif %}
+                {% else %}
+                  {{ false }}
+                {% endif %}
               room2_comfort_temp: >
                 {% if inputs.room2_comfort_input | string not in ['', 'sensor.none', 'none'] %}
                   {{ states(inputs.room2_comfort_input) | float(inputs.room2_comfort_fixed) }}
@@ -2051,6 +2178,8 @@ actions:
                   {{ inputs.min_trv_temp }}
                 {% elif summer_mode | bool(false) and not (room2_active_for_demand | bool(false)) %}
                   {{ inputs.min_trv_temp }}
+                {% elif room2_window_closed_recently | bool(false) %}
+                  {{ [room2_target_temp | float(eco_temp | float(19)), eco_temp | float(19)] | min }}
                 {% else %}
                   {{ room2_target_temp }}
                 {% endif %}
@@ -2117,6 +2246,22 @@ actions:
                   {% endif %}
                 {% endif %}
                 {{ ns.active | bool(false) }}
+              room3_window_closed_recently: >
+                {% set now_ts = as_timestamp(now()) | float(0) %}
+                {% set settle_s = inputs.window_close_settle_seconds | float(180) %}
+                {% set w_id = inputs.room3_window | string %}
+                {% if settle_s <= 0 %}
+                  {{ false }}
+                {% elif w_id not in ['', 'sensor.none', 'none'] and is_state(w_id, 'off') %}
+                  {% if states[w_id] is defined and states[w_id].last_changed is not none %}
+                    {% set close_ts = as_timestamp(states[w_id].last_changed, now_ts) | float(now_ts) %}
+                    {{ (now_ts - close_ts) < settle_s }}
+                  {% else %}
+                    {{ false }}
+                  {% endif %}
+                {% else %}
+                  {{ false }}
+                {% endif %}
               room3_comfort_temp: >
                 {% if inputs.room3_comfort_input | string not in ['', 'sensor.none', 'none'] %}
                   {{ states(inputs.room3_comfort_input) | float(inputs.room3_comfort_fixed) }}
@@ -2138,6 +2283,8 @@ actions:
                   {{ inputs.min_trv_temp }}
                 {% elif summer_mode | bool(false) and not (room3_active_for_demand | bool(false)) %}
                   {{ inputs.min_trv_temp }}
+                {% elif room3_window_closed_recently | bool(false) %}
+                  {{ [room3_target_temp | float(eco_temp | float(19)), eco_temp | float(19)] | min }}
                 {% else %}
                   {{ room3_target_temp }}
                 {% endif %}
@@ -2204,6 +2351,22 @@ actions:
                   {% endif %}
                 {% endif %}
                 {{ ns.active | bool(false) }}
+              room4_window_closed_recently: >
+                {% set now_ts = as_timestamp(now()) | float(0) %}
+                {% set settle_s = inputs.window_close_settle_seconds | float(180) %}
+                {% set w_id = inputs.room4_window | string %}
+                {% if settle_s <= 0 %}
+                  {{ false }}
+                {% elif w_id not in ['', 'sensor.none', 'none'] and is_state(w_id, 'off') %}
+                  {% if states[w_id] is defined and states[w_id].last_changed is not none %}
+                    {% set close_ts = as_timestamp(states[w_id].last_changed, now_ts) | float(now_ts) %}
+                    {{ (now_ts - close_ts) < settle_s }}
+                  {% else %}
+                    {{ false }}
+                  {% endif %}
+                {% else %}
+                  {{ false }}
+                {% endif %}
               room4_comfort_temp: >
                 {% if inputs.room4_comfort_input | string not in ['', 'sensor.none', 'none'] %}
                   {{ states(inputs.room4_comfort_input) | float(inputs.room4_comfort_fixed) }}
@@ -2225,6 +2388,8 @@ actions:
                   {{ inputs.min_trv_temp }}
                 {% elif summer_mode | bool(false) and not (room4_active_for_demand | bool(false)) %}
                   {{ inputs.min_trv_temp }}
+                {% elif room4_window_closed_recently | bool(false) %}
+                  {{ [room4_target_temp | float(eco_temp | float(19)), eco_temp | float(19)] | min }}
                 {% else %}
                   {{ room4_target_temp }}
                 {% endif %}
@@ -2291,6 +2456,22 @@ actions:
                   {% endif %}
                 {% endif %}
                 {{ ns.active | bool(false) }}
+              room5_window_closed_recently: >
+                {% set now_ts = as_timestamp(now()) | float(0) %}
+                {% set settle_s = inputs.window_close_settle_seconds | float(180) %}
+                {% set w_id = inputs.room5_window | string %}
+                {% if settle_s <= 0 %}
+                  {{ false }}
+                {% elif w_id not in ['', 'sensor.none', 'none'] and is_state(w_id, 'off') %}
+                  {% if states[w_id] is defined and states[w_id].last_changed is not none %}
+                    {% set close_ts = as_timestamp(states[w_id].last_changed, now_ts) | float(now_ts) %}
+                    {{ (now_ts - close_ts) < settle_s }}
+                  {% else %}
+                    {{ false }}
+                  {% endif %}
+                {% else %}
+                  {{ false }}
+                {% endif %}
               room5_comfort_temp: >
                 {% if inputs.room5_comfort_input | string not in ['', 'sensor.none', 'none'] %}
                   {{ states(inputs.room5_comfort_input) | float(inputs.room5_comfort_fixed) }}
@@ -2312,6 +2493,8 @@ actions:
                   {{ inputs.min_trv_temp }}
                 {% elif summer_mode | bool(false) and not (room5_active_for_demand | bool(false)) %}
                   {{ inputs.min_trv_temp }}
+                {% elif room5_window_closed_recently | bool(false) %}
+                  {{ [room5_target_temp | float(eco_temp | float(19)), eco_temp | float(19)] | min }}
                 {% else %}
                   {{ room5_target_temp }}
                 {% endif %}
@@ -2371,6 +2554,22 @@ actions:
                 {% else %}
                   {{ false }}
                 {% endif %}
+              follower1_window_closed_recently: >
+                {% set now_ts = as_timestamp(now()) | float(0) %}
+                {% set settle_s = inputs.window_close_settle_seconds | float(180) %}
+                {% set w_id = inputs.follower1_window | string %}
+                {% if settle_s <= 0 %}
+                  {{ false }}
+                {% elif w_id not in ['', 'sensor.none', 'none'] and is_state(w_id, 'off') %}
+                  {% if states[w_id] is defined and states[w_id].last_changed is not none %}
+                    {% set close_ts = as_timestamp(states[w_id].last_changed, now_ts) | float(now_ts) %}
+                    {{ (now_ts - close_ts) < settle_s }}
+                  {% else %}
+                    {{ false }}
+                  {% endif %}
+                {% else %}
+                  {{ false }}
+                {% endif %}
               follower1_target_temp: >
                 {% set raw_target = (master_target_final | float(inputs.min_trv_temp)) + (inputs.follower1_offset | float(-2.0)) %}
                 {{ [inputs.min_trv_temp | float(12), raw_target] | max }}
@@ -2379,6 +2578,8 @@ actions:
                   {{ inputs.min_trv_temp }}
                 {% elif summer_mode | bool(false) and not (master_schedule_active | bool(false) or master_presence_detected | bool(false)) %}
                   {{ inputs.min_trv_temp }}
+                {% elif follower1_window_closed_recently | bool(false) %}
+                  {{ [follower1_target_temp | float(eco_temp | float(19)), eco_temp | float(19)] | min }}
                 {% else %}
                   {{ follower1_target_temp }}
                 {% endif %}
@@ -2424,6 +2625,22 @@ actions:
                 {% else %}
                   {{ false }}
                 {% endif %}
+              follower2_window_closed_recently: >
+                {% set now_ts = as_timestamp(now()) | float(0) %}
+                {% set settle_s = inputs.window_close_settle_seconds | float(180) %}
+                {% set w_id = inputs.follower2_window | string %}
+                {% if settle_s <= 0 %}
+                  {{ false }}
+                {% elif w_id not in ['', 'sensor.none', 'none'] and is_state(w_id, 'off') %}
+                  {% if states[w_id] is defined and states[w_id].last_changed is not none %}
+                    {% set close_ts = as_timestamp(states[w_id].last_changed, now_ts) | float(now_ts) %}
+                    {{ (now_ts - close_ts) < settle_s }}
+                  {% else %}
+                    {{ false }}
+                  {% endif %}
+                {% else %}
+                  {{ false }}
+                {% endif %}
               follower2_target_temp: >
                 {% set raw_target = (master_target_final | float(inputs.min_trv_temp)) + (inputs.follower2_offset | float(-2.0)) %}
                 {{ [inputs.min_trv_temp | float(12), raw_target] | max }}
@@ -2432,6 +2649,8 @@ actions:
                   {{ inputs.min_trv_temp }}
                 {% elif summer_mode | bool(false) and not (master_schedule_active | bool(false) or master_presence_detected | bool(false)) %}
                   {{ inputs.min_trv_temp }}
+                {% elif follower2_window_closed_recently | bool(false) %}
+                  {{ [follower2_target_temp | float(eco_temp | float(19)), eco_temp | float(19)] | min }}
                 {% else %}
                   {{ follower2_target_temp }}
                 {% endif %}
@@ -2585,6 +2804,10 @@ actions:
                 {% else %}
                   0.0
                 {% endif %}
+              weather_modifier_sanitized: >
+                {% set raw = weather_modifier | float(0) %}
+                {% set clamped = [[raw, 0.0] | max, 5.0] | min %}
+                {{ ((clamped * 2) | round(0) / 2) }}
               master_min: "{{ state_attr(inputs.master_climate, 'min_temp') | float(inputs.min_trv_temp | float(12)) }}"
               master_max: "{{ state_attr(inputs.master_climate, 'max_temp') | float(30) }}"
               # Room boost detection with anti-overshoot hysteresis
@@ -2802,7 +3025,7 @@ actions:
               # 4. The Turbo Package (Only active when heating is needed)
               master_active_modifier: >
                 {% set boost_add = (master_boost_amount | float(0)) if (master_boost_active | bool(false)) else 0.0 %}
-                {{ (boost_add | float(0)) + (weather_modifier | float(0)) }}
+                {{ (boost_add | float(0)) + (weather_modifier_sanitized | float(0)) }}
 
               # 5. Final Targets (single source of truth for master writes)
               master_final_raw: >
@@ -2816,6 +3039,28 @@ actions:
               master_final_target: >
                 {{ master_final_quantized | float(0) }}
               master_target_delta_abs: "{{ ((master_final_target | float(0)) - (master_set_now | float(0))) | abs }}"
+              master_write_kind_current: >
+                {% if (master_final_target | float(0)) > ((master_set_now | float(0)) + 0.1) %}
+                  raise
+                {% elif (master_final_target | float(0)) < ((master_set_now | float(0)) - 0.1) %}
+                  drop
+                {% else %}
+                  sync
+                {% endif %}
+              intent_layer_enabled_effective: >
+                {{ (inputs.enable_intent_layer | bool(false)) and (inputs.master_intent_target_helper | string not in ['', 'sensor.none', 'none']) }}
+              intent_reason_helper_configured: >
+                {{ inputs.master_intent_reason_helper | string not in ['', 'sensor.none', 'none'] }}
+              intent_target_changed_meaningfully: >
+                {% if not (intent_layer_enabled_effective | bool(false)) %}
+                  {{ true }}
+                {% else %}
+                  {{ (master_target_delta_abs | float(0)) > (inputs.hysteresis | float(0.6)) }}
+                {% endif %}
+              helper_triggered_raise_intent: >
+                {{ (helper_input_trigger | bool(false)) and ((master_final_target | float(0)) > ((master_set_now | float(0)) + (inputs.hysteresis | float(0.6)))) }}
+              master_intent_gate_ok: >
+                {{ (not (intent_layer_enabled_effective | bool(false))) or (intent_target_changed_meaningfully | bool(false)) or (helper_triggered_raise_intent | bool(false)) }}
               master_needs_global_boost: >
                 {{ (not (away_mode_active_effective | bool(false))) and ((master_set_now | float(0)) < ((global_max_demand | float(0)) - 0.1)) }}
               master_needs_global_drop: >
@@ -2839,16 +3084,209 @@ actions:
                 {% endif %}
               master_change_cooldown_ok_step55: >
                 {{ (master_last_update_age_step55 | float(999999)) >= (3600 / (effective_max_changes_per_hour | float(3))) }}
+              master_last_write_kind_configured: >
+                {{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}
+              master_last_write_kind: >
+                {% if (master_last_write_kind_configured | bool(false)) and (states(inputs.master_last_write_kind_helper) not in ['unknown', 'unavailable', 'none', '']) %}
+                  {{ states(inputs.master_last_write_kind_helper) | string | trim | lower }}
+                {% else %}
+                  sync
+                {% endif %}
+              master_hold_drop_after_raise_seconds: >
+                {{ (inputs.master_hold_drop_after_raise_minutes | float(20)) * 60 }}
+              master_hold_raise_after_drop_seconds: >
+                {{ (inputs.master_hold_raise_after_drop_minutes | float(10)) * 60 }}
+              master_drop_hold_active: >
+                {{
+                  (master_last_write_kind | string == 'raise')
+                  and
+                  ((master_last_update_age_step55 | float(999999)) < (master_hold_drop_after_raise_seconds | float(1200)))
+                }}
+              master_raise_hold_active: >
+                {{
+                  (master_last_write_kind | string == 'drop')
+                  and
+                  ((master_last_update_age_step55 | float(999999)) < (master_hold_raise_after_drop_seconds | float(600)))
+                }}
+              token_bucket_enabled: >
+                {{
+                  (intent_layer_enabled_effective | bool(false))
+                  and
+                  (inputs.api_tokens_helper | string not in ['', 'sensor.none', 'none'])
+                  and
+                  (inputs.api_tokens_last_refill_helper | string not in ['', 'sensor.none', 'none'])
+                }}
+              api_tokens_per_hour_effective: >
+                {% set tph = inputs.api_tokens_per_hour | float(inputs.max_changes_per_hour | float(10)) %}
+                {{ [tph, 0.1] | max }}
+              api_token_capacity_effective: >
+                {% set cap = inputs.api_token_capacity | float(api_tokens_per_hour_effective | float(10)) %}
+                {{ [cap, api_tokens_per_hour_effective | float(10)] | max }}
+              api_tokens_stored: >
+                {% if (token_bucket_enabled | bool(false)) and (states(inputs.api_tokens_helper) not in ['unknown', 'unavailable', 'none', '']) %}
+                  {% set raw = states(inputs.api_tokens_helper) | float(api_token_capacity_effective | float(0)) %}
+                {% else %}
+                  {% set raw = api_token_capacity_effective | float(0) %}
+                {% endif %}
+                {{ [[raw, 0.0] | max, api_token_capacity_effective | float(0)] | min }}
+              api_last_refill_ts: >
+                {% set now_ts = as_timestamp(now()) | float(0) %}
+                {% if (token_bucket_enabled | bool(false)) and (states[inputs.api_tokens_last_refill_helper] is defined) and (states(inputs.api_tokens_last_refill_helper) not in ['unknown', 'unavailable', 'none', '']) %}
+                  {% set ts = state_attr(inputs.api_tokens_last_refill_helper, 'timestamp') | float(now_ts) %}
+                  {{ ts if ts > 0 else now_ts }}
+                {% else %}
+                  {{ now_ts }}
+                {% endif %}
+              api_elapsed_seconds: >
+                {% set now_ts = as_timestamp(now()) | float(0) %}
+                {{ [0.0, (now_ts - (api_last_refill_ts | float(now_ts)))] | max }}
+              api_refill_tokens: >
+                {% if token_bucket_enabled | bool(false) %}
+                  {{ ((api_elapsed_seconds | float(0)) / 3600.0) * (api_tokens_per_hour_effective | float(0)) }}
+                {% else %}
+                  0.0
+                {% endif %}
+              api_tokens_recomputed: >
+                {% set merged = (api_tokens_stored | float(0)) + (api_refill_tokens | float(0)) %}
+                {{ [[merged, 0.0] | max, api_token_capacity_effective | float(0)] | min }}
+              api_tokens_should_persist: >
+                {{
+                  (token_bucket_enabled | bool(false))
+                  and
+                  ((((api_tokens_recomputed | float(0)) - (api_tokens_stored | float(0))) | abs) >= 0.1
+                  or ((api_elapsed_seconds | float(0)) >= 300))
+                }}
+              api_tokens_available_for_write: >
+                {% if token_bucket_enabled | bool(false) %}
+                  {{ api_tokens_recomputed | float(0) }}
+                {% else %}
+                  999.0
+                {% endif %}
+              api_tokens_after_write: >
+                {% set next_tokens = (api_tokens_available_for_write | float(0)) - 1.0 %}
+                {{ [[next_tokens, 0.0] | max, api_token_capacity_effective | float(0)] | min }}
+              master_token_gate_ok: >
+                {{ (not (token_bucket_enabled | bool(false))) or ((api_tokens_available_for_write | float(0)) >= 1.0) }}
               master_needs_raise: >
                 {{ (master_final_target | float(0)) > ((master_set_now | float(0)) + (inputs.hysteresis | float(0.6))) }}
               master_stuck_protection_active: >
                 {{ (master_needs_raise | bool(false)) and ((master_last_update_age_step55 | float(0)) >= 1800) }}
               master_raise_allowed: >
-                {{ (master_needs_raise | bool(false)) and ((master_change_cooldown_ok_step55 | bool(false)) or (helper_input_trigger | bool(false)) or ((master_target_delta_abs | float(0)) > 3.0) or (master_stuck_protection_active | bool(false))) }}
+                {{
+                  (master_needs_raise | bool(false))
+                  and
+                  ((master_change_cooldown_ok_step55 | bool(false)) or (helper_input_trigger | bool(false)) or ((master_target_delta_abs | float(0)) > 3.0) or (master_stuck_protection_active | bool(false)))
+                  and
+                  (
+                    (not (master_raise_hold_active | bool(false)))
+                    or (helper_input_trigger | bool(false))
+                    or (master_forced_min_active | bool(false))
+                    or (away_mode_active_effective | bool(false))
+                  )
+                }}
               master_drop_allowed: >
-                {{ (master_needs_global_drop | bool(false)) and ((master_change_cooldown_ok_step55 | bool(false)) or (helper_input_trigger | bool(false))) }}
+                {{
+                  (master_needs_global_drop | bool(false))
+                  and
+                  ((master_change_cooldown_ok_step55 | bool(false)) or (helper_input_trigger | bool(false)))
+                  and
+                  (
+                    (not (master_drop_hold_active | bool(false)))
+                    or (master_forced_min_active | bool(false))
+                    or (away_mode_active_effective | bool(false))
+                  )
+                }}
               master_write_allowed: >
-                {{ (not (master_forced_min_active | bool(false))) and ((master_raise_allowed | bool(false)) or (master_drop_allowed | bool(false))) }}
+                {{
+                  (not (master_forced_min_active | bool(false)))
+                  and
+                  ((master_raise_allowed | bool(false)) or (master_drop_allowed | bool(false)))
+                  and
+                  (master_intent_gate_ok | bool(false))
+                  and
+                  (master_token_gate_ok | bool(false))
+                }}
+              master_hvac_action: >
+                {{ state_attr(inputs.master_climate, 'hvac_action') | default('n/a', true) }}
+              master_state: >
+                {% if master_forced_min_active | bool(false) %}
+                  FORCED_MIN
+                {% elif away_mode_active_effective | bool(false) %}
+                  AWAY
+                {% elif (summer_mode | bool(false)) and (not (master_needs_raise | bool(false))) %}
+                  SUMMER_MIN
+                {% elif (master_needs_raise | bool(false)) or (master_boost_active | bool(false)) %}
+                  HEATING
+                {% else %}
+                  ECO
+                {% endif %}
+              master_reason: >
+                {% set ns = namespace(items=[]) %}
+                {% if master_forced_min_active | bool(false) %}
+                  {% set ns.items = ns.items + ['forced_min'] %}
+                {% endif %}
+                {% if away_mode_active_effective | bool(false) %}
+                  {% set ns.items = ns.items + ['away_mode'] %}
+                {% endif %}
+                {% if (summer_mode | bool(false)) and (not (master_forced_min_active | bool(false))) %}
+                  {% set ns.items = ns.items + ['summer_mode'] %}
+                {% endif %}
+                {% if (isolated_room_demand_targets | default([]) | length) > 0 %}
+                  {% set ns.items = ns.items + ['room_demand'] %}
+                {% endif %}
+                {% if master_boost_active | bool(false) %}
+                  {% set ns.items = ns.items + ['boost'] %}
+                {% endif %}
+                {% if (weather_modifier_sanitized | float(0)) > 0 %}
+                  {% set ns.items = ns.items + ['weather'] %}
+                {% endif %}
+                {% if (master_humidity_drop | float(0)) < 0 %}
+                  {% set ns.items = ns.items + ['humidity_drop'] %}
+                {% endif %}
+                {% if (master_final_raw | float(0)) > (master_max | float(30)) %}
+                  {% set ns.items = ns.items + ['capped_by_max'] %}
+                {% endif %}
+                {% if ns.items | length == 0 %}
+                  base
+                {% else %}
+                  {{ ns.items | join(',') }}
+                {% endif %}
+          - if:
+              - condition: template
+                value_template: "{{ intent_layer_enabled_effective | bool(false) }}"
+            then:
+              - action: input_number.set_value
+                target:
+                  entity_id: "{{ inputs.master_intent_target_helper }}"
+                data:
+                  value: "{{ master_final_target | float(0) }}"
+                continue_on_error: true
+              - if:
+                  - condition: template
+                    value_template: "{{ intent_reason_helper_configured | bool(false) }}"
+                then:
+                  - action: input_text.set_value
+                    target:
+                      entity_id: "{{ inputs.master_intent_reason_helper }}"
+                    data:
+                      value: "{{ master_reason | string }}"
+                    continue_on_error: true
+          - if:
+              - condition: template
+                value_template: "{{ api_tokens_should_persist | bool(false) }}"
+            then:
+              - action: input_number.set_value
+                target:
+                  entity_id: "{{ inputs.api_tokens_helper }}"
+                data:
+                  value: "{{ api_tokens_recomputed | float(0) }}"
+                continue_on_error: true
+              - action: input_datetime.set_datetime
+                target:
+                  entity_id: "{{ inputs.api_tokens_last_refill_helper }}"
+                data:
+                  datetime: "{{ now() }}"
+                continue_on_error: true
           # ════════════════════════════════════════════════════════════
           # DEBUG LOG 3: Boost Logic
           # ════════════════════════════════════════════════════════════
@@ -2874,6 +3312,32 @@ actions:
                     data:
                       temperature: "{{ master_final_target }}"
                     continue_on_error: true
+                  - if:
+                      - condition: template
+                        value_template: "{{ token_bucket_enabled | bool(false) }}"
+                    then:
+                      - action: input_number.set_value
+                        target:
+                          entity_id: "{{ inputs.api_tokens_helper }}"
+                        data:
+                          value: "{{ api_tokens_after_write | float(0) }}"
+                        continue_on_error: true
+                      - action: input_datetime.set_datetime
+                        target:
+                          entity_id: "{{ inputs.api_tokens_last_refill_helper }}"
+                        data:
+                          datetime: "{{ now() }}"
+                        continue_on_error: true
+                  - if:
+                      - condition: template
+                        value_template: "{{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}"
+                    then:
+                      - action: input_text.set_value
+                        target:
+                          entity_id: "{{ inputs.master_last_write_kind_helper }}"
+                        data:
+                          value: "{{ master_write_kind_current | string }}"
+                        continue_on_error: true
                   - action: input_datetime.set_datetime
                     target:
                       entity_id: "{{ inputs.master_last_write_helper }}"
@@ -2904,6 +3368,8 @@ actions:
                   - "{{ (master_needs_global_boost | bool(false)) or (master_significant_drop | bool(false)) }}"
                   - "{{ (master_target_delta_abs | float(0)) > 0.1 }}"
                   - "{{ (master_change_cooldown_ok_step55 | bool(false)) or ((helper_input_trigger | bool(false)) and (master_needs_raise | bool(false))) }}"
+                  - "{{ master_intent_gate_ok | bool(false) }}"
+                  - "{{ master_token_gate_ok | bool(false) }}"
                 sequence:
                   - action: climate.set_temperature
                     target:
@@ -2911,6 +3377,32 @@ actions:
                     data:
                       temperature: "{{ master_final_target }}"
                     continue_on_error: true
+                  - if:
+                      - condition: template
+                        value_template: "{{ token_bucket_enabled | bool(false) }}"
+                    then:
+                      - action: input_number.set_value
+                        target:
+                          entity_id: "{{ inputs.api_tokens_helper }}"
+                        data:
+                          value: "{{ api_tokens_after_write | float(0) }}"
+                        continue_on_error: true
+                      - action: input_datetime.set_datetime
+                        target:
+                          entity_id: "{{ inputs.api_tokens_last_refill_helper }}"
+                        data:
+                          datetime: "{{ now() }}"
+                        continue_on_error: true
+                  - if:
+                      - condition: template
+                        value_template: "{{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}"
+                    then:
+                      - action: input_text.set_value
+                        target:
+                          entity_id: "{{ inputs.master_last_write_kind_helper }}"
+                        data:
+                          value: "{{ master_write_kind_current | string }}"
+                        continue_on_error: true
                   - action: input_datetime.set_datetime
                     target:
                       entity_id: "{{ inputs.master_last_write_helper }}"
@@ -2944,6 +3436,32 @@ actions:
                     data:
                       temperature: "{{ master_final_target }}"
                     continue_on_error: true
+                  - if:
+                      - condition: template
+                        value_template: "{{ token_bucket_enabled | bool(false) }}"
+                    then:
+                      - action: input_number.set_value
+                        target:
+                          entity_id: "{{ inputs.api_tokens_helper }}"
+                        data:
+                          value: "{{ api_tokens_after_write | float(0) }}"
+                        continue_on_error: true
+                      - action: input_datetime.set_datetime
+                        target:
+                          entity_id: "{{ inputs.api_tokens_last_refill_helper }}"
+                        data:
+                          datetime: "{{ now() }}"
+                        continue_on_error: true
+                  - if:
+                      - condition: template
+                        value_template: "{{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}"
+                    then:
+                      - action: input_text.set_value
+                        target:
+                          entity_id: "{{ inputs.master_last_write_kind_helper }}"
+                        data:
+                          value: "{{ master_write_kind_current | string }}"
+                        continue_on_error: true
                   - action: input_datetime.set_datetime
                     target:
                       entity_id: "{{ inputs.master_last_write_helper }}"
@@ -2996,13 +3514,19 @@ actions:
             {% set m_forced = master_forced_min_active | default(false) | bool(false) %}
             {% set m_away = away_mode_entity_on | default(false) | bool(false) %}
             {% set m_boost = master_boost_active | default(false) | bool(false) %}
-            {% set m_weather = weather_modifier | default(0) | float(0) %}
+            {% set m_weather = weather_modifier_sanitized | default(0) | float(0) %}
             {% set m_humidity = master_humidity_drop | default(0) | float(0) %}
+            {% set m_state = master_state | default('ECO', true) | string %}
+            {% set m_reason = master_reason | default('base', true) | string %}
+            {% set m_hvac = master_hvac_action | default('n/a', true) | string %}
             Trigger: {{ trigger_id_safe | default('manual', true) }}
             Entity: {{ inputs.master_climate | default('Vaillant_Wien Zone 1', true) }}
             Target: {{ m_target | round(1) }}°C
             Base: {{ m_base | round(1) }}°C
             Modus: {{ 'Not-Aus' if m_forced else ('Abwesend' if m_away else 'Heizbetrieb') }}
+            State: {{ m_state }}
+            Reason: {{ m_reason }}
+            HVAC: {{ m_hvac }}
 
             MODIFIERS
             Boost: {{ 'ACTIVE' if m_boost else 'OFF' }}
@@ -3035,7 +3559,12 @@ actions:
             {% set r2_act = room2_active_for_demand | default((r2_sched or r2_pres or r2_man)) | bool(false) %}
             {% set r2_boost = room2_needs_boost | default(false) | bool(false) %}
             {% set r2_heat = r2_act and (r2_tgt > (r2_cur + hys)) %}
-            Schlafzimmer: {{ r2_tgt | round(1) }}°C | {{ 'Zeitplan' if r2_sched else ('Praesenz' if r2_pres else ('Manual' if r2_man else 'Eco')) }} | Boost {{ 'ON' if r2_boost else 'OFF' }} | Heating {{ 'ON' if r2_heat else 'OFF' }}
+            {% if inputs.room2_climate | string not in ['', 'sensor.none', 'none'] %}
+            {% set r2_hvac = state_attr(inputs.room2_climate, 'hvac_action') | default('n/a', true) %}
+            {% else %}
+            {% set r2_hvac = 'n/a' %}
+            {% endif %}
+            Schlafzimmer: {{ r2_tgt | round(1) }}°C | {{ 'Zeitplan' if r2_sched else ('Praesenz' if r2_pres else ('Manual' if r2_man else 'Eco')) }} | Boost {{ 'ON' if r2_boost else 'OFF' }} | Heating {{ 'ON' if r2_heat else 'OFF' }} | HVAC {{ r2_hvac }}
             {% endif %}
             {% if inputs.room3_enabled | default(false) | bool(false) %}
             {% set r3_tgt = room3_final_temp | default(0) | float(0) %}
@@ -3046,7 +3575,12 @@ actions:
             {% set r3_act = room3_active_for_demand | default((r3_sched or r3_pres or r3_man)) | bool(false) %}
             {% set r3_boost = room3_needs_boost | default(false) | bool(false) %}
             {% set r3_heat = r3_act and (r3_tgt > (r3_cur + hys)) %}
-            Office: {{ r3_tgt | round(1) }}°C | {{ 'Zeitplan' if r3_sched else ('Praesenz' if r3_pres else ('Manual' if r3_man else 'Eco')) }} | Boost {{ 'ON' if r3_boost else 'OFF' }} | Heating {{ 'ON' if r3_heat else 'OFF' }}
+            {% if inputs.room3_climate | string not in ['', 'sensor.none', 'none'] %}
+            {% set r3_hvac = state_attr(inputs.room3_climate, 'hvac_action') | default('n/a', true) %}
+            {% else %}
+            {% set r3_hvac = 'n/a' %}
+            {% endif %}
+            Office: {{ r3_tgt | round(1) }}°C | {{ 'Zeitplan' if r3_sched else ('Praesenz' if r3_pres else ('Manual' if r3_man else 'Eco')) }} | Boost {{ 'ON' if r3_boost else 'OFF' }} | Heating {{ 'ON' if r3_heat else 'OFF' }} | HVAC {{ r3_hvac }}
             {% endif %}
             {% if inputs.room4_enabled | default(false) | bool(false) %}
             {% set r4_tgt = room4_final_temp | default(0) | float(0) %}
@@ -3057,7 +3591,12 @@ actions:
             {% set r4_act = room4_active_for_demand | default((r4_sched or r4_pres or r4_man)) | bool(false) %}
             {% set r4_boost = room4_needs_boost | default(false) | bool(false) %}
             {% set r4_heat = r4_act and (r4_tgt > (r4_cur + hys)) %}
-            Raum4: {{ r4_tgt | round(1) }}°C | {{ 'Zeitplan' if r4_sched else ('Praesenz' if r4_pres else ('Manual' if r4_man else 'Eco')) }} | Boost {{ 'ON' if r4_boost else 'OFF' }} | Heating {{ 'ON' if r4_heat else 'OFF' }}
+            {% if inputs.room4_climate | string not in ['', 'sensor.none', 'none'] %}
+            {% set r4_hvac = state_attr(inputs.room4_climate, 'hvac_action') | default('n/a', true) %}
+            {% else %}
+            {% set r4_hvac = 'n/a' %}
+            {% endif %}
+            Raum4: {{ r4_tgt | round(1) }}°C | {{ 'Zeitplan' if r4_sched else ('Praesenz' if r4_pres else ('Manual' if r4_man else 'Eco')) }} | Boost {{ 'ON' if r4_boost else 'OFF' }} | Heating {{ 'ON' if r4_heat else 'OFF' }} | HVAC {{ r4_hvac }}
             {% endif %}
             {% if inputs.room5_enabled | default(false) | bool(false) %}
             {% set r5_tgt = room5_final_temp | default(0) | float(0) %}
@@ -3068,7 +3607,12 @@ actions:
             {% set r5_act = room5_active_for_demand | default((r5_sched or r5_pres or r5_man)) | bool(false) %}
             {% set r5_boost = room5_needs_boost | default(false) | bool(false) %}
             {% set r5_heat = r5_act and (r5_tgt > (r5_cur + hys)) %}
-            Raum5: {{ r5_tgt | round(1) }}°C | {{ 'Zeitplan' if r5_sched else ('Praesenz' if r5_pres else ('Manual' if r5_man else 'Eco')) }} | Boost {{ 'ON' if r5_boost else 'OFF' }} | Heating {{ 'ON' if r5_heat else 'OFF' }}
+            {% if inputs.room5_climate | string not in ['', 'sensor.none', 'none'] %}
+            {% set r5_hvac = state_attr(inputs.room5_climate, 'hvac_action') | default('n/a', true) %}
+            {% else %}
+            {% set r5_hvac = 'n/a' %}
+            {% endif %}
+            Raum5: {{ r5_tgt | round(1) }}°C | {{ 'Zeitplan' if r5_sched else ('Praesenz' if r5_pres else ('Manual' if r5_man else 'Eco')) }} | Boost {{ 'ON' if r5_boost else 'OFF' }} | Heating {{ 'ON' if r5_heat else 'OFF' }} | HVAC {{ r5_hvac }}
             {% endif %}
 
             API GATEWAY
