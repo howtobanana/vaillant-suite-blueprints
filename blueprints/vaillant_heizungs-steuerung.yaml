@@ -174,9 +174,9 @@ blueprint:
               step: 5
               unit_of_measurement: "min"
         max_changes_per_hour:
-          name: "🔧 API: Max Writes/h"
+          name: "🔧 API: Budget/h"
           description: |
-            Absoluter Deckel für Vaillant Cloud Aufrufe pro Stunde (Empfehlung: 10/h ≈ 6 Minuten Mindestabstand).
+            Budget für Vaillant Cloud Aufrufe pro rollendem 60-Minuten-Fenster. Alle Writes können schnell hintereinander genutzt werden, solange Budget vorhanden. Füllt sich automatisch auf wenn Timestamps älter als 60min werden.
           default: 10
           selector:
             number:
@@ -323,27 +323,19 @@ blueprint:
             entity:
               domain: sensor
               device_class: humidity
-        master_last_write_helper:
-          name: "📝 Master Last Write Tracker"
+        master_write_log_helper:
+          name: "📝 Master Write Log"
           description: |
-            **Pflicht-Helper für API-Cooldown-Tracking.**
+            **Pflicht-Helper für API-Budget und Anti-Cycling.**
 
-            **Typ:** `input_datetime` (mit Datum + Uhrzeit).
+            **Typ:** `input_text` (max 255 Zeichen).
 
-            Dieser Helper speichert den Zeitstempel des letzten API-Write-Versuchs an den Master-Thermostat (für Cooldown/Throttle).
+            Speichert Write-Richtung und Timestamps im Format: `kind:ts1,ts2,...`
+            Ermöglicht Sliding-Window Budget-Tracking (N Writes pro 60min).
 
             ⚠️ **NICHT manuell ändern!** Wird automatisch vom Blueprint verwaltet.
 
-            **Erstellen in Home Assistant:**
-            Einstellungen → Geräte & Dienste → Helfer → Helfer erstellen → Datum und/oder Uhrzeit → Name: "Vaillant Master Last Write" → Datum UND Uhrzeit aktivieren.
-          selector:
-            entity:
-              domain: input_datetime
-        master_last_write_kind_helper:
-          name: "📝 Master Last Write Kind (opt)"
-          description: |
-            Optionaler `input_text` Helper für Write-Richtung (`raise`/`drop`/`sync`) zur Anti-Cycling-Logik.
-          default: ""
+            **Erstellen:** Einstellungen → Helfer → Text → Name: "Vaillant Master Write Log" → Max: 255
           selector:
             entity:
               domain: input_text
@@ -1255,6 +1247,13 @@ triggers:
     minutes: "/3"
     id: scheduled
 
+  # ============================================
+  # HA START TRIGGER (immediate evaluation on restart)
+  # ============================================
+  - trigger: homeassistant
+    event: start
+    id: ha_start
+
 conditions: []
 
 actions:
@@ -1502,8 +1501,7 @@ actions:
         humidity_drop_amount: !input humidity_drop_amount
         enable_debug_notifications: !input enable_debug_notifications
         master_climate: !input master_climate
-        master_last_write_helper: !input master_last_write_helper
-        master_last_write_kind_helper: !input master_last_write_kind_helper
+        master_write_log_helper: !input master_write_log_helper
         master_comfort_input: !input master_comfort_input
         master_comfort_fixed: !input master_comfort_fixed
         master_schedule: !input master_schedule
@@ -2307,32 +2305,82 @@ actions:
               master_significant_drop: >
                 {{ ((master_set_now | float(0)) - (master_final_target | float(0))) > 2.0 }}
               max_changes_per_hour_effective: "{{ [[inputs.max_changes_per_hour | float(10), 5] | max, 20] | min }}"
-              cooldown_seconds: >
-                {{ 3600 / (max_changes_per_hour_effective | float(10)) }}
-              # API Write Tracking: Letzter Write-Versuch an Master-Thermostat
-              master_last_update_age_step55: >
-                {% set entity = inputs.master_last_write_helper | string %}
-                {% if entity not in ['', 'sensor.none', 'none'] and states(entity) not in ['unknown', 'unavailable', 'none', ''] %}
-                  {% set last_write_ts = state_attr(entity, 'timestamp') | float(0) %}
-                  {% set now_ts = as_timestamp(now()) | float(0) %}
-                  {% if (last_write_ts | float(0)) > 0 %}
-                    {{ now_ts - (last_write_ts | float(0)) }}
-                  {% else %}
-                    {{ 999999 }}
-                  {% endif %}
+              # === WRITE LOG PARSING ===
+              master_write_log_configured: >
+                {{ inputs.master_write_log_helper | string not in ['', 'sensor.none', 'none'] }}
+              master_write_log_raw: >
+                {% if master_write_log_configured | bool(false) %}
+                  {{ states(inputs.master_write_log_helper) | default('', true) | trim }}
                 {% else %}
-                  {{ 999999 }}
+                  {{ '' }}
                 {% endif %}
-              master_change_cooldown_ok_step55: >
-                {{ (master_last_update_age_step55 | float(999999)) >= (cooldown_seconds | float(360)) }}
-              master_last_write_kind_configured: >
-                {{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}
-              master_last_write_kind: >
-                {% if (master_last_write_kind_configured | bool(false)) and (states(inputs.master_last_write_kind_helper) not in ['unknown', 'unavailable', 'none', '']) %}
-                  {{ states(inputs.master_last_write_kind_helper) | string | trim | lower }}
+              master_write_log_kind: >
+                {% set raw = master_write_log_raw | string %}
+                {% if ':' in raw %}
+                  {{ raw.split(':')[0] | trim | lower }}
                 {% else %}
                   sync
                 {% endif %}
+              master_write_log_timestamps_raw: >
+                {% set raw = master_write_log_raw | string %}
+                {% if ':' in raw %}
+                  {{ raw.split(':')[1] | default('', true) | trim }}
+                {% else %}
+                  {{ '' }}
+                {% endif %}
+              # === SLIDING WINDOW BUDGET ===
+              master_write_timestamps_clean: >
+                {% set raw = master_write_log_timestamps_raw | default('', true) %}
+                {% set now_ts = as_timestamp(now()) | float(0) %}
+                {% set entries = raw.split(',') | reject('eq', '') | map('trim') | list %}
+                {% set ns = namespace(valid=[]) %}
+                {% for ts in entries %}
+                  {% if (now_ts - (ts | float(0))) < 3600 %}
+                    {% set ns.valid = ns.valid + [ts | string] %}
+                  {% endif %}
+                {% endfor %}
+                {{ ns.valid | join(',') }}
+              master_write_budget_used: >
+                {% set clean = master_write_timestamps_clean | default('', true) | trim %}
+                {{ (clean.split(',') | reject('eq', '') | list | length) if (clean | length > 0) else 0 }}
+              master_write_budget_remaining: >
+                {{ (max_changes_per_hour_effective | int(10)) - (master_write_budget_used | int(0)) }}
+              master_budget_ok: >
+                {{ (master_write_budget_remaining | int(0)) > 0 }}
+              # Alias für Downstream-Kompatibilität
+              master_change_cooldown_ok_step55: >
+                {{ master_budget_ok | bool(false) }}
+              # === LAST WRITE AGE (aus letztem Timestamp im Log) ===
+              master_last_update_age_step55: >
+                {% set clean = master_write_timestamps_clean | default('', true) | trim %}
+                {% set entries = clean.split(',') | reject('eq', '') | list %}
+                {% if entries | length > 0 %}
+                  {% set last_ts = entries[-1] | float(0) %}
+                  {% set now_ts = as_timestamp(now()) | float(0) %}
+                  {{ now_ts - last_ts }}
+                {% else %}
+                  {{ 999999 }}
+                {% endif %}
+              # === ANTI-CYCLING HOLDS (mit Bypass) ===
+              master_hold_bypass: >
+                {{
+                  trigger_id_safe in [
+                    'master_presence_helper_change',
+                    'room2_presence_helper_change',
+                    'room3_presence_helper_change',
+                    'room4_presence_helper_change',
+                    'room5_presence_helper_change',
+                    'master_comfort_input_change',
+                    'room2_comfort_input_change',
+                    'room3_comfort_input_change',
+                    'room4_comfort_input_change',
+                    'room5_comfort_input_change',
+                    'away_mode_on', 'away_mode_off',
+                    'ha_start'
+                  ]
+                }}
+              master_last_write_kind: >
+                {{ master_write_log_kind | default('sync', true) | string }}
               master_hold_drop_after_raise_seconds: >
                 {{ (inputs.master_hold_drop_after_raise_minutes | float(20)) * 60 }}
               master_hold_raise_after_drop_seconds: >
@@ -2361,6 +2409,7 @@ actions:
                     (not (master_raise_hold_active | bool(false)))
                     or (master_forced_min_active | bool(false))
                     or (away_mode_active_effective | bool(false))
+                    or (master_hold_bypass | bool(false))
                   )
                 }}
               master_drop_allowed: >
@@ -2373,6 +2422,7 @@ actions:
                     (not (master_drop_hold_active | bool(false)))
                     or (master_forced_min_active | bool(false))
                     or (away_mode_active_effective | bool(false))
+                    or (master_hold_bypass | bool(false))
                   )
                 }}
               master_write_allowed: >
@@ -2460,24 +2510,18 @@ actions:
                           - "{{ wait.completed | default(false) | bool(false) }}"
                         sequence:
                           - if:
-                              - condition: template
-                                value_template: "{{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}"
+                              - "{{ master_write_log_configured | bool(false) }}"
                             then:
                               - action: input_text.set_value
                                 target:
-                                  entity_id: "{{ inputs.master_last_write_kind_helper }}"
+                                  entity_id: "{{ inputs.master_write_log_helper }}"
                                 data:
-                                  value: "{{ master_write_kind_current | string }}"
-                                continue_on_error: true
-                          - if:
-                              - condition: template
-                                value_template: "{{ inputs.master_last_write_helper | string not in ['', 'sensor.none', 'none'] }}"
-                            then:
-                              - action: input_datetime.set_datetime
-                                target:
-                                  entity_id: "{{ inputs.master_last_write_helper }}"
-                                data:
-                                  datetime: "{{ now() }}"
+                                  value: >
+                                    {% set kind = master_write_kind_current | default('sync', true) | string %}
+                                    {% set existing = master_write_timestamps_clean | default('', true) | trim %}
+                                    {% set now_ts = as_timestamp(now()) | int(0) | string %}
+                                    {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
+                                    {{ kind ~ ':' ~ new_ts }}
                                 continue_on_error: true
                       - conditions:
                           - "{{ not (wait.completed | default(false) | bool(false)) }}"
@@ -2489,24 +2533,18 @@ actions:
                               message: >
                                 Vaillant Blueprint: PATH A master write verification timeout; throttle timestamp updated (target={{ master_final_target | float(0) }}, actual={{ state_attr(inputs.master_climate, 'temperature') | float(0) }})
                           - if:
-                              - condition: template
-                                value_template: "{{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}"
+                              - "{{ master_write_log_configured | bool(false) }}"
                             then:
                               - action: input_text.set_value
                                 target:
-                                  entity_id: "{{ inputs.master_last_write_kind_helper }}"
+                                  entity_id: "{{ inputs.master_write_log_helper }}"
                                 data:
-                                  value: "sync"
-                                continue_on_error: true
-                          - if:
-                              - condition: template
-                                value_template: "{{ inputs.master_last_write_helper | string not in ['', 'sensor.none', 'none'] }}"
-                            then:
-                              - action: input_datetime.set_datetime
-                                target:
-                                  entity_id: "{{ inputs.master_last_write_helper }}"
-                                data:
-                                  datetime: "{{ now() }}"
+                                  value: >
+                                    {% set kind = 'sync' %}
+                                    {% set existing = master_write_timestamps_clean | default('', true) | trim %}
+                                    {% set now_ts = as_timestamp(now()) | int(0) | string %}
+                                    {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
+                                    {{ kind ~ ':' ~ new_ts }}
                                 continue_on_error: true
 
               # PATH B (CRITICAL): highest bidder boost or significant drop WITH strict cooldown
@@ -2531,24 +2569,18 @@ actions:
                           - "{{ wait.completed | default(false) | bool(false) }}"
                         sequence:
                           - if:
-                              - condition: template
-                                value_template: "{{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}"
+                              - "{{ master_write_log_configured | bool(false) }}"
                             then:
                               - action: input_text.set_value
                                 target:
-                                  entity_id: "{{ inputs.master_last_write_kind_helper }}"
+                                  entity_id: "{{ inputs.master_write_log_helper }}"
                                 data:
-                                  value: "{{ master_write_kind_current | string }}"
-                                continue_on_error: true
-                          - if:
-                              - condition: template
-                                value_template: "{{ inputs.master_last_write_helper | string not in ['', 'sensor.none', 'none'] }}"
-                            then:
-                              - action: input_datetime.set_datetime
-                                target:
-                                  entity_id: "{{ inputs.master_last_write_helper }}"
-                                data:
-                                  datetime: "{{ now() }}"
+                                  value: >
+                                    {% set kind = master_write_kind_current | default('sync', true) | string %}
+                                    {% set existing = master_write_timestamps_clean | default('', true) | trim %}
+                                    {% set now_ts = as_timestamp(now()) | int(0) | string %}
+                                    {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
+                                    {{ kind ~ ':' ~ new_ts }}
                                 continue_on_error: true
                       - conditions:
                           - "{{ not (wait.completed | default(false) | bool(false)) }}"
@@ -2560,24 +2592,18 @@ actions:
                               message: >
                                 Vaillant Blueprint: PATH B master write verification timeout; throttle timestamp updated (target={{ master_final_target | float(0) }}, actual={{ state_attr(inputs.master_climate, 'temperature') | float(0) }})
                           - if:
-                              - condition: template
-                                value_template: "{{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}"
+                              - "{{ master_write_log_configured | bool(false) }}"
                             then:
                               - action: input_text.set_value
                                 target:
-                                  entity_id: "{{ inputs.master_last_write_kind_helper }}"
+                                  entity_id: "{{ inputs.master_write_log_helper }}"
                                 data:
-                                  value: "sync"
-                                continue_on_error: true
-                          - if:
-                              - condition: template
-                                value_template: "{{ inputs.master_last_write_helper | string not in ['', 'sensor.none', 'none'] }}"
-                            then:
-                              - action: input_datetime.set_datetime
-                                target:
-                                  entity_id: "{{ inputs.master_last_write_helper }}"
-                                data:
-                                  datetime: "{{ now() }}"
+                                  value: >
+                                    {% set kind = 'sync' %}
+                                    {% set existing = master_write_timestamps_clean | default('', true) | trim %}
+                                    {% set now_ts = as_timestamp(now()) | int(0) | string %}
+                                    {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
+                                    {{ kind ~ ':' ~ new_ts }}
                                 continue_on_error: true
               # PATH C (COMFORT): regular writes with strict cooldown guard
               - conditions:
@@ -2598,24 +2624,18 @@ actions:
                           - "{{ wait.completed | default(false) | bool(false) }}"
                         sequence:
                           - if:
-                              - condition: template
-                                value_template: "{{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}"
+                              - "{{ master_write_log_configured | bool(false) }}"
                             then:
                               - action: input_text.set_value
                                 target:
-                                  entity_id: "{{ inputs.master_last_write_kind_helper }}"
+                                  entity_id: "{{ inputs.master_write_log_helper }}"
                                 data:
-                                  value: "{{ master_write_kind_current | string }}"
-                                continue_on_error: true
-                          - if:
-                              - condition: template
-                                value_template: "{{ inputs.master_last_write_helper | string not in ['', 'sensor.none', 'none'] }}"
-                            then:
-                              - action: input_datetime.set_datetime
-                                target:
-                                  entity_id: "{{ inputs.master_last_write_helper }}"
-                                data:
-                                  datetime: "{{ now() }}"
+                                  value: >
+                                    {% set kind = master_write_kind_current | default('sync', true) | string %}
+                                    {% set existing = master_write_timestamps_clean | default('', true) | trim %}
+                                    {% set now_ts = as_timestamp(now()) | int(0) | string %}
+                                    {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
+                                    {{ kind ~ ':' ~ new_ts }}
                                 continue_on_error: true
                       - conditions:
                           - "{{ not (wait.completed | default(false) | bool(false)) }}"
@@ -2627,38 +2647,24 @@ actions:
                               message: >
                                 Vaillant Blueprint: PATH C master write verification timeout; throttle timestamp updated (target={{ master_final_target | float(0) }}, actual={{ state_attr(inputs.master_climate, 'temperature') | float(0) }})
                           - if:
-                              - condition: template
-                                value_template: "{{ inputs.master_last_write_kind_helper | string not in ['', 'sensor.none', 'none'] }}"
+                              - "{{ master_write_log_configured | bool(false) }}"
                             then:
                               - action: input_text.set_value
                                 target:
-                                  entity_id: "{{ inputs.master_last_write_kind_helper }}"
+                                  entity_id: "{{ inputs.master_write_log_helper }}"
                                 data:
-                                  value: "sync"
-                                continue_on_error: true
-                          - if:
-                              - condition: template
-                                value_template: "{{ inputs.master_last_write_helper | string not in ['', 'sensor.none', 'none'] }}"
-                            then:
-                              - action: input_datetime.set_datetime
-                                target:
-                                  entity_id: "{{ inputs.master_last_write_helper }}"
-                                data:
-                                  datetime: "{{ now() }}"
+                                  value: >
+                                    {% set kind = 'sync' %}
+                                    {% set existing = master_write_timestamps_clean | default('', true) | trim %}
+                                    {% set now_ts = as_timestamp(now()) | int(0) | string %}
+                                    {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
+                                    {{ kind ~ ':' ~ new_ts }}
                                 continue_on_error: true
           - if:
               - condition: template
                 value_template: >
-                  {% set now_ts = as_timestamp(now()) | float(0) %}
-                  {% set helper_entity = inputs.master_last_write_helper | string %}
-                  {% set helper_state = states(helper_entity) if helper_entity not in ['', 'sensor.none', 'none'] else '' %}
-                  {% if helper_entity not in ['', 'sensor.none', 'none'] and helper_state not in ['unknown', 'unavailable', 'none', ''] %}
-                    {% set last_ts = state_attr(helper_entity, 'timestamp') | float(0) %}
-                  {% else %}
-                    {% set last_ts = 0.0 %}
-                  {% endif %}
-                  {% set age_s = (now_ts - last_ts) if (last_ts | float(0)) > 0 else 999999.0 %}
-                  {% set verify_window_s = [300.0, (cooldown_seconds | float(360)) + 120.0] | max %}
+                  {% set age_s = master_last_update_age_step55 | float(999999) %}
+                  {% set verify_window_s = 300.0 %}
                   {% set master_entity = inputs.master_climate | string %}
                   {% set master_state = states(master_entity) if master_entity not in ['', 'sensor.none', 'none'] else '' %}
                   {% set master_entity_valid = (master_entity not in ['', 'sensor.none', 'none']) and (master_state not in ['unknown', 'unavailable', 'none', '']) %}
@@ -2762,7 +2768,7 @@ actions:
             {% endfor %}
 
             API GATEWAY
-            Limit: {{ max_changes_per_hour_effective | float(0) | round(0) }} Writes/h
+            Budget: {{ master_write_budget_remaining | int(0) }}/{{ max_changes_per_hour_effective | int(10) }} ({{ master_write_budget_used | int(0) }} used/60min)
             Last Write: vor {{ master_last_update_age_step55 | float(0) | round(0) }}s
 
 mode: restart
