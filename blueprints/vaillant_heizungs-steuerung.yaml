@@ -323,6 +323,18 @@ blueprint:
             entity:
               domain: sensor
               device_class: humidity
+        master_window:
+          name: "🪟 Master Fenster (opt)"
+          description: |
+
+            Optionaler Fensterkontakt im Master-Raum.
+            Fenster offen > Verzögerung → Master auf TRV-Minimum.
+
+          default: "sensor.none"
+          selector:
+            entity:
+              domain: binary_sensor
+              device_class: window
         master_write_log_helper:
           name: "📝 Master Write Log"
           description: |
@@ -1046,6 +1058,7 @@ trigger_variables:
   tv_room5_window: !input room5_window
   tv_follower1_window: !input follower1_window
   tv_follower2_window: !input follower2_window
+  tv_master_window: !input master_window
 
 triggers:
   # ============================================
@@ -1185,6 +1198,16 @@ triggers:
     value_template: >
       {{ tv_follower2_window | string not in ['', 'sensor.none', 'none'] and is_state(tv_follower2_window, 'off') }}
     id: follower2_window_closed
+  - trigger: template
+    value_template: >
+      {{ (tv_master_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_master_window, 'on') }}
+    for:
+      seconds: !input window_heat_delay
+    id: master_window_open_30s
+  - trigger: template
+    value_template: >
+      {{ (tv_master_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_master_window, 'off') }}
+    id: master_window_closed
 
   # ============================================
   # HELPER INPUT TRIGGERS (IMMEDIATE REACTION)
@@ -1513,6 +1536,7 @@ actions:
         room_boost_amount: !input room_boost_amount
         master_temp_sensor: !input master_temp_sensor
         master_humidity_sensor: !input master_humidity_sensor
+        master_window: !input master_window
         room2_enabled: !input room2_enabled
         room2_climate: !input room2_climate
         room2_comfort_input: !input room2_comfort_input
@@ -1809,6 +1833,19 @@ actions:
         {% endif %}
       summer_mode: >
         {{ summer_mode_should_be | bool(false) }}
+      master_window_open_too_long: >
+        {% set w = inputs.master_window | default('sensor.none', true) | string %}
+        {% if w | lower not in ['', 'sensor.none', 'none'] and is_state(w, 'on') %}
+          {% set w_state = states[w] %}
+          {% if w_state is not none and w_state.last_changed is not none %}
+            {% set open_ts = as_timestamp(w_state.last_changed, as_timestamp(now())) | float(0) %}
+            {{ ((as_timestamp(now()) | float(0)) - open_ts) >= (inputs.window_heat_delay | float(30)) }}
+          {% else %}
+            {{ false }}
+          {% endif %}
+        {% else %}
+          {{ false }}
+        {% endif %}
       global_window_open: >
         {% set ns = namespace(is_open=false) %}
         {% for w_id in [
@@ -1839,9 +1876,11 @@ actions:
         {% endif %}
         {% set eco_anchor = eco_temp | float(inputs.eco_temp_fixed | float(19)) %}
         {% set drop_threshold = inputs.smart_drop_threshold | float(2.0) %}
-        {{ (global_window_open | bool(false)) and ((current_temp | float(21)) < ((eco_anchor | float(19)) - (drop_threshold | float(2.0)))) }}
+        {{ (global_window_open | bool(false)) and (not (master_window_open_too_long | bool(false))) and ((current_temp | float(21)) < ((eco_anchor | float(19)) - (drop_threshold | float(2.0)))) }}
       master_target_final: >
-        {% if master_rapid_temp_drop | bool(false) %}
+        {% if master_window_open_too_long | bool(false) %}
+          {{ inputs.min_trv_temp | float(12) }}
+        {% elif master_rapid_temp_drop | bool(false) %}
           {{ inputs.min_trv_temp | float(12) }}
         {% else %}
           {{ master_target_temp | float(21) }}
@@ -2376,7 +2415,8 @@ actions:
                     'room4_comfort_input_change',
                     'room5_comfort_input_change',
                     'away_mode_on', 'away_mode_off',
-                    'ha_start'
+                    'ha_start',
+                    'master_window_open_30s', 'master_window_closed'
                   ]
                 }}
               master_last_write_kind: >
