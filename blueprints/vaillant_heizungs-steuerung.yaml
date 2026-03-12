@@ -1284,11 +1284,6 @@ actions:
   # PRESENCE STATE MANAGEMENT
   # ============================================
   - variables:
-      master_presence_helper: !input master_presence_helper
-      room2_presence_helper: !input room2_presence_helper
-      room3_presence_helper: !input room3_presence_helper
-      room4_presence_helper: !input room4_presence_helper
-      room5_presence_helper: !input room5_presence_helper
       presence_activation_delay: !input presence_activation_delay
       presence_deactivation_delay: !input presence_deactivation_delay
       enable_debug_notifications: !input enable_debug_notifications
