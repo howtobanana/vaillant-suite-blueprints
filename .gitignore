@@ -11,3 +11,6 @@
 # Temp files
 *.tmp
 *.bak
+
+# Claude Code metadata
+.claude/
