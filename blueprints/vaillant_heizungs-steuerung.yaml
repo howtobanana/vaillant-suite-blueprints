@@ -42,7 +42,7 @@ blueprint:
           name: "🌡️ Eco-Temp Helper (opt)"
           description: |
             Optionaler Slider (input_number) für die globale Eco-Temperatur. Hat Vorrang vor dem Fixwert.
-          default: "sensor.none"
+          default: ""
           selector:
             entity:
               domain: input_number
@@ -61,7 +61,7 @@ blueprint:
           name: "🌡️ Away-Temp Helper (opt)"
           description: |
             Optionaler Slider (input_number) für die globale Away-Temperatur.
-          default: "sensor.none"
+          default: ""
           selector:
             entity:
               domain: input_number
@@ -232,7 +232,7 @@ blueprint:
             Optionaler Helper für die Komfort-Solltemperatur des Master-Raums.
             Erforderlicher Helfer-Typ: **Schieberegler** (input_number).
 
-          default: "sensor.none"
+          default: ""
           selector:
             entity:
               domain: input_number
@@ -330,7 +330,7 @@ blueprint:
             Optionaler Fensterkontakt im Master-Raum.
             Fenster offen > Verzögerung → Master auf TRV-Minimum.
 
-          default: "sensor.none"
+          default: ""
           selector:
             entity:
               domain: binary_sensor
@@ -495,7 +495,7 @@ blueprint:
             Optionaler Helper für die Komfort-Solltemperatur in Raum 2.
             Erforderlicher Helfer-Typ: **Schieberegler** (input_number).
 
-          default: "sensor.none"
+          default: ""
           selector:
             entity:
               domain: input_number
@@ -602,7 +602,7 @@ blueprint:
             Optionaler Helper für die Komfort-Solltemperatur in Raum 3.
             Erforderlicher Helfer-Typ: **Schieberegler** (input_number).
 
-          default: "sensor.none"
+          default: ""
           selector:
             entity:
               domain: input_number
@@ -709,7 +709,7 @@ blueprint:
             Optionaler Helper für die Komfort-Solltemperatur in Raum 4.
             Erforderlicher Helfer-Typ: **Schieberegler** (input_number).
 
-          default: "sensor.none"
+          default: ""
           selector:
             entity:
               domain: input_number
@@ -816,7 +816,7 @@ blueprint:
             Optionaler Helper für die Komfort-Solltemperatur in Raum 5.
             Erforderlicher Helfer-Typ: **Schieberegler** (input_number).
 
-          default: "sensor.none"
+          default: ""
           selector:
             entity:
               domain: input_number
@@ -1748,7 +1748,13 @@ actions:
         {% endif %}
       # Smart Presence Evaluation: Check helper OR check if physical sensor has been ON longer than the delay (survives HA restarts)
       master_presence_fresh: >
-        {% set helper = false if inputs.master_presence_helper in ['', 'sensor.none', 'none'] else is_state(inputs.master_presence_helper, 'on') %}
+        {% set _h_eid = inputs.master_presence_helper | string %}
+        {% if _h_eid in ['', 'sensor.none', 'none'] %}
+          {% set helper = false %}
+        {% else %}
+          {# Case-insensitive: also handles 'On', 'True', '1' from non-standard boolean helpers #}
+          {% set helper = (states(_h_eid) | string | lower) in ['on', 'true', '1'] %}
+        {% endif %}
         {% set delay = (presence_activation_delay | float(2)) * 60 %}
         {% set active = expand(inputs.master_presence_sensors) | selectattr('state', 'eq', 'on') | list if inputs.master_presence_sensors else [] %}
         {% set ns = namespace(sensor_on=false) %}
@@ -1786,20 +1792,23 @@ actions:
         {% endif %}
       # ===== GROUP 3: DEMAND CALCULATION =====
       eco_temp: >
-        {% if inputs.eco_temp_input | string not in ['', 'sensor.none', 'none'] %}
-          {{ states(inputs.eco_temp_input) | float(inputs.eco_temp_fixed) }}
+        {% set _eid = inputs.eco_temp_input | string %}
+        {% if _eid not in ['', 'sensor.none', 'none'] and states(_eid) not in ['unknown', 'unavailable', 'none', ''] %}
+          {{ states(_eid) | float(inputs.eco_temp_fixed) }}
         {% else %}
           {{ inputs.eco_temp_fixed }}
         {% endif %}
       away_temp: >
-        {% if inputs.away_temp_input | string not in ['', 'sensor.none', 'none'] %}
-          {{ states(inputs.away_temp_input) | float(inputs.away_temp_fixed) }}
+        {% set _eid = inputs.away_temp_input | string %}
+        {% if _eid not in ['', 'sensor.none', 'none'] and states(_eid) not in ['unknown', 'unavailable', 'none', ''] %}
+          {{ states(_eid) | float(inputs.away_temp_fixed) }}
         {% else %}
           {{ inputs.away_temp_fixed }}
         {% endif %}
       master_comfort_temp: >
-        {% if inputs.master_comfort_input | string not in ['', 'sensor.none', 'none'] %}
-          {{ states(inputs.master_comfort_input) | float(inputs.master_comfort_fixed) }}
+        {% set _eid = inputs.master_comfort_input | string %}
+        {% if _eid not in ['', 'sensor.none', 'none'] and states(_eid) not in ['unknown', 'unavailable', 'none', ''] %}
+          {{ states(_eid) | float(inputs.master_comfort_fixed) }}
         {% else %}
           {{ inputs.master_comfort_fixed }}
         {% endif %}
@@ -1926,7 +1935,8 @@ actions:
         {% elif master_rapid_temp_drop | bool(false) %}
           {{ inputs.min_trv_temp | float(12) }}
         {% else %}
-          {{ master_target_temp | float(21) }}
+          {# Fallback to eco_temp, never to a hardcoded value, so a broken master_target_temp fails safely #}
+          {{ master_target_temp | float(eco_temp | float(inputs.eco_temp_fixed | float(19))) }}
         {% endif %}
       master_climate_available: >
         {{ inputs.master_climate | string not in ['', 'sensor.none', 'none'] and states(inputs.master_climate) not in ['unavailable', 'unknown'] }}
@@ -1955,7 +1965,9 @@ actions:
           {% set helper_valid = presence_helper not in ['', 'sensor.none', 'none'] %}
           {% set sensors_valid = (presence_sensors_sanitized | length) > 0 %}
           {% set schedule_active = (role == 'isolated') and (sched_valid) and is_state(schedule, 'on') %}
-          {% set helper_on = (role == 'isolated') and (helper_valid) and is_state(presence_helper, 'on') %}
+          {# Case-insensitive boolean check: handles 'on', 'On', 'true', '1' from non-standard helpers #}
+          {% set _helper_state = states(presence_helper) | string | lower if helper_valid else '' %}
+          {% set helper_on = (role == 'isolated') and (helper_valid) and (_helper_state in ['on', 'true', '1']) %}
           {% set sensor_on_long_enough = false %}
           {% if role == 'isolated' and (sensors_valid) %}
             {% set ps = namespace(on=false) %}
@@ -1978,12 +1990,15 @@ actions:
             {% set active_for_demand = master_active_for_followers | bool(false) %}
           {% endif %}
           {% set comfort_input_valid = comfort_input not in ['', 'sensor.none', 'none'] %}
+          {# Also require the entity state to be a readable value, not unavailable/unknown #}
+          {% set comfort_input_readable = comfort_input_valid and states(comfort_input) not in ['unknown', 'unavailable', 'none', ''] %}
           {% set comfort_config_ok = (role != 'isolated') or (comfort_input_valid) or ((comfort_fixed | float(0)) > 0) %}
           {% set room_ok = (enabled | bool(false)) and (climate_ok | bool(false)) and (comfort_config_ok | bool(false)) %}
           {% if role == 'isolated' %}
-            {% if comfort_input_valid %}
+            {% if comfort_input_readable %}
               {% set comfort_target = states(comfort_input) | float(comfort_fixed | float(20)) %}
             {% else %}
+              {# Falls back to user's configured comfort_fixed, never to a hardcoded value #}
               {% set comfort_target = comfort_fixed | float(20) %}
             {% endif %}
             {% if away_mode_entity_on | bool(false) %}
