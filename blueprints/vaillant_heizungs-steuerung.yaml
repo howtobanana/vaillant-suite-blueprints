@@ -1919,7 +1919,12 @@ actions:
             {% set sensor_on_long_enough = ps.on %}
           {% endif %}
           {% set manual_mode = (role == 'isolated') and (not (sched_valid)) and (not (helper_valid)) and (not (sensors_valid)) %}
-          {% if role == 'isolated' %}
+          {% if not (enabled | bool(false)) %}
+            {% set manual_mode = false %}
+          {% endif %}
+          {% if not (enabled | bool(false)) %}
+            {% set active_for_demand = false %}
+          {% elif role == 'isolated' %}
             {% set active_for_demand = (schedule_active | bool(false)) or (helper_on | bool(false)) or (sensor_on_long_enough | bool(false)) or (manual_mode | bool(false)) %}
           {% else %}
             {% set active_for_demand = master_active_for_followers | bool(false) %}
@@ -2058,7 +2063,8 @@ actions:
             'hvac_action': hvac_action | string
           }] %}
         {% endfor %}
-        {{ ns.items }}
+        {{ ns.items | tojson }}
+      rooms_runtime_list: "{{ (rooms_runtime | default('[]', true)) | from_json }}"
       # ===== GROUP 6: WRITE LOGIC FLAGS =====
   # ===== STEP 0.00: SUMMER MODE HELPER SYNC =====
   - choose:
@@ -2103,7 +2109,7 @@ actions:
 
     # ========== ROOM RUNTIME LOOP LOGIC ==========
   - repeat:
-      for_each: "{{ rooms_runtime | default([], true) }}"
+      for_each: "{{ rooms_runtime_list | default([], true) }}"
       sequence:
         - variables:
             room: "{{ repeat.item }}"
@@ -2150,7 +2156,7 @@ actions:
                 {% endif %}
               isolated_room_demand_targets: >
                 {% set ns = namespace(vals=[]) %}
-                {% for room in rooms_runtime | default([], true) %}
+                {% for room in rooms_runtime_list | default([], true) %}
                   {% if (room.role | string == 'isolated') and (room.room_ok | default(false) | bool(false)) and (room.active_for_demand | default(false) | bool(false)) and (room.needs_heat | default(false) | bool(false)) %}
                     {% set ns.vals = ns.vals + [room.final_target | float(0)] %}
                   {% endif %}
@@ -2256,7 +2262,7 @@ actions:
                 {% endif %}
               isolated_rooms_boost_eval: >
                 {% set ns = namespace(any_needs=false, all_deactivate=true, need_count=0) %}
-                {% for room in rooms_runtime | default([], true) %}
+                {% for room in rooms_runtime_list | default([], true) %}
                   {% if (room.role | string == 'isolated') and (room.room_ok | default(false) | bool(false)) %}
                     {% if room.boost_needed | default(false) | bool(false) %}
                       {% set ns.any_needs = true %}
@@ -2778,7 +2784,7 @@ actions:
             {% set master_mode = 'Zeitplan' if master_sched_safe else ('Praesenz' if master_pres_safe else ('Manual' if master_man_safe else 'Eco')) %}
             {% set master_heating_on = (master_target_safe > ((master_current_temp | float(0)) + hys)) and (master_sched_safe or master_pres_safe or master_man_safe) %}
             Wohnzimmer: {{ master_target_safe | round(1) }}°C | {{ master_mode }} | Heating {{ 'ON' if master_heating_on else 'OFF' }}
-            {% for room in rooms_runtime | default([], true) %}
+            {% for room in rooms_runtime_list | default([], true) %}
             {% if room.enabled | default(false) | bool(false) %}
             {% set room_ok = room.room_ok | default(false) | bool(false) %}
             {% set room_key = room.key | default('room', true) | string %}
