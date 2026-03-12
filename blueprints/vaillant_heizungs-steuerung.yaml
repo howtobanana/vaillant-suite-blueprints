@@ -297,7 +297,7 @@ blueprint:
 
             Input boolean to store master presence state. Create manually: Settings -> Helpers -> Toggle -> Name: 'Heating: Master Presence Active'
 
-          default: "sensor.none"
+          default: ""
           selector:
             entity:
               domain: input_boolean
@@ -381,16 +381,16 @@ blueprint:
             entity:
               domain: climate
         follower1_offset:
-          name: "↘️ Follower 1 Offset (°C)"
+          name: "↕️ Follower 1 Offset (°C)"
           description: |
 
-            Temperatur-Offset relativ zum Master-Sollwert für Follower-Raum 1. Negative Werte senken den Sollwert.
+            Temperatur-Offset relativ zum Master-Sollwert für Follower-Raum 1. Negative Werte senken, positive Werte erhöhen den Sollwert.
 
           default: -2.0
           selector:
             number:
               min: -3.0
-              max: -0.5
+              max: 2.0
               step: 0.5
               unit_of_measurement: "°C"
         follower1_window:
@@ -435,16 +435,16 @@ blueprint:
             entity:
               domain: climate
         follower2_offset:
-          name: "↘️ Follower 2 Offset (°C)"
+          name: "↕️ Follower 2 Offset (°C)"
           description: |
 
-            Temperatur-Offset relativ zum Master-Sollwert für Follower-Raum 2. Negative Werte senken den Sollwert.
+            Temperatur-Offset relativ zum Master-Sollwert für Follower-Raum 2. Negative Werte senken, positive Werte erhöhen den Sollwert.
 
           default: -2.0
           selector:
             number:
               min: -3.0
-              max: -0.5
+              max: 2.0
               step: 0.5
               unit_of_measurement: "°C"
         follower2_window:
@@ -540,7 +540,7 @@ blueprint:
 
             Input boolean for room2 presence state. Create manually: Settings -> Helpers -> Toggle -> Name: 'Heating: Room2 Presence Active'
 
-          default: "sensor.none"
+          default: ""
           selector:
             entity:
               domain: input_boolean
@@ -647,7 +647,7 @@ blueprint:
 
             Input boolean for room3 presence state. Create manually: Settings -> Helpers -> Toggle -> Name: 'Heating: Room3 Presence Active'
 
-          default: "sensor.none"
+          default: ""
           selector:
             entity:
               domain: input_boolean
@@ -754,7 +754,7 @@ blueprint:
 
             Input boolean for room4 presence state. Create manually: Settings -> Helpers -> Toggle -> Name: 'Heating: Room4 Presence Active'
 
-          default: "sensor.none"
+          default: ""
           selector:
             entity:
               domain: input_boolean
@@ -861,7 +861,7 @@ blueprint:
 
             Input boolean for room5 presence state. Create manually: Settings -> Helpers -> Toggle -> Name: 'Heating: Room5 Presence Active'
 
-          default: "sensor.none"
+          default: ""
           selector:
             entity:
               domain: input_boolean
@@ -1006,9 +1006,10 @@ blueprint:
               step: 0.5
               unit_of_measurement: "°C"
         summer_mode_helper:
-          name: "☀️ Sommer-Modus Helper (Pflicht für Feature)"
+          name: "☀️ Sommer-Modus Helper (opt)"
           description: |
-            Speichert den Sommerzustand (input_boolean) systemweit.
+            Speichert den Sommerzustand (input_boolean) systemweit. Nur erforderlich wenn Sommerbetrieb aktiviert ist.
+          default: ""
           selector:
             entity:
               domain: input_boolean
@@ -1074,7 +1075,9 @@ triggers:
   - trigger: template
     value_template: >
       {% set sensors = tv_master_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
-      {{ (sensors | length > 0) and ((expand(sensors) | selectattr('state', 'eq', 'on') | list | length) == 0) }}
+      {% set on_count = expand(sensors) | selectattr('state', 'eq', 'on') | list | length %}
+      {% set off_count = expand(sensors) | selectattr('state', 'eq', 'off') | list | length %}
+      {{ (sensors | length > 0) and ((on_count + off_count) == (sensors | length)) and (on_count == 0) }}
     for:
       minutes: !input presence_deactivation_delay
     id: master_presence_off
@@ -1088,7 +1091,9 @@ triggers:
   - trigger: template
     value_template: >
       {% set sensors = tv_room2_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
-      {{ (sensors | length > 0) and ((expand(sensors) | selectattr('state', 'eq', 'on') | list | length) == 0) }}
+      {% set on_count = expand(sensors) | selectattr('state', 'eq', 'on') | list | length %}
+      {% set off_count = expand(sensors) | selectattr('state', 'eq', 'off') | list | length %}
+      {{ (sensors | length > 0) and ((on_count + off_count) == (sensors | length)) and (on_count == 0) }}
     for:
       minutes: !input presence_deactivation_delay
     id: room2_presence_off
@@ -1102,7 +1107,9 @@ triggers:
   - trigger: template
     value_template: >
       {% set sensors = tv_room3_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
-      {{ (sensors | length > 0) and ((expand(sensors) | selectattr('state', 'eq', 'on') | list | length) == 0) }}
+      {% set on_count = expand(sensors) | selectattr('state', 'eq', 'on') | list | length %}
+      {% set off_count = expand(sensors) | selectattr('state', 'eq', 'off') | list | length %}
+      {{ (sensors | length > 0) and ((on_count + off_count) == (sensors | length)) and (on_count == 0) }}
     for:
       minutes: !input presence_deactivation_delay
     id: room3_presence_off
@@ -1116,7 +1123,9 @@ triggers:
   - trigger: template
     value_template: >
       {% set sensors = tv_room4_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
-      {{ (sensors | length > 0) and ((expand(sensors) | selectattr('state', 'eq', 'on') | list | length) == 0) }}
+      {% set on_count = expand(sensors) | selectattr('state', 'eq', 'on') | list | length %}
+      {% set off_count = expand(sensors) | selectattr('state', 'eq', 'off') | list | length %}
+      {{ (sensors | length > 0) and ((on_count + off_count) == (sensors | length)) and (on_count == 0) }}
     for:
       minutes: !input presence_deactivation_delay
     id: room4_presence_off
@@ -1130,7 +1139,9 @@ triggers:
   - trigger: template
     value_template: >
       {% set sensors = tv_room5_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
-      {{ (sensors | length > 0) and ((expand(sensors) | selectattr('state', 'eq', 'on') | list | length) == 0) }}
+      {% set on_count = expand(sensors) | selectattr('state', 'eq', 'on') | list | length %}
+      {% set off_count = expand(sensors) | selectattr('state', 'eq', 'off') | list | length %}
+      {{ (sensors | length > 0) and ((on_count + off_count) == (sensors | length)) and (on_count == 0) }}
     for:
       minutes: !input presence_deactivation_delay
     id: room5_presence_off
@@ -1214,24 +1225,45 @@ triggers:
   # ============================================
   - trigger: state
     entity_id: !input eco_temp_input
+    not_to:
+      - unavailable
+      - unknown
     id: eco_temp_input_change
   - trigger: state
     entity_id: !input away_temp_input
+    not_to:
+      - unavailable
+      - unknown
     id: away_temp_input_change
   - trigger: state
     entity_id: !input master_comfort_input
+    not_to:
+      - unavailable
+      - unknown
     id: master_comfort_input_change
   - trigger: state
     entity_id: !input room2_comfort_input
+    not_to:
+      - unavailable
+      - unknown
     id: room2_comfort_input_change
   - trigger: state
     entity_id: !input room3_comfort_input
+    not_to:
+      - unavailable
+      - unknown
     id: room3_comfort_input_change
   - trigger: state
     entity_id: !input room4_comfort_input
+    not_to:
+      - unavailable
+      - unknown
     id: room4_comfort_input_change
   - trigger: state
     entity_id: !input room5_comfort_input
+    not_to:
+      - unavailable
+      - unknown
     id: room5_comfort_input_change
   - trigger: template
     value_template: >
@@ -1249,18 +1281,33 @@ triggers:
   # ============================================
   - trigger: state
     entity_id: !input master_presence_helper
+    to:
+      - "on"
+      - "off"
     id: master_presence_helper_change
   - trigger: state
     entity_id: !input room2_presence_helper
+    to:
+      - "on"
+      - "off"
     id: room2_presence_helper_change
   - trigger: state
     entity_id: !input room3_presence_helper
+    to:
+      - "on"
+      - "off"
     id: room3_presence_helper_change
   - trigger: state
     entity_id: !input room4_presence_helper
+    to:
+      - "on"
+      - "off"
     id: room4_presence_helper_change
   - trigger: state
     entity_id: !input room5_presence_helper
+    to:
+      - "on"
+      - "off"
     id: room5_presence_helper_change
 
   # ============================================
@@ -1844,6 +1891,7 @@ actions:
       global_window_open: >
         {% set ns = namespace(is_open=false) %}
         {% for w_id in [
+          inputs.master_window | string,
           inputs.room2_window | string,
           inputs.room3_window | string,
           inputs.room4_window | string,
@@ -2067,6 +2115,19 @@ actions:
       rooms_runtime_list: "{{ (rooms_runtime | default('[]', true)) | from_json }}"
       # ===== GROUP 6: WRITE LOGIC FLAGS =====
   # ===== STEP 0.00: SUMMER MODE HELPER SYNC =====
+  # Guard: log a warning if rooms_runtime_list is unexpectedly empty while rooms are configured
+  - if:
+      - condition: template
+        value_template: >
+          {% set list = rooms_runtime_list | default([]) %}
+          {% set any_enabled = (inputs.room2_enabled or inputs.room3_enabled or inputs.room4_enabled or inputs.room5_enabled or inputs.follower1_enabled or inputs.follower2_enabled) | bool(false) %}
+          {{ (list | length == 0) and any_enabled }}
+    then:
+      - action: system_log.write
+        continue_on_error: true
+        data:
+          level: warning
+          message: "Vaillant Blueprint: rooms_runtime_list resolved empty despite enabled rooms – possible template error in rooms_runtime. Check blueprint configuration."
   - choose:
       - conditions:
           - "{{ inputs.summer_mode_helper | string not in ['', 'sensor.none', 'none'] }}"
@@ -2087,6 +2148,11 @@ actions:
               entity_id: "{{ inputs.summer_mode_helper }}"
             continue_on_error: true
   # ===== STEP 0.01: HELPER INPUT DEBOUNCE =====
+  # Note: This automation uses mode: restart.
+  # When a slider is moved (helper_input_trigger), a delay of helper_input_settle_seconds is inserted.
+  # If the slider is moved again within that window, mode:restart cancels and restarts the run,
+  # which resets the delay — effectively debouncing rapid slider changes.
+  # No heating writes are issued during the settle window; this is intentional.
   - choose:
       - conditions:
           - "{{ helper_input_debounce_required | bool(false) }}"
@@ -2372,14 +2438,23 @@ actions:
               master_write_timestamps_clean: >
                 {% set raw = master_write_log_timestamps_raw | default('', true) %}
                 {% set now_ts = as_timestamp(now()) | float(0) %}
-                {% set entries = raw.split(',') | reject('eq', '') | map('trim') | list %}
-                {% set ns = namespace(valid=[]) %}
-                {% for ts in entries %}
-                  {% if (now_ts - (ts | float(0))) < 3600 %}
+                {% set entries_raw = raw.split(',') | reject('eq', '') | map('trim') | list %}
+                {# Guard: reset log if any entry is non-numeric (corruption) #}
+                {% set ns = namespace(valid=[], corrupt=false) %}
+                {% for ts in entries_raw %}
+                  {% if ts | float(-1) < 0 %}
+                    {% set ns.corrupt = true %}
+                  {% elif (now_ts - (ts | float(0))) < 3600 %}
                     {% set ns.valid = ns.valid + [ts | string] %}
                   {% endif %}
                 {% endfor %}
-                {{ ns.valid | join(',') }}
+                {% if ns.corrupt %}
+                  {{ '' }}
+                {% else %}
+                  {# Clamp to budget cap to prevent 255-char overflow #}
+                  {% set cap = (max_changes_per_hour_effective | int(10)) %}
+                  {{ (ns.valid | list)[-cap:] | join(',') }}
+                {% endif %}
               master_write_budget_used: >
                 {% set clean = master_write_timestamps_clean | default('', true) | trim %}
                 {{ (clean.split(',') | reject('eq', '') | list | length) if (clean | length > 0) else 0 }}
