@@ -1060,6 +1060,20 @@ trigger_variables:
   tv_follower1_window: !input follower1_window
   tv_follower2_window: !input follower2_window
   tv_master_window: !input master_window
+  # Optional helper input guards – used in enabled: templates below to prevent
+  # HA from registering state triggers with an empty entity_id at load time
+  tv_eco_temp_input: !input eco_temp_input
+  tv_away_temp_input: !input away_temp_input
+  tv_master_comfort_input: !input master_comfort_input
+  tv_room2_comfort_input: !input room2_comfort_input
+  tv_room3_comfort_input: !input room3_comfort_input
+  tv_room4_comfort_input: !input room4_comfort_input
+  tv_room5_comfort_input: !input room5_comfort_input
+  tv_master_presence_helper: !input master_presence_helper
+  tv_room2_presence_helper: !input room2_presence_helper
+  tv_room3_presence_helper: !input room3_presence_helper
+  tv_room4_presence_helper: !input room4_presence_helper
+  tv_room5_presence_helper: !input room5_presence_helper
 
 triggers:
   # ============================================
@@ -1225,42 +1239,49 @@ triggers:
   # ============================================
   - trigger: state
     entity_id: !input eco_temp_input
+    enabled: "{{ tv_eco_temp_input | string not in ['', 'none', 'sensor.none'] }}"
     not_to:
       - unavailable
       - unknown
     id: eco_temp_input_change
   - trigger: state
     entity_id: !input away_temp_input
+    enabled: "{{ tv_away_temp_input | string not in ['', 'none', 'sensor.none'] }}"
     not_to:
       - unavailable
       - unknown
     id: away_temp_input_change
   - trigger: state
     entity_id: !input master_comfort_input
+    enabled: "{{ tv_master_comfort_input | string not in ['', 'none', 'sensor.none'] }}"
     not_to:
       - unavailable
       - unknown
     id: master_comfort_input_change
   - trigger: state
     entity_id: !input room2_comfort_input
+    enabled: "{{ tv_room2_comfort_input | string not in ['', 'none', 'sensor.none'] }}"
     not_to:
       - unavailable
       - unknown
     id: room2_comfort_input_change
   - trigger: state
     entity_id: !input room3_comfort_input
+    enabled: "{{ tv_room3_comfort_input | string not in ['', 'none', 'sensor.none'] }}"
     not_to:
       - unavailable
       - unknown
     id: room3_comfort_input_change
   - trigger: state
     entity_id: !input room4_comfort_input
+    enabled: "{{ tv_room4_comfort_input | string not in ['', 'none', 'sensor.none'] }}"
     not_to:
       - unavailable
       - unknown
     id: room4_comfort_input_change
   - trigger: state
     entity_id: !input room5_comfort_input
+    enabled: "{{ tv_room5_comfort_input | string not in ['', 'none', 'sensor.none'] }}"
     not_to:
       - unavailable
       - unknown
@@ -1281,30 +1302,35 @@ triggers:
   # ============================================
   - trigger: state
     entity_id: !input master_presence_helper
+    enabled: "{{ tv_master_presence_helper | string not in ['', 'none', 'sensor.none'] }}"
     to:
       - "on"
       - "off"
     id: master_presence_helper_change
   - trigger: state
     entity_id: !input room2_presence_helper
+    enabled: "{{ tv_room2_presence_helper | string not in ['', 'none', 'sensor.none'] }}"
     to:
       - "on"
       - "off"
     id: room2_presence_helper_change
   - trigger: state
     entity_id: !input room3_presence_helper
+    enabled: "{{ tv_room3_presence_helper | string not in ['', 'none', 'sensor.none'] }}"
     to:
       - "on"
       - "off"
     id: room3_presence_helper_change
   - trigger: state
     entity_id: !input room4_presence_helper
+    enabled: "{{ tv_room4_presence_helper | string not in ['', 'none', 'sensor.none'] }}"
     to:
       - "on"
       - "off"
     id: room4_presence_helper_change
   - trigger: state
     entity_id: !input room5_presence_helper
+    enabled: "{{ tv_room5_presence_helper | string not in ['', 'none', 'sensor.none'] }}"
     to:
       - "on"
       - "off"
@@ -1342,7 +1368,7 @@ actions:
           - variables:
               presence_helper_entity: !input master_presence_helper
           - condition: template
-            value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
+            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
           - action: input_boolean.turn_on
             target:
               entity_id: "{{ presence_helper_entity }}"
@@ -1362,7 +1388,7 @@ actions:
           - variables:
               presence_helper_entity: !input master_presence_helper
           - condition: template
-            value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
+            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
           - action: input_boolean.turn_off
             target:
               entity_id: "{{ presence_helper_entity }}"
@@ -1382,7 +1408,7 @@ actions:
           - variables:
               presence_helper_entity: !input room2_presence_helper
           - condition: template
-            value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
+            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
           - action: input_boolean.turn_on
             target:
               entity_id: "{{ presence_helper_entity }}"
@@ -1402,7 +1428,7 @@ actions:
           - variables:
               presence_helper_entity: !input room2_presence_helper
           - condition: template
-            value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
+            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
           - action: input_boolean.turn_off
             target:
               entity_id: "{{ presence_helper_entity }}"
@@ -1422,7 +1448,7 @@ actions:
           - variables:
               presence_helper_entity: !input room3_presence_helper
           - condition: template
-            value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
+            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
           - action: input_boolean.turn_on
             target:
               entity_id: "{{ presence_helper_entity }}"
@@ -1442,7 +1468,7 @@ actions:
           - variables:
               presence_helper_entity: !input room3_presence_helper
           - condition: template
-            value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
+            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
           - action: input_boolean.turn_off
             target:
               entity_id: "{{ presence_helper_entity }}"
@@ -1462,7 +1488,7 @@ actions:
           - variables:
               presence_helper_entity: !input room4_presence_helper
           - condition: template
-            value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
+            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
           - action: input_boolean.turn_on
             target:
               entity_id: "{{ presence_helper_entity }}"
@@ -1482,7 +1508,7 @@ actions:
           - variables:
               presence_helper_entity: !input room4_presence_helper
           - condition: template
-            value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
+            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
           - action: input_boolean.turn_off
             target:
               entity_id: "{{ presence_helper_entity }}"
@@ -1502,7 +1528,7 @@ actions:
           - variables:
               presence_helper_entity: !input room5_presence_helper
           - condition: template
-            value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
+            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
           - action: input_boolean.turn_on
             target:
               entity_id: "{{ presence_helper_entity }}"
@@ -1522,7 +1548,7 @@ actions:
           - variables:
               presence_helper_entity: !input room5_presence_helper
           - condition: template
-            value_template: "{{ presence_helper_entity | string not in ['', 'sensor.none', 'none'] }}"
+            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
           - action: input_boolean.turn_off
             target:
               entity_id: "{{ presence_helper_entity }}"
