@@ -1236,55 +1236,44 @@ triggers:
 
   # ============================================
   # HELPER INPUT TRIGGERS (IMMEDIATE REACTION)
+  # trigger: event avoids HA schema validation of entity_id at load time,
+  # so empty "" defaults no longer crash the automation on startup.
+  # An empty event_data.entity_id simply never matches any real event.
   # ============================================
-  - trigger: state
-    entity_id: !input eco_temp_input
-    enabled: "{{ tv_eco_temp_input | string not in ['', 'none', 'sensor.none'] }}"
-    not_to:
-      - unavailable
-      - unknown
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input eco_temp_input
     id: eco_temp_input_change
-  - trigger: state
-    entity_id: !input away_temp_input
-    enabled: "{{ tv_away_temp_input | string not in ['', 'none', 'sensor.none'] }}"
-    not_to:
-      - unavailable
-      - unknown
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input away_temp_input
     id: away_temp_input_change
-  - trigger: state
-    entity_id: !input master_comfort_input
-    enabled: "{{ tv_master_comfort_input | string not in ['', 'none', 'sensor.none'] }}"
-    not_to:
-      - unavailable
-      - unknown
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input master_comfort_input
     id: master_comfort_input_change
-  - trigger: state
-    entity_id: !input room2_comfort_input
-    enabled: "{{ tv_room2_comfort_input | string not in ['', 'none', 'sensor.none'] }}"
-    not_to:
-      - unavailable
-      - unknown
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input room2_comfort_input
     id: room2_comfort_input_change
-  - trigger: state
-    entity_id: !input room3_comfort_input
-    enabled: "{{ tv_room3_comfort_input | string not in ['', 'none', 'sensor.none'] }}"
-    not_to:
-      - unavailable
-      - unknown
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input room3_comfort_input
     id: room3_comfort_input_change
-  - trigger: state
-    entity_id: !input room4_comfort_input
-    enabled: "{{ tv_room4_comfort_input | string not in ['', 'none', 'sensor.none'] }}"
-    not_to:
-      - unavailable
-      - unknown
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input room4_comfort_input
     id: room4_comfort_input_change
-  - trigger: state
-    entity_id: !input room5_comfort_input
-    enabled: "{{ tv_room5_comfort_input | string not in ['', 'none', 'sensor.none'] }}"
-    not_to:
-      - unavailable
-      - unknown
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input room5_comfort_input
     id: room5_comfort_input_change
   - trigger: template
     value_template: >
@@ -1299,41 +1288,32 @@ triggers:
 
   # ============================================
   # PRESENCE HELPER TRIGGERS
+  # Same trigger: event pattern – avoids entity_id schema validation crash.
   # ============================================
-  - trigger: state
-    entity_id: !input master_presence_helper
-    enabled: "{{ tv_master_presence_helper | string not in ['', 'none', 'sensor.none'] }}"
-    to:
-      - "on"
-      - "off"
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input master_presence_helper
     id: master_presence_helper_change
-  - trigger: state
-    entity_id: !input room2_presence_helper
-    enabled: "{{ tv_room2_presence_helper | string not in ['', 'none', 'sensor.none'] }}"
-    to:
-      - "on"
-      - "off"
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input room2_presence_helper
     id: room2_presence_helper_change
-  - trigger: state
-    entity_id: !input room3_presence_helper
-    enabled: "{{ tv_room3_presence_helper | string not in ['', 'none', 'sensor.none'] }}"
-    to:
-      - "on"
-      - "off"
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input room3_presence_helper
     id: room3_presence_helper_change
-  - trigger: state
-    entity_id: !input room4_presence_helper
-    enabled: "{{ tv_room4_presence_helper | string not in ['', 'none', 'sensor.none'] }}"
-    to:
-      - "on"
-      - "off"
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input room4_presence_helper
     id: room4_presence_helper_change
-  - trigger: state
-    entity_id: !input room5_presence_helper
-    enabled: "{{ tv_room5_presence_helper | string not in ['', 'none', 'sensor.none'] }}"
-    to:
-      - "on"
-      - "off"
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input room5_presence_helper
     id: room5_presence_helper_change
 
   # ============================================
