@@ -2043,7 +2043,14 @@ actions:
           {% elif role == 'follower' and (summer_mode | bool(false)) and not (master_active_for_followers | bool(false)) %}
             {% set final_raw = inputs.min_trv_temp | float(12) %}
           {% elif window_closed_recently | bool(false) %}
-            {% set final_raw = [base_target | float(eco_temp | float(19)), eco_temp | float(19)] | min %}
+            {# FIX: Don't cap active comfort demand to eco during settling.
+               Rooms with active demand (schedule/presence) keep their target;
+               only idle rooms settle at eco to prevent wasteful heating. #}
+            {% if active_for_demand | bool(false) %}
+              {% set final_raw = base_target | float(eco_temp | float(19)) %}
+            {% else %}
+              {% set final_raw = eco_temp | float(19) %}
+            {% endif %}
           {% else %}
             {% set final_raw = base_target | float(0) %}
           {% endif %}
@@ -2708,51 +2715,36 @@ actions:
                     data:
                       temperature: "{{ master_final_target }}"
                     continue_on_error: true
+                  # FIX: Write log IMMEDIATELY after API call, before wait_template.
+                  # Prevents mode:restart from cancelling the run before the log
+                  # update, which caused untracked writes and budget corruption.
+                  - if:
+                      - "{{ master_write_log_configured | bool(false) }}"
+                    then:
+                      - action: input_text.set_value
+                        target:
+                          entity_id: "{{ inputs.master_write_log_helper }}"
+                        data:
+                          value: >
+                            {% set kind = master_write_kind_current | default('sync', true) | string %}
+                            {% set existing = master_write_timestamps_clean | default('', true) | trim %}
+                            {% set now_ts = as_timestamp(now()) | int(0) | string %}
+                            {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
+                            {{ kind ~ ':' ~ new_ts }}
+                        continue_on_error: true
                   - wait_template: >
                       {{ (((state_attr(inputs.master_climate, 'temperature') | float(0)) - (master_final_target | float(0))) | abs) < 0.11 }}
                     timeout: "00:00:20"
                     continue_on_timeout: true
-                  - choose:
-                      - conditions:
-                          - "{{ wait.completed | default(false) | bool(false) }}"
-                        sequence:
-                          - if:
-                              - "{{ master_write_log_configured | bool(false) }}"
-                            then:
-                              - action: input_text.set_value
-                                target:
-                                  entity_id: "{{ inputs.master_write_log_helper }}"
-                                data:
-                                  value: >
-                                    {% set kind = master_write_kind_current | default('sync', true) | string %}
-                                    {% set existing = master_write_timestamps_clean | default('', true) | trim %}
-                                    {% set now_ts = as_timestamp(now()) | int(0) | string %}
-                                    {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
-                                    {{ kind ~ ':' ~ new_ts }}
-                                continue_on_error: true
-                      - conditions:
-                          - "{{ not (wait.completed | default(false) | bool(false)) }}"
-                        sequence:
-                          - action: system_log.write
-                            continue_on_error: true
-                            data:
-                              level: warning
-                              message: >
-                                Vaillant Blueprint: PATH A master write verification timeout; throttle timestamp updated (target={{ master_final_target | float(0) }}, actual={{ state_attr(inputs.master_climate, 'temperature') | float(0) }})
-                          - if:
-                              - "{{ master_write_log_configured | bool(false) }}"
-                            then:
-                              - action: input_text.set_value
-                                target:
-                                  entity_id: "{{ inputs.master_write_log_helper }}"
-                                data:
-                                  value: >
-                                    {% set kind = 'sync' %}
-                                    {% set existing = master_write_timestamps_clean | default('', true) | trim %}
-                                    {% set now_ts = as_timestamp(now()) | int(0) | string %}
-                                    {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
-                                    {{ kind ~ ':' ~ new_ts }}
-                                continue_on_error: true
+                  - if:
+                      - "{{ not (wait.completed | default(false) | bool(false)) }}"
+                    then:
+                      - action: system_log.write
+                        continue_on_error: true
+                        data:
+                          level: warning
+                          message: >
+                            Vaillant Blueprint: PATH A master write verification timeout (target={{ master_final_target | float(0) }}, actual={{ state_attr(inputs.master_climate, 'temperature') | float(0) }})
 
               # PATH B (CRITICAL): highest bidder boost or significant drop WITH strict cooldown
               - conditions:
@@ -2760,6 +2752,17 @@ actions:
                   - "{{ (master_needs_global_boost | bool(false)) or (master_significant_drop | bool(false)) }}"
                   - "{{ (master_target_delta_abs | float(0)) > 0.1 }}"
                   - "{{ master_change_cooldown_ok_step55 | bool(false) }}"
+                  # FIX: Anti-cycling hold gate – significant drops (>= 1.5°C) always
+                  # pass through, boosts respect raise-hold unless bypassed by event trigger
+                  - >
+                    {{
+                      (master_significant_drop | bool(false))
+                      or (master_hold_bypass | bool(false))
+                      or (
+                        (master_needs_global_boost | bool(false))
+                        and not (master_raise_hold_active | bool(false))
+                      )
+                    }}
                 sequence:
                   - action: climate.set_temperature
                     target:
@@ -2767,51 +2770,34 @@ actions:
                     data:
                       temperature: "{{ master_final_target }}"
                     continue_on_error: true
+                  # FIX: Write log IMMEDIATELY after API call, before wait_template.
+                  - if:
+                      - "{{ master_write_log_configured | bool(false) }}"
+                    then:
+                      - action: input_text.set_value
+                        target:
+                          entity_id: "{{ inputs.master_write_log_helper }}"
+                        data:
+                          value: >
+                            {% set kind = master_write_kind_current | default('sync', true) | string %}
+                            {% set existing = master_write_timestamps_clean | default('', true) | trim %}
+                            {% set now_ts = as_timestamp(now()) | int(0) | string %}
+                            {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
+                            {{ kind ~ ':' ~ new_ts }}
+                        continue_on_error: true
                   - wait_template: >
                       {{ (((state_attr(inputs.master_climate, 'temperature') | float(0)) - (master_final_target | float(0))) | abs) < 0.11 }}
                     timeout: "00:00:20"
                     continue_on_timeout: true
-                  - choose:
-                      - conditions:
-                          - "{{ wait.completed | default(false) | bool(false) }}"
-                        sequence:
-                          - if:
-                              - "{{ master_write_log_configured | bool(false) }}"
-                            then:
-                              - action: input_text.set_value
-                                target:
-                                  entity_id: "{{ inputs.master_write_log_helper }}"
-                                data:
-                                  value: >
-                                    {% set kind = master_write_kind_current | default('sync', true) | string %}
-                                    {% set existing = master_write_timestamps_clean | default('', true) | trim %}
-                                    {% set now_ts = as_timestamp(now()) | int(0) | string %}
-                                    {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
-                                    {{ kind ~ ':' ~ new_ts }}
-                                continue_on_error: true
-                      - conditions:
-                          - "{{ not (wait.completed | default(false) | bool(false)) }}"
-                        sequence:
-                          - action: system_log.write
-                            continue_on_error: true
-                            data:
-                              level: warning
-                              message: >
-                                Vaillant Blueprint: PATH B master write verification timeout; throttle timestamp updated (target={{ master_final_target | float(0) }}, actual={{ state_attr(inputs.master_climate, 'temperature') | float(0) }})
-                          - if:
-                              - "{{ master_write_log_configured | bool(false) }}"
-                            then:
-                              - action: input_text.set_value
-                                target:
-                                  entity_id: "{{ inputs.master_write_log_helper }}"
-                                data:
-                                  value: >
-                                    {% set kind = 'sync' %}
-                                    {% set existing = master_write_timestamps_clean | default('', true) | trim %}
-                                    {% set now_ts = as_timestamp(now()) | int(0) | string %}
-                                    {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
-                                    {{ kind ~ ':' ~ new_ts }}
-                                continue_on_error: true
+                  - if:
+                      - "{{ not (wait.completed | default(false) | bool(false)) }}"
+                    then:
+                      - action: system_log.write
+                        continue_on_error: true
+                        data:
+                          level: warning
+                          message: >
+                            Vaillant Blueprint: PATH B master write verification timeout (target={{ master_final_target | float(0) }}, actual={{ state_attr(inputs.master_climate, 'temperature') | float(0) }})
               # PATH C (COMFORT): regular writes with strict cooldown guard
               - conditions:
                   - "{{ master_write_allowed | bool(false) }}"
@@ -2822,51 +2808,34 @@ actions:
                     data:
                       temperature: "{{ master_final_target }}"
                     continue_on_error: true
+                  # FIX: Write log IMMEDIATELY after API call, before wait_template.
+                  - if:
+                      - "{{ master_write_log_configured | bool(false) }}"
+                    then:
+                      - action: input_text.set_value
+                        target:
+                          entity_id: "{{ inputs.master_write_log_helper }}"
+                        data:
+                          value: >
+                            {% set kind = master_write_kind_current | default('sync', true) | string %}
+                            {% set existing = master_write_timestamps_clean | default('', true) | trim %}
+                            {% set now_ts = as_timestamp(now()) | int(0) | string %}
+                            {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
+                            {{ kind ~ ':' ~ new_ts }}
+                        continue_on_error: true
                   - wait_template: >
                       {{ (((state_attr(inputs.master_climate, 'temperature') | float(0)) - (master_final_target | float(0))) | abs) < 0.11 }}
                     timeout: "00:00:20"
                     continue_on_timeout: true
-                  - choose:
-                      - conditions:
-                          - "{{ wait.completed | default(false) | bool(false) }}"
-                        sequence:
-                          - if:
-                              - "{{ master_write_log_configured | bool(false) }}"
-                            then:
-                              - action: input_text.set_value
-                                target:
-                                  entity_id: "{{ inputs.master_write_log_helper }}"
-                                data:
-                                  value: >
-                                    {% set kind = master_write_kind_current | default('sync', true) | string %}
-                                    {% set existing = master_write_timestamps_clean | default('', true) | trim %}
-                                    {% set now_ts = as_timestamp(now()) | int(0) | string %}
-                                    {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
-                                    {{ kind ~ ':' ~ new_ts }}
-                                continue_on_error: true
-                      - conditions:
-                          - "{{ not (wait.completed | default(false) | bool(false)) }}"
-                        sequence:
-                          - action: system_log.write
-                            continue_on_error: true
-                            data:
-                              level: warning
-                              message: >
-                                Vaillant Blueprint: PATH C master write verification timeout; throttle timestamp updated (target={{ master_final_target | float(0) }}, actual={{ state_attr(inputs.master_climate, 'temperature') | float(0) }})
-                          - if:
-                              - "{{ master_write_log_configured | bool(false) }}"
-                            then:
-                              - action: input_text.set_value
-                                target:
-                                  entity_id: "{{ inputs.master_write_log_helper }}"
-                                data:
-                                  value: >
-                                    {% set kind = 'sync' %}
-                                    {% set existing = master_write_timestamps_clean | default('', true) | trim %}
-                                    {% set now_ts = as_timestamp(now()) | int(0) | string %}
-                                    {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
-                                    {{ kind ~ ':' ~ new_ts }}
-                                continue_on_error: true
+                  - if:
+                      - "{{ not (wait.completed | default(false) | bool(false)) }}"
+                    then:
+                      - action: system_log.write
+                        continue_on_error: true
+                        data:
+                          level: warning
+                          message: >
+                            Vaillant Blueprint: PATH C master write verification timeout (target={{ master_final_target | float(0) }}, actual={{ state_attr(inputs.master_climate, 'temperature') | float(0) }})
           - if:
               - condition: template
                 value_template: >
