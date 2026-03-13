@@ -2068,7 +2068,7 @@ actions:
           {% if role == 'isolated' %}
             {% set boost_delta = (comfort_target | float(0)) - (current_temp | float(0)) %}
             {% set boost_needed = (active_for_demand | bool(false)) and (not (window_open_too_long | bool(false))) and ((boost_delta | float(0)) >= threshold) %}
-            {% set boost_deactivate = (not (active_for_demand | bool(false))) or ((boost_delta | float(0)) < 0.5) %}
+            {% set boost_deactivate = (not (active_for_demand | bool(false))) or ((boost_delta | float(0)) < (threshold / 2)) %}
             {% if window_open_too_long | bool(false) %}
               {% set mode_label = 'WindowOpen' %}
             {% elif away_mode_entity_on | bool(false) %}
@@ -2522,9 +2522,17 @@ actions:
                     'room3_comfort_input_change',
                     'room4_comfort_input_change',
                     'room5_comfort_input_change',
+                    'eco_temp_input_change',
+                    'away_temp_input_change',
                     'away_mode_on', 'away_mode_off',
                     'ha_start',
-                    'master_window_open_30s', 'master_window_closed'
+                    'master_window_open_30s', 'master_window_closed',
+                    'room2_window_open_30s', 'room2_window_closed',
+                    'room3_window_open_30s', 'room3_window_closed',
+                    'room4_window_open_30s', 'room4_window_closed',
+                    'room5_window_open_30s', 'room5_window_closed',
+                    'follower1_window_open_30s', 'follower1_window_closed',
+                    'follower2_window_open_30s', 'follower2_window_closed'
                   ]
                 }}
               master_last_write_kind: >
