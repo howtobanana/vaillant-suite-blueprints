@@ -2242,9 +2242,17 @@ actions:
                   {{ eco_temp | float(19) }}
                 {% endif %}
               isolated_room_demand_targets: >
+                {#
+                  Intentionally does NOT filter by needs_heat.
+                  A room in manual mode (no schedule, no presence) always wants its
+                  comfort setpoint, even when currently warm. Filtering by needs_heat
+                  would cause master_base_required_target to collapse to eco_temp
+                  the moment all rooms are warm, masking the standing demand.
+                  actual heat delivery is controlled by the individual TRVs.
+                #}
                 {% set ns = namespace(vals=[]) %}
                 {% for room in rooms_runtime_list | default([], true) %}
-                  {% if (room.role | string == 'isolated') and (room.room_ok | default(false) | bool(false)) and (room.active_for_demand | default(false) | bool(false)) and (room.needs_heat | default(false) | bool(false)) %}
+                  {% if (room.role | string == 'isolated') and (room.room_ok | default(false) | bool(false)) and (room.active_for_demand | default(false) | bool(false)) %}
                     {% set ns.vals = ns.vals + [room.final_target | float(0)] %}
                   {% endif %}
                 {% endfor %}
@@ -2430,7 +2438,10 @@ actions:
               master_needs_global_drop: >
                 {{ (not (away_mode_active_effective | bool(false))) and ((master_set_now | float(0)) > ((master_final_target | float(0)) + 0.1)) }}
               master_significant_drop: >
-                {{ ((master_set_now | float(0)) - (master_final_target | float(0))) > 2.0 }}
+                {# >= 1.5 (not > 2.0): the old strict threshold missed exact 2°C drops
+                   (e.g. 21→19) because 2.0 > 2.0 == false. 1.5 catches all meaningful
+                   eco-drops after quantization to 0.5°C steps. #}
+                {{ ((master_set_now | float(0)) - (master_final_target | float(0))) >= 1.5 }}
               max_changes_per_hour_effective: "{{ [[inputs.max_changes_per_hour | float(10), 5] | max, 20] | min }}"
               # === WRITE LOG PARSING ===
               master_write_log_configured: >
@@ -2626,6 +2637,57 @@ actions:
                   message: >
                     🚀 BOOST LOGIC | isolated_need_count={{ isolated_rooms_boost_count | float(0) | round(0) }} | Boost: active={{ master_boost_active | bool(false) }} amount={{ inputs.room_boost_amount | float(0) }}°C threshold={{ inputs.room_boost_activation_threshold | float(0) }}°C
                   level: info
+          # ════════════════════════════════════════════════════════════
+          # DEBUG LOG 4: Demand Resolution & Write-Gate
+          # ════════════════════════════════════════════════════════════
+          - if:
+              - condition: template
+                value_template: "{{ inputs.enable_debug_notifications | bool(false) }}"
+            then:
+              - action: system_log.write
+                continue_on_error: true
+                data:
+                  level: info
+                  message: >
+                    {% set _skip_reasons = namespace(items=[]) %}
+                    {% if not (master_climate_available | bool(false)) %}
+                      {% set _skip_reasons.items = _skip_reasons.items + ['climate_unavailable'] %}
+                    {% endif %}
+                    {% if master_forced_min_active | bool(false) %}
+                      {% set _skip_reasons.items = _skip_reasons.items + ['forced_min_bypasses_write_gate'] %}
+                    {% endif %}
+                    {% if not (master_change_cooldown_ok_step55 | bool(false)) %}
+                      {% set _skip_reasons.items = _skip_reasons.items + ['budget_exhausted(used=' ~ (master_write_budget_used | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ')'] %}
+                    {% endif %}
+                    {% if master_drop_hold_active | bool(false) %}
+                      {% set _skip_reasons.items = _skip_reasons.items + ['drop_hold_active(last_write=' ~ (master_last_update_age_step55 | int(0)) ~ 's_ago,hold=' ~ (master_hold_drop_after_raise_seconds | int(0)) ~ 's)'] %}
+                    {% endif %}
+                    {% if master_raise_hold_active | bool(false) %}
+                      {% set _skip_reasons.items = _skip_reasons.items + ['raise_hold_active'] %}
+                    {% endif %}
+                    {% if not (master_needs_global_drop | bool(false)) and not (master_needs_raise | bool(false)) %}
+                      {% set _skip_reasons.items = _skip_reasons.items + ['no_delta(set=' ~ (master_set_now | float(0) | round(1)) ~ '_target=' ~ (master_final_target | float(0) | round(1)) ~ ')'] %}
+                    {% endif %}
+                    {% if master_hold_bypass | bool(false) %}
+                      {% set _skip_reasons.items = _skip_reasons.items + ['hold_bypassed_by_trigger'] %}
+                    {% endif %}
+                    {% set _write_path = 'A(forced_min)' if (master_forced_min_active | bool(false)) else ('B(sig_drop/boost)' if ((master_significant_drop | bool(false)) or (master_needs_global_boost | bool(false))) else ('C(normal)' if (master_write_allowed | bool(false)) else 'NONE(blocked)')) %}
+                    🔍 DEMAND RESOLUTION | trigger={{ trigger_id_safe | default('n/a') }}
+                    presence_detected={{ master_presence_detected | bool(false) }}
+                    schedule_active={{ master_schedule_active | bool(false) }}
+                    is_manual={{ master_is_manual | bool(false) }}
+                    master_demand={{ master_demand | float(0) | round(1) }}°C
+                    master_target_temp={{ master_target_temp | float(0) | round(1) }}°C
+                    master_final_target={{ master_final_target | float(0) | round(1) }}°C
+                    master_set_now={{ master_set_now | float(0) | round(1) }}°C
+                    sig_drop={{ master_significant_drop | bool(false) }}(delta={{ ((master_set_now | float(0)) - (master_final_target | float(0))) | round(2) }})
+                    drop_hold={{ master_drop_hold_active | bool(false) }}
+                    hold_bypass={{ master_hold_bypass | bool(false) }}
+                    budget_ok={{ master_change_cooldown_ok_step55 | bool(false) }}({{ master_write_budget_remaining | int(0) }} left)
+                    write_allowed={{ master_write_allowed | bool(false) }}
+                    write_path={{ _write_path }}
+                    skip_reasons={{ _skip_reasons.items | join(',') if _skip_reasons.items | length > 0 else 'none' }}
+
           - choose:
               # PATH A (CRITICAL): forced-min writes bypass cooldown
               - conditions:
