@@ -2475,7 +2475,11 @@ actions:
                 {% endif %}
               # === SLIDING WINDOW BUDGET ===
               master_write_timestamps_clean: >
-                {% set raw = master_write_log_timestamps_raw | default('', true) %}
+                {# FIX: HA auto-types pure-numeric template output to int.
+                   When the write log has exactly 1 timestamp (no commas),
+                   master_write_log_timestamps_raw becomes int, crashing .split().
+                   | string ensures safe string operations regardless of auto-typing. #}
+                {% set raw = master_write_log_timestamps_raw | default('', true) | string %}
                 {% set now_ts = as_timestamp(now()) | float(0) %}
                 {% set entries_raw = raw.split(',') | reject('eq', '') | map('trim') | list %}
                 {# Guard: reset log if any entry is non-numeric (corruption) #}
@@ -2495,7 +2499,7 @@ actions:
                   {{ (ns.valid | list)[-cap:] | join(',') }}
                 {% endif %}
               master_write_budget_used: >
-                {% set clean = master_write_timestamps_clean | default('', true) | trim %}
+                {% set clean = master_write_timestamps_clean | default('', true) | string | trim %}
                 {{ (clean.split(',') | reject('eq', '') | list | length) if (clean | length > 0) else 0 }}
               master_write_budget_remaining: >
                 {{ (max_changes_per_hour_effective | int(10)) - (master_write_budget_used | int(0)) }}
@@ -2506,7 +2510,7 @@ actions:
                 {{ master_budget_ok | bool(false) }}
               # === LAST WRITE AGE (aus letztem Timestamp im Log) ===
               master_last_update_age_step55: >
-                {% set clean = master_write_timestamps_clean | default('', true) | trim %}
+                {% set clean = master_write_timestamps_clean | default('', true) | string | trim %}
                 {% set entries = clean.split(',') | reject('eq', '') | list %}
                 {% if entries | length > 0 %}
                   {% set last_ts = entries[-1] | float(0) %}
@@ -2727,7 +2731,7 @@ actions:
                         data:
                           value: >
                             {% set kind = master_write_kind_current | default('sync', true) | string %}
-                            {% set existing = master_write_timestamps_clean | default('', true) | trim %}
+                            {% set existing = master_write_timestamps_clean | default('', true) | string | trim %}
                             {% set now_ts = as_timestamp(now()) | int(0) | string %}
                             {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
                             {{ kind ~ ':' ~ new_ts }}
@@ -2780,7 +2784,7 @@ actions:
                         data:
                           value: >
                             {% set kind = master_write_kind_current | default('sync', true) | string %}
-                            {% set existing = master_write_timestamps_clean | default('', true) | trim %}
+                            {% set existing = master_write_timestamps_clean | default('', true) | string | trim %}
                             {% set now_ts = as_timestamp(now()) | int(0) | string %}
                             {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
                             {{ kind ~ ':' ~ new_ts }}
@@ -2818,7 +2822,7 @@ actions:
                         data:
                           value: >
                             {% set kind = master_write_kind_current | default('sync', true) | string %}
-                            {% set existing = master_write_timestamps_clean | default('', true) | trim %}
+                            {% set existing = master_write_timestamps_clean | default('', true) | string | trim %}
                             {% set now_ts = as_timestamp(now()) | int(0) | string %}
                             {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
                             {{ kind ~ ':' ~ new_ts }}
@@ -2861,14 +2865,7 @@ actions:
   - if:
       - condition: template
         value_template: >
-          {{
-            inputs.enable_debug_notifications | bool(false)
-            and (
-              trigger.id | default('manual') != 'scheduled'
-              or (master_write_allowed | bool(false) and master_change_cooldown_ok_step55 | bool(false))
-              or (master_forced_min_active | bool(false) and ((master_target_delta_abs | float(0)) > 0.5))
-            )
-          }}
+          {{ inputs.enable_debug_notifications | bool(false) }}
     then:
       - action: persistent_notification.create
         continue_on_error: true
@@ -2877,8 +2874,7 @@ actions:
           title: "🔥 Vaillant Leitstand ({{ now().strftime('%H:%M:%S') }})"
           message: |
             MASTER THERMOSTAT
-            BUILD: LEITSTAND_V2_MASTER_HEATING
-            RUNTIME_HINT: If you still see old layout, reload automations / restart HA
+            BUILD: LEITSTAND_V3_DIAG
             {% set m_target = master_final_target | default(0) | float(0) %}
             {% set m_base = master_base_required_target | default(0) | float(0) %}
             {% set m_forced = master_forced_min_active | default(false) | bool(false) %}
@@ -2890,18 +2886,56 @@ actions:
             {% set m_reason = master_reason | default('base', true) | string %}
             {% set m_hvac = master_hvac_action | default('n/a', true) | string %}
             Trigger: {{ trigger_id_safe | default('manual', true) }}
-            Entity: {{ inputs.master_climate | default('Vaillant_Wien Zone 1', true) }}
+            Entity: {{ inputs.master_climate | default('n/a', true) }}
+            Set Now: {{ master_set_now | default(0) | float(0) | round(1) }}°C
             Target: {{ m_target | round(1) }}°C
+            Delta: {{ master_target_delta_abs | default(0) | float(0) | round(2) }}°C
             Base: {{ m_base | round(1) }}°C
             Modus: {{ 'Not-Aus' if m_forced else ('Abwesend' if m_away else 'Heizbetrieb') }}
             State: {{ m_state }}
             Reason: {{ m_reason }}
             HVAC: {{ m_hvac }}
 
+            DEMAND CHAIN
+            master_is_manual: {{ master_is_manual | default('?') }}
+            master_sched_valid: {{ master_sched_valid | default('?') }}
+            master_helper_valid: {{ master_helper_valid | default('?') }}
+            master_sensors_valid: {{ master_sensors_valid | default('?') }}
+            master_schedule_active: {{ master_schedule_active | default('?') }}
+            master_presence_detected: {{ master_presence_detected | default('?') }}
+            master_comfort_temp: {{ master_comfort_temp | default('?') }}
+            master_demand: {{ master_demand | default('?') }}
+            eco_temp: {{ eco_temp | default('?') }}
+            master_target_temp: {{ master_target_temp | default(0) | float(0) | round(1) }}°C
+            master_target_final: {{ master_target_final | default(0) | float(0) | round(1) }}°C
+            summer_mode: {{ summer_mode | default('?') }}
+
+            ROOM DEMANDS
+            {% set demand_targets = isolated_room_demand_targets | default([]) %}
+            isolated_room_demand_targets: {{ demand_targets }}
+            rooms_runtime_list count: {{ rooms_runtime_list | default([]) | length }}
+            {% for room in rooms_runtime_list | default([], true) %}
+            {{ room.key | default('?') }}: enabled={{ room.enabled | default('?') }} room_ok={{ room.room_ok | default('?') }} active={{ room.active_for_demand | default('?') }} manual={{ room.manual_mode | default('?') }} comfort={{ room.comfort_target | default('?') }} base={{ room.base_target | default('?') }} final={{ room.final_target | default(0) | float(0) | round(1) }}
+            {% endfor %}
+
             MODIFIERS
             Boost: {{ 'ACTIVE' if m_boost else 'OFF' }}
             Weather: {{ m_weather | round(1) }}°C
             Humidity: {{ m_humidity | round(1) }}°C
+
+            WRITE GATE
+            write_allowed: {{ master_write_allowed | default('?') }}
+            drop_allowed: {{ master_drop_allowed | default('?') }}
+            raise_allowed: {{ master_raise_allowed | default('?') }}
+            needs_drop: {{ master_needs_global_drop | default('?') }}
+            needs_raise: {{ master_needs_raise | default('?') }}
+            sig_drop: {{ master_significant_drop | default('?') }}
+            budget_ok: {{ master_change_cooldown_ok_step55 | default('?') }} ({{ master_write_budget_remaining | default('?') }} left)
+            drop_hold: {{ master_drop_hold_active | default('?') }}
+            raise_hold: {{ master_raise_hold_active | default('?') }}
+            hold_bypass: {{ master_hold_bypass | default('?') }}
+            last_write_kind: {{ master_last_write_kind | default('?') }}
+            last_write_age: {{ master_last_update_age_step55 | default(0) | float(0) | round(0) }}s
 
             RAUM STATUS
             {% set hys = inputs.hysteresis | float(0.6) %}
