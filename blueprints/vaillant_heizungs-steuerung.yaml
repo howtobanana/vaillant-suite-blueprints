@@ -2276,6 +2276,11 @@ actions:
                 {% set demand_targets = isolated_room_demand_targets | default([]) %}
                 {% if master_forced_min_active | bool(false) %}
                   {% set target_raw = master_safety_floor | float(12) %}
+                {% elif away_mode_active_effective | bool(false) %}
+                  {# Away mode: master uses away_temp directly.
+                     Room demands must NOT pull the master above away_temp —
+                     the master controls heat delivery for all rooms. #}
+                  {% set target_raw = master_target_final | float(0) %}
                 {% elif (master_presence_priority_active | bool(false)) and ((master_presence_detected | default(false)) | bool(false)) %}
                   {% set target_raw = master_target_final | float(0) %}
                 {% elif demand_targets | length | float(0) > 0 %}
