@@ -2007,9 +2007,11 @@ actions:
               {# Falls back to user's configured comfort_fixed, never to a hardcoded value #}
               {% set comfort_target = comfort_fixed | float(20) %}
             {% endif %}
-            {% if away_mode_entity_on | bool(false) %}
-              {% set base_target = away_temp | float(16) %}
-            {% elif active_for_demand | bool(false) %}
+            {# Away mode is NOT applied to individual rooms — the master
+               thermostat already drops to away_temp, which limits heat
+               delivery for all rooms. Duplicating it here would be
+               redundant and could mask demand tracking. #}
+            {% if active_for_demand | bool(false) %}
               {% set base_target = comfort_target | float(0) %}
             {% else %}
               {% set base_target = eco_temp | float(19) %}
