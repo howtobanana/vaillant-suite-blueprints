@@ -1039,9 +1039,19 @@ blueprint:
       collapsed: true
       input:
         enable_debug_notifications:
-          name: "📣 Live-Leitstand (Debug) aktivieren"
+          name: "📣 Live-Leitstand (jeder Lauf)"
           description: |
-            Erstellt eine sich im Hintergrund aktualisierende Leitstand-Notification.
+            Leitstand-Notification bei **jedem** Automationslauf (alle 3 Min).
+            Erzeugt viele Updates – nur für aktive Fehlersuche.
+          default: false
+          selector:
+            boolean:
+        enable_debug_on_demand:
+          name: "📣 Live-Leitstand (nur bei Bedarf)"
+          description: |
+            Leitstand-Notification nur wenn ein Write ansteht oder ein
+            Event-Trigger (Präsenz, Fenster, Helper-Änderung) ausgelöst hat.
+            Produziert weniger Updates – geeignet für laufenden Betrieb.
           default: false
           selector:
             boolean:
@@ -1571,6 +1581,7 @@ actions:
         enable_humidity_compensation: !input enable_humidity_compensation
         humidity_drop_amount: !input humidity_drop_amount
         enable_debug_notifications: !input enable_debug_notifications
+        enable_debug_on_demand: !input enable_debug_on_demand
         master_climate: !input master_climate
         master_write_log_helper: !input master_write_log_helper
         master_comfort_input: !input master_comfort_input
@@ -2251,17 +2262,14 @@ actions:
                   {{ eco_temp | float(19) }}
                 {% endif %}
               isolated_room_demand_targets: >
-                {#
-                  Intentionally does NOT filter by needs_heat.
-                  A room in manual mode (no schedule, no presence) always wants its
-                  comfort setpoint, even when currently warm. Filtering by needs_heat
-                  would cause master_base_required_target to collapse to eco_temp
-                  the moment all rooms are warm, masking the standing demand.
-                  actual heat delivery is controlled by the individual TRVs.
-                #}
+                {# Only rooms that actually need heat contribute to master demand.
+                   If a room's current temp is already above its target, the TRV
+                   won't open — raising the master would waste an API write.
+                   Anti-cycling holds prevent rapid oscillation as rooms cross
+                   their target threshold. #}
                 {% set ns = namespace(vals=[]) %}
                 {% for room in rooms_runtime_list | default([], true) %}
-                  {% if (room.role | string == 'isolated') and (room.room_ok | default(false) | bool(false)) and (room.active_for_demand | default(false) | bool(false)) %}
+                  {% if (room.role | string == 'isolated') and (room.room_ok | default(false) | bool(false)) and (room.active_for_demand | default(false) | bool(false)) and (room.needs_heat | default(false) | bool(false)) %}
                     {% set ns.vals = ns.vals + [room.final_target | float(0)] %}
                   {% endif %}
                 {% endfor %}
@@ -2655,7 +2663,7 @@ actions:
           # ════════════════════════════════════════════════════════════
           - if:
               - condition: template
-                value_template: "{{ inputs.enable_debug_notifications | bool(false) }}"
+                value_template: "{{ inputs.enable_debug_notifications | bool(false) or inputs.enable_debug_on_demand | bool(false) }}"
             then:
               - action: system_log.write
                 continue_on_error: true
@@ -2668,7 +2676,7 @@ actions:
           # ════════════════════════════════════════════════════════════
           - if:
               - condition: template
-                value_template: "{{ inputs.enable_debug_notifications | bool(false) }}"
+                value_template: "{{ inputs.enable_debug_notifications | bool(false) or inputs.enable_debug_on_demand | bool(false) }}"
             then:
               - action: system_log.write
                 continue_on_error: true
@@ -2857,7 +2865,7 @@ actions:
                   {% set master_entity_valid = (master_entity not in ['', 'sensor.none', 'none']) and (master_state not in ['unknown', 'unavailable', 'none', '']) %}
                   {% set actual = (state_attr(master_entity, 'temperature') | float(0)) if master_entity_valid else 0.0 %}
                   {% set mismatch = ((actual | float(0)) - (master_final_target | float(0))) | abs %}
-                  {{ (inputs.enable_debug_notifications | bool(false)) and (master_entity_valid | bool(false)) and (age_s <= verify_window_s) and ((mismatch | float(0)) > 0.11) }}
+                  {{ (inputs.enable_debug_notifications | bool(false) or inputs.enable_debug_on_demand | bool(false)) and (master_entity_valid | bool(false)) and (age_s <= verify_window_s) and ((mismatch | float(0)) > 0.11) }}
             then:
               - action: system_log.write
                 continue_on_error: true
@@ -2872,7 +2880,20 @@ actions:
   - if:
       - condition: template
         value_template: >
-          {{ inputs.enable_debug_notifications | bool(false) }}
+          {% set every_run = inputs.enable_debug_notifications | bool(false) %}
+          {% set on_demand = inputs.enable_debug_on_demand | bool(false) %}
+          {% if every_run %}
+            {{ true }}
+          {% elif on_demand %}
+            {# Fire on event triggers (not scheduled) OR when a write is pending #}
+            {{
+              trigger_id_safe | default('manual') != 'scheduled'
+              or (master_write_allowed | bool(false))
+              or (master_forced_min_active | bool(false) and ((master_target_delta_abs | float(0)) > 0.5))
+            }}
+          {% else %}
+            {{ false }}
+          {% endif %}
     then:
       - action: persistent_notification.create
         continue_on_error: true
