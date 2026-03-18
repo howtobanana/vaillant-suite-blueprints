@@ -1552,6 +1552,45 @@ actions:
                   level: info
           - stop: ""
 
+  # ===== PRESENCE HELPER SYNC (ha_start / scheduled) =====
+  # Template triggers need a False→True transition to fire. After HA restart
+  # or automation reload, sensors already "on" won't trigger — helper stays
+  # stale. This compact sync corrects helpers that are out of step.
+  - if:
+      - "{{ trigger.id | default('manual') in ['ha_start', 'scheduled'] }}"
+    then:
+      - variables:
+          _sync_delay: "{{ (presence_activation_delay | float(2)) * 60 }}"
+          _now: "{{ as_timestamp(now()) | float(0) }}"
+      - repeat:
+          for_each:
+            - sensors: "{{ tv_master_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list }}"
+              helper: "{{ tv_master_presence_helper | default('') | string }}"
+            - sensors: "{{ tv_room2_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list }}"
+              helper: "{{ tv_room2_presence_helper | default('') | string }}"
+            - sensors: "{{ tv_room3_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list }}"
+              helper: "{{ tv_room3_presence_helper | default('') | string }}"
+            - sensors: "{{ tv_room4_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list }}"
+              helper: "{{ tv_room4_presence_helper | default('') | string }}"
+            - sensors: "{{ tv_room5_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list }}"
+              helper: "{{ tv_room5_presence_helper | default('') | string }}"
+          sequence:
+            - if:
+                - "{{ repeat.item.helper | string not in ['', 'sensor.none', 'none'] and (repeat.item.helper | string | length) > 5 }}"
+                - "{{ (repeat.item.sensors | length) > 0 }}"
+                - "{{ is_state(repeat.item.helper, 'off') }}"
+                - >
+                  {% for s in expand(repeat.item.sensors) %}
+                    {% if s is not none and s.state == 'on' and ((_now | float) - (as_timestamp(s.last_changed, _now | float) | float)) >= (_sync_delay | float(120)) %}
+                      {{ true }}
+                    {% endif %}
+                  {% endfor %}
+              then:
+                - action: input_boolean.turn_on
+                  target:
+                    entity_id: "{{ repeat.item.helper }}"
+                  continue_on_error: true
+
   - variables:
       # ===== GROUP 1: INPUTS & HELPERS =====
       inputs:
@@ -2244,6 +2283,36 @@ actions:
                   data:
                     temperature: "{{ room_final_target }}"
                   continue_on_error: true
+                # --- TRV write verification ---
+                - delay:
+                    seconds: 3
+                - variables:
+                    trv_readback: >
+                      {{ state_attr(room_climate, 'temperature') | float(-999) }}
+                    trv_entity_state: >
+                      {{ states(room_climate) | default('unknown', true) | string }}
+                - choose:
+                    - conditions:
+                        - >
+                          {{
+                            trv_entity_state in ['unavailable', 'unknown']
+                            or ((trv_readback | float(-999)) - (room_final_target | float(0))) | abs > 0.5
+                          }}
+                      sequence:
+                        - action: persistent_notification.create
+                          data:
+                            title: "⚠️ TRV Write Failed"
+                            message: >
+                              {{ state_attr(room_climate, 'friendly_name') | default(room_climate, true) }}
+                              antwortet nicht!
+
+                              Soll: {{ room_final_target | round(1) }}°C
+                              Readback: {{ trv_readback | round(1) }}°C
+                              Entity-State: {{ trv_entity_state }}
+
+                              Möglicherweise ist das Gerät in Zigbee2MQTT
+                              offline — bitte prüfen und ggf. neu pairen.
+                            notification_id: "trv_fail_{{ room_climate | replace('.', '_') }}"
 
   # ===== STEP 5.5: MASTER TARGET AGGREGATION & WRITE =====
   - choose:
@@ -2943,7 +3012,7 @@ actions:
             isolated_room_demand_targets: {{ demand_targets }}
             rooms_runtime_list count: {{ rooms_runtime_list | default([]) | length }}
             {% for room in rooms_runtime_list | default([], true) %}
-            {{ room.key | default('?') }}: enabled={{ room.enabled | default('?') }} room_ok={{ room.room_ok | default('?') }} active={{ room.active_for_demand | default('?') }} manual={{ room.manual_mode | default('?') }} comfort={{ room.comfort_target | default('?') }} base={{ room.base_target | default('?') }} final={{ room.final_target | default(0) | float(0) | round(1) }}
+            {{ room.key | default('?') }}: enabled={{ room.enabled | default('?') }} room_ok={{ room.room_ok | default('?') }} active={{ room.active_for_demand | default('?') }} manual={{ room.manual_mode | default('?') }} comfort={{ room.comfort_target | default('?') }} base={{ room.base_target | default('?') }} final={{ room.final_target | default(0) | float(0) | round(1) }} sp={{ room.current_setpoint | default(0) | float(0) | round(1) }}
             {% endfor %}
 
             MODIFIERS
@@ -2993,14 +3062,16 @@ actions:
             {% set label = room_key %}
             {% endif %}
             {% set final_temp = room.final_target | default(0) | float(0) %}
+            {% set cur_sp = room.current_setpoint | default(0) | float(0) %}
+            {% set r_delta = ((final_temp - cur_sp) | abs) | round(1) %}
             {% set mode_label = room.mode_label | default('n/a', true) | string %}
             {% set boost_needed = room.boost_needed | default(false) | bool(false) %}
             {% set needs_heat = room.needs_heat | default(false) | bool(false) %}
             {% set hvac_action = room.hvac_action | default('n/a', true) | string %}
             {% if room_role == 'isolated' %}
-            {{ label }}: {{ final_temp | round(1) }}°C | {{ mode_label }} | Boost {{ 'ON' if boost_needed else 'OFF' }} | Heating {{ 'ON' if needs_heat else 'OFF' }} | HVAC {{ hvac_action }}
+            {{ label }}: soll={{ final_temp | round(1) }}°C ist_sp={{ cur_sp | round(1) }}°C Δ={{ r_delta }}°C | {{ mode_label }} | Boost {{ 'ON' if boost_needed else 'OFF' }} | Heating {{ 'ON' if needs_heat else 'OFF' }} | HVAC {{ hvac_action }}
             {% else %}
-            {{ label }}: {{ final_temp | round(1) }}°C | {{ mode_label }} | Boost n/a | Heating {{ 'ON' if needs_heat else 'OFF' }} | HVAC {{ hvac_action }}
+            {{ label }}: soll={{ final_temp | round(1) }}°C ist_sp={{ cur_sp | round(1) }}°C Δ={{ r_delta }}°C | {{ mode_label }} | Boost n/a | Heating {{ 'ON' if needs_heat else 'OFF' }} | HVAC {{ hvac_action }}
             {% endif %}
             {% endif %}
             {% endfor %}
