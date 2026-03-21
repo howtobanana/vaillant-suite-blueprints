@@ -1056,6 +1056,17 @@ blueprint:
           default: false
           selector:
             boolean:
+        notify_service:
+          name: "📱 Mobile Push (opt)"
+          description: |
+            Optionaler Notify-Service für Push-Notifications aufs Handy (z.B. `notify.mobile_app_iphone_von_fabian`).
+            Wird für **Normal-Leitstand** und **Kritische Alerts** genutzt.
+            Expert-Verlauf wird NICHT aufs Handy gepusht (zu häufig).
+
+            Den Service-Namen findest du unter: Entwicklerwerkzeuge → Dienste → `notify.`
+          default: ""
+          selector:
+            text:
 
 trigger_variables:
   tv_master_presence_sensors: !input master_presence_sensors
@@ -1653,6 +1664,7 @@ actions:
         humidity_drop_amount: !input humidity_drop_amount
         enable_leitstand_normal: !input enable_leitstand_normal
         enable_leitstand_expert: !input enable_leitstand_expert
+        notify_service: !input notify_service
         master_climate: !input master_climate
         master_write_log_helper: !input master_write_log_helper
         master_comfort_input: !input master_comfort_input
@@ -2982,6 +2994,8 @@ actions:
       _leitstand_normal: "{{ inputs.enable_leitstand_normal | default(false) | bool(false) }}"
       _leitstand_expert: "{{ inputs.enable_leitstand_expert | default(false) | bool(false) }}"
       _leitstand_any: "{{ (_leitstand_normal | bool(false)) or (_leitstand_expert | bool(false)) }}"
+      _notify_service: "{{ inputs.notify_service | default('') | string | trim }}"
+      _notify_configured: "{{ _notify_service | length > 5 and _notify_service.startswith('notify.') }}"
       _is_demand_event: >
         {{
           trigger_id_safe | default('manual') != 'scheduled'
@@ -3030,10 +3044,10 @@ actions:
           message: >-
             {%- set n = '\n' -%}
             {%- set msg = namespace(out='') -%}
-            {%- set msg.out = msg.out ~ '🚨 Trigger: ' ~ (trigger_id_safe | default('manual')) ~ ' | Boost ' ~ ('AN' if (_l_m_boost | bool(false)) else 'AUS') ~ ' | Wetter ' ~ (_l_m_weather | float(0) | round(1)) ~ '°C | Away ' ~ ('✅' if (_l_m_away | bool(false)) else '❌') -%}
+            {%- set msg.out = msg.out ~ '🚨 Trigger: ' ~ (trigger_id_safe | default('manual')) ~ ' | Boost ' ~ ('AN' if (_l_m_boost | bool(false)) else 'AUS') ~ ' | Wetter ' ~ (_l_m_weather | float(0) | round(1)) ~ '°C | Away ' ~ ('✅' if (_l_m_away | bool(false)) else '⬜') -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🌡️ **Master — ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus ~ '** (' ~ _l_m_reason ~ ')' -%}
             {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Komfort ' ~ (master_comfort_temp | default(0) | float(0) | round(1)) ~ '°C' -%}
-            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '❌') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '❌') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '❌') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '❌') ~ ' Sensoren' -%}
+            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren' -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🚪 **Räume**' -%}
             {%- set ns_dis = namespace(labels=[]) -%}
             {%- for room in rooms_runtime_list | default([], true) -%}
@@ -3044,8 +3058,9 @@ actions:
               {%- set ft = room.final_target | default(0) | float(0) -%}
               {%- set ml = room.mode_label | default('n/a') | string -%}
               {%- set ha_i = '🔥' if (room.hvac_action | default('n/a')) == 'heating' else '💤' -%}
+              {%- set w_icon = ' 🪟' if (room.window_open_too_long | default(false) | bool(false)) else '' -%}
               {%- if room.enabled | default(false) | bool(false) -%}
-                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ (ft | round(1)) ~ '°C — ' ~ ml ~ ' ' ~ ha_i -%}
+                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ (ft | round(1)) ~ '°C — ' ~ ml ~ ' ' ~ ha_i ~ w_icon -%}
               {%- else -%}
                 {%- set ns_dis.labels = ns_dis.labels + [rk] -%}
               {%- endif -%}
@@ -3061,9 +3076,17 @@ actions:
                 {%- set rl = state_attr(cid, 'friendly_name') | default(room.key | default('?'), true) if rok else (room.key | default('?')) -%}
                 {%- set cok = room.climate_ok | default(false) | bool(false) -%}
                 {%- set wid = room.window | default('') | string -%}
-                {%- set wok = wid not in ['', 'sensor.none', 'none'] and states(wid) not in ['unknown', 'unavailable'] -%}
-                {%- set pok = (room.presence_sensors_sanitized | default([]) | length) > 0 -%}
-                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ ('✅' if cok else '❌') ~ 'TRV  ' ~ ('✅' if wok else '❌') ~ 'Fenster  ' ~ ('✅' if pok else '❌') ~ 'Präsenz' -%}
+                {%- set w_configured = wid not in ['', 'sensor.none', 'none'] -%}
+                {%- set w_online = w_configured and states(wid) not in ['unknown', 'unavailable'] -%}
+                {%- set p_configured = (room.presence_sensors_sanitized | default([]) | length) > 0 -%}
+                {%- set dev_line = ('✅' if cok else '❌') ~ 'TRV' -%}
+                {%- if w_configured -%}
+                  {%- set dev_line = dev_line ~ '  ' ~ ('✅' if w_online else '❌') ~ 'Fenster' -%}
+                {%- endif -%}
+                {%- if p_configured -%}
+                  {%- set dev_line = dev_line ~ '  ' ~ '✅Präsenz' -%}
+                {%- endif -%}
+                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ dev_line -%}
               {%- endif -%}
             {%- endfor -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🚧 ' -%}
@@ -3076,6 +3099,31 @@ actions:
             {%- endif -%}
             {%- set msg.out = msg.out ~ ' | Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ' | Write vor ' ~ (master_last_update_age_step55 | default(0) | float(0) | round(0)) ~ 's' -%}
             {{ msg.out }}
+      - if:
+          - "{{ _notify_configured | bool(false) }}"
+        then:
+          - action: "{{ _notify_service }}"
+            continue_on_error: true
+            data:
+              title: "📣 Vaillant Leitstand"
+              message: >-
+                {%- set n = '\n' -%}
+                {%- set msg = namespace(out='') -%}
+                {%- set msg.out = msg.out ~ '🌡️ Master: ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus -%}
+                {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C' -%}
+                {%- set msg.out = msg.out ~ n ~ '🚧 Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) -%}
+                {%- for room in rooms_runtime_list | default([], true) -%}
+                  {%- if room.enabled | default(false) | bool(false) -%}
+                    {%- set cid = room.climate | default('') | string -%}
+                    {%- set rok = room.room_ok | default(false) | bool(false) -%}
+                    {%- set rl = state_attr(cid, 'friendly_name') | default(room.key | default('?'), true) if rok else (room.key | default('?')) -%}
+                    {%- set ft = room.final_target | default(0) | float(0) -%}
+                    {%- set ml = room.mode_label | default('n/a') | string -%}
+                    {%- set ha_i = '🔥' if (room.hvac_action | default('n/a')) == 'heating' else '💤' -%}
+                    {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ (ft | round(1)) ~ '°C ' ~ ml ~ ' ' ~ ha_i -%}
+                  {%- endif -%}
+                {%- endfor -%}
+                {{ msg.out }}
 
   # ════════════════════════════════════════════════════════════
   # LEITSTAND EXPERT: Verlauf (unique ID, nur bei Events/Writes)
@@ -3092,10 +3140,10 @@ actions:
             {%- set n = '\n' -%}
             {%- set msg = namespace(out='') -%}
             {%- set msg.out = msg.out ~ '🚨 Trigger: ' ~ (trigger_id_safe | default('manual')) ~ ' | Boost ' ~ ('AN' if (_l_m_boost | bool(false)) else 'AUS') ~ ' | Wetter ' ~ (_l_m_weather | float(0) | round(1)) ~ '°C | Feucht. ' ~ (_l_m_humidity | float(0) | round(1)) ~ '°C' -%}
-            {%- set msg.out = msg.out ~ n ~ 'Away ' ~ ('✅' if (_l_m_away | bool(false)) else '❌') ~ ' | Sommer ' ~ ('✅' if (summer_mode | default(false) | bool(false)) else '❌') ~ ' | Entität: ' ~ (inputs.master_climate | default('n/a')) -%}
+            {%- set msg.out = msg.out ~ n ~ 'Away ' ~ ('✅' if (_l_m_away | bool(false)) else '⬜') ~ ' | Sommer ' ~ ('✅' if (summer_mode | default(false) | bool(false)) else '⬜') ~ ' | Entität: ' ~ (inputs.master_climate | default('n/a')) -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🌡️ **Master — ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus ~ '** (' ~ _l_m_reason ~ ')' -%}
             {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Base ' ~ (_l_m_base | float(0) | round(1)) ~ '°C | Eco ' ~ (eco_temp | default(0) | float(0) | round(1)) ~ '°C | Δ=' ~ (_l_m_delta | float(0) | round(1)) -%}
-            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '❌') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '❌') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '❌') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '❌') ~ ' Sensoren' -%}
+            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren' -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🚪 **Räume**' -%}
             {%- set ns_dis = namespace(labels=[]) -%}
             {%- for room in rooms_runtime_list | default([], true) -%}
@@ -3109,8 +3157,9 @@ actions:
               {%- set ml = room.mode_label | default('n/a') | string -%}
               {%- set ha_i = '🔥' if (room.hvac_action | default('n/a')) == 'heating' else '💤' -%}
               {%- set is_active = room.active_for_demand | default(false) | bool(false) -%}
+              {%- set w_icon = ' 🪟' if (room.window_open_too_long | default(false) | bool(false)) else '' -%}
               {%- if room.enabled | default(false) | bool(false) -%}
-                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ (ft | round(1)) ~ '°C (Ist ' ~ (ct | round(1)) ~ '°C Δ=' ~ rd ~ ') — ' ~ ml ~ ' ' ~ ha_i ~ (' — aktiv' if is_active else '') -%}
+                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ (ft | round(1)) ~ '°C (Ist ' ~ (ct | round(1)) ~ '°C Δ=' ~ rd ~ ') — ' ~ ml ~ ' ' ~ ha_i ~ w_icon ~ (' — aktiv' if is_active else '') -%}
               {%- else -%}
                 {%- set ns_dis.labels = ns_dis.labels + [rk] -%}
               {%- endif -%}
@@ -3126,9 +3175,17 @@ actions:
                 {%- set rl = state_attr(cid, 'friendly_name') | default(room.key | default('?'), true) if rok else (room.key | default('?')) -%}
                 {%- set cok = room.climate_ok | default(false) | bool(false) -%}
                 {%- set wid = room.window | default('') | string -%}
-                {%- set wok = wid not in ['', 'sensor.none', 'none'] and states(wid) not in ['unknown', 'unavailable'] -%}
-                {%- set pok = (room.presence_sensors_sanitized | default([]) | length) > 0 -%}
-                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ ('✅' if cok else '❌') ~ 'TRV  ' ~ ('✅' if wok else '❌') ~ 'Fenster  ' ~ ('✅' if pok else '❌') ~ 'Präsenz' -%}
+                {%- set w_configured = wid not in ['', 'sensor.none', 'none'] -%}
+                {%- set w_online = w_configured and states(wid) not in ['unknown', 'unavailable'] -%}
+                {%- set p_configured = (room.presence_sensors_sanitized | default([]) | length) > 0 -%}
+                {%- set dev_line = ('✅' if cok else '❌') ~ 'TRV' -%}
+                {%- if w_configured -%}
+                  {%- set dev_line = dev_line ~ '  ' ~ ('✅' if w_online else '❌') ~ 'Fenster' -%}
+                {%- endif -%}
+                {%- if p_configured -%}
+                  {%- set dev_line = dev_line ~ '  ' ~ '✅Präsenz' -%}
+                {%- endif -%}
+                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ dev_line -%}
               {%- endif -%}
             {%- endfor -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🚧 ' -%}
@@ -3140,7 +3197,7 @@ actions:
               {%- set msg.out = msg.out ~ 'Blockiert (Cooldown/Hold)' -%}
             {%- endif -%}
             {%- set msg.out = msg.out ~ ' | Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ' | Write vor ' ~ (master_last_update_age_step55 | default(0) | float(0) | round(0)) ~ 's' -%}
-            {%- set msg.out = msg.out ~ n ~ 'Raise ' ~ ('✅' if (master_needs_raise | default(false) | bool(false)) else '❌') ~ ' | Drop ' ~ ('✅' if (master_needs_global_drop | default(false) | bool(false)) else '❌') ~ ' | Hold ' ~ ('✅' if (master_drop_hold_active | default(false) | bool(false)) or (master_raise_hold_active | default(false) | bool(false)) else '❌') ~ ' | Bypass ' ~ ('✅' if (master_hold_bypass | default(false) | bool(false)) else '❌') ~ ' | Letzter: ' ~ (master_last_write_kind | default('?')) ~ ' vor ' ~ (master_last_update_age_step55 | default(0) | float(0) | round(0)) ~ 's' -%}
+            {%- set msg.out = msg.out ~ n ~ 'Raise ' ~ ('✅' if (master_needs_raise | default(false) | bool(false)) else '⬜') ~ ' | Drop ' ~ ('✅' if (master_needs_global_drop | default(false) | bool(false)) else '⬜') ~ ' | Hold ' ~ ('✅' if (master_drop_hold_active | default(false) | bool(false)) or (master_raise_hold_active | default(false) | bool(false)) else '⬜') ~ ' | Bypass ' ~ ('✅' if (master_hold_bypass | default(false) | bool(false)) else '⬜') ~ ' | Letzter: ' ~ (master_last_write_kind | default('?')) ~ ' vor ' ~ (master_last_update_age_step55 | default(0) | float(0) | round(0)) ~ 's' -%}
             {{ msg.out }}
 
   # ════════════════════════════════════════════════════════════
@@ -3183,6 +3240,21 @@ actions:
                 {%- endfor -%}
                 {%- set msg.out = msg.out ~ n ~ n ~ '🕐 Erkannt: ' ~ now().strftime('%H:%M:%S') -%}
                 {{ msg.out }}
+          - if:
+              - "{{ _notify_configured | bool(false) }}"
+            then:
+              - action: "{{ _notify_service }}"
+                continue_on_error: true
+                data:
+                  title: "⚠️ Vaillant — Problem erkannt"
+                  message: >-
+                    {%- set n = '\n' -%}
+                    {%- set msg = namespace(out='') -%}
+                    {%- for item in _alert_problems -%}
+                      {%- if not loop.first -%}{%- set msg.out = msg.out ~ n -%}{%- endif -%}
+                      {%- set msg.out = msg.out ~ item -%}
+                    {%- endfor -%}
+                    {{ msg.out }}
       - conditions:
           - "{{ (_alert_problems | length) == 0 }}"
         sequence:
