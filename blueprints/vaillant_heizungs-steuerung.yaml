@@ -24,7 +24,7 @@ blueprint:
     **Haftungsausschluss:**
     Dies ist ein privates Projekt. Der Autor ist kein zertifizierter Installateur. Die Nutzung erfolgt auf eigene Gefahr. Für Schäden an der Anlage oder durch Fehlkonfiguration wird keine Haftung übernommen.
 
-    **Version:** 2.0 (Refactor) | **Autor:** BananaPower
+    **Version:** 1.0 | **Autor:** BananaPower
 
   domain: automation
   source_url: https://raw.githubusercontent.com/howtobanana/vaillant-suite-blueprints/main/blueprints/vaillant_heizungs-steuerung.yaml
@@ -1038,30 +1038,23 @@ blueprint:
         Leitstand und Administrator-Tools.
       collapsed: true
       input:
-        debug_level:
-          name: "📣 Live-Leitstand"
+        enable_leitstand_normal:
+          name: "📣 Leitstand Normal"
           description: |
-            Steuert den Debug-Leitstand als Push-Notification.
-
-            **Aus** — Keine Leitstand-Notifications.
-            **Normal** — Kompakte Übersicht bei jedem Lauf.
-            **Normal (nur bei Bedarf)** — Kompakte Übersicht nur bei Events/Writes.
-            **Expert** — Volle Diagnose-Details bei jedem Lauf.
-            **Expert (nur bei Bedarf)** — Volle Diagnose nur bei Events/Writes.
-          default: "off"
+            Kompakte Live-Übersicht als Push-Notification.
+            Überschreibt sich bei jedem Lauf selbst (Dashboard).
+          default: false
           selector:
-            select:
-              options:
-                - label: "Aus"
-                  value: "off"
-                - label: "Normal (jeder Lauf)"
-                  value: "normal"
-                - label: "Normal (nur bei Bedarf)"
-                  value: "normal_demand"
-                - label: "Expert (jeder Lauf)"
-                  value: "expert"
-                - label: "Expert (nur bei Bedarf)"
-                  value: "expert_demand"
+            boolean:
+        enable_leitstand_expert:
+          name: "📣 Leitstand Expert (Verlauf)"
+          description: |
+            Volle Diagnose-Details als Verlauf.
+            Feuert nur bei Events/Writes (nicht bei Routine-Läufen).
+            Jede Notification bleibt erhalten (History).
+          default: false
+          selector:
+            boolean:
 
 trigger_variables:
   tv_master_presence_sensors: !input master_presence_sensors
@@ -1358,7 +1351,8 @@ actions:
   - variables:
       presence_activation_delay: !input presence_activation_delay
       presence_deactivation_delay: !input presence_deactivation_delay
-      debug_level: !input debug_level
+      enable_leitstand_normal: !input enable_leitstand_normal
+      enable_leitstand_expert: !input enable_leitstand_expert
   - choose:
       - conditions:
           - condition: trigger
@@ -1373,7 +1367,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ debug_level | default('off') not in ['off', ''] }}"
+                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
             then:
               - action: system_log.write
                 data:
@@ -1393,7 +1387,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ debug_level | default('off') not in ['off', ''] }}"
+                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
             then:
               - action: system_log.write
                 data:
@@ -1413,7 +1407,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ debug_level | default('off') not in ['off', ''] }}"
+                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
             then:
               - action: system_log.write
                 data:
@@ -1433,7 +1427,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ debug_level | default('off') not in ['off', ''] }}"
+                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
             then:
               - action: system_log.write
                 data:
@@ -1453,7 +1447,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ debug_level | default('off') not in ['off', ''] }}"
+                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
             then:
               - action: system_log.write
                 data:
@@ -1473,7 +1467,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ debug_level | default('off') not in ['off', ''] }}"
+                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
             then:
               - action: system_log.write
                 data:
@@ -1493,7 +1487,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ debug_level | default('off') not in ['off', ''] }}"
+                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
             then:
               - action: system_log.write
                 data:
@@ -1513,7 +1507,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ debug_level | default('off') not in ['off', ''] }}"
+                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
             then:
               - action: system_log.write
                 data:
@@ -1533,7 +1527,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ debug_level | default('off') not in ['off', ''] }}"
+                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
             then:
               - action: system_log.write
                 data:
@@ -1553,7 +1547,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ debug_level | default('off') not in ['off', ''] }}"
+                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
             then:
               - action: system_log.write
                 data:
@@ -1656,7 +1650,8 @@ actions:
         weather_boost_zone3: !input weather_boost_zone3
         enable_humidity_compensation: !input enable_humidity_compensation
         humidity_drop_amount: !input humidity_drop_amount
-        debug_level: !input debug_level
+        enable_leitstand_normal: !input enable_leitstand_normal
+        enable_leitstand_expert: !input enable_leitstand_expert
         master_climate: !input master_climate
         master_write_log_helper: !input master_write_log_helper
         master_comfort_input: !input master_comfort_input
@@ -2768,7 +2763,7 @@ actions:
           # ════════════════════════════════════════════════════════════
           - if:
               - condition: template
-                value_template: "{{ inputs.debug_level | default('off') not in ['off', ''] }}"
+                value_template: "{{ (inputs.enable_leitstand_normal | default(false) | bool(false)) or (inputs.enable_leitstand_expert | default(false) | bool(false)) }}"
             then:
               - action: system_log.write
                 continue_on_error: true
@@ -2781,7 +2776,7 @@ actions:
           # ════════════════════════════════════════════════════════════
           - if:
               - condition: template
-                value_template: "{{ inputs.debug_level | default('off') not in ['off', ''] }}"
+                value_template: "{{ (inputs.enable_leitstand_normal | default(false) | bool(false)) or (inputs.enable_leitstand_expert | default(false) | bool(false)) }}"
             then:
               - action: system_log.write
                 continue_on_error: true
@@ -2970,7 +2965,7 @@ actions:
                   {% set master_entity_valid = (master_entity not in ['', 'sensor.none', 'none']) and (master_state not in ['unknown', 'unavailable', 'none', '']) %}
                   {% set actual = (state_attr(master_entity, 'temperature') | float(0)) if master_entity_valid else 0.0 %}
                   {% set mismatch = ((actual | float(0)) - (master_final_target | float(0))) | abs %}
-                  {{ (inputs.debug_level | default('off') not in ['off', '']) and (master_entity_valid | bool(false)) and (age_s <= verify_window_s) and ((mismatch | float(0)) > 0.11) }}
+                  {{ ((inputs.enable_leitstand_normal | default(false) | bool(false)) or (inputs.enable_leitstand_expert | default(false) | bool(false))) and (master_entity_valid | bool(false)) and (age_s <= verify_window_s) and ((mismatch | float(0)) > 0.11) }}
             then:
               - action: system_log.write
                 continue_on_error: true
@@ -2980,243 +2975,171 @@ actions:
                     MASTER VERIFY (restart-safe) mismatch | requested={{ master_final_target | float(0) }} actual={{ state_attr(inputs.master_climate, 'temperature') | float(0) }} delta={{ ((state_attr(inputs.master_climate, 'temperature') | float(0)) - (master_final_target | float(0))) | round(3) }}
 
   # ════════════════════════════════════════════════════════════
-  # LIVE DEBUG LEITSTAND
+  # LEITSTAND: Shared variables for both modes
+  # ════════════════════════════════════════════════════════════
+  - variables:
+      _leitstand_normal: "{{ inputs.enable_leitstand_normal | default(false) | bool(false) }}"
+      _leitstand_expert: "{{ inputs.enable_leitstand_expert | default(false) | bool(false) }}"
+      _leitstand_any: "{{ (_leitstand_normal | bool(false)) or (_leitstand_expert | bool(false)) }}"
+      _is_demand_event: >
+        {{
+          trigger_id_safe | default('manual') != 'scheduled'
+          or (master_write_allowed | bool(false))
+          or (master_forced_min_active | bool(false) and ((master_target_delta_abs | float(0)) > 0.5))
+        }}
+      _l_m_target: "{{ master_final_target | default(0) | float(0) }}"
+      _l_m_base: "{{ master_base_required_target | default(0) | float(0) }}"
+      _l_m_forced: "{{ master_forced_min_active | default(false) | bool(false) }}"
+      _l_m_away: "{{ away_mode_entity_on | default(false) | bool(false) }}"
+      _l_m_boost: "{{ master_boost_active | default(false) | bool(false) }}"
+      _l_m_weather: "{{ weather_modifier_sanitized | default(0) | float(0) }}"
+      _l_m_humidity: "{{ master_humidity_drop | default(0) | float(0) }}"
+      _l_m_state: "{{ master_state | default('ECO', true) | string }}"
+      _l_m_reason: "{{ master_reason | default('base', true) | string }}"
+      _l_m_hvac: "{{ master_hvac_action | default('n/a', true) | string }}"
+      _l_m_delta: "{{ master_target_delta_abs | default(0) | float(0) }}"
+      _l_hvac_icon: "{{ '🔥' if (_l_m_hvac | string) == 'heating' else '💤' }}"
+      _l_m_current_temp: >
+        {%- set climate_curr = state_attr(inputs.master_climate, 'current_temperature') | float(21) -%}
+        {%- set tid = inputs.master_temp_sensor | default('') | string -%}
+        {%- if tid not in ['', 'sensor.none', 'none'] and states(tid) not in ['unknown', 'unavailable', 'none', ''] -%}
+          {{ states(tid) | float(climate_curr) }}
+        {%- else -%}
+          {{ climate_curr }}
+        {%- endif -%}
+      _l_m_sched: "{{ master_schedule_active | default(false) | bool(false) }}"
+      _l_m_pres: "{{ master_presence_detected | default(false) | bool(false) }}"
+      _l_m_man: "{{ master_is_manual | default(false) | bool(false) }}"
+      _l_m_sens_valid: "{{ master_sensors_valid | default(false) | bool(false) }}"
+      _l_m_help_valid: "{{ master_helper_valid | default(false) | bool(false) }}"
+      _l_m_mode_modus: "{{ 'Not-Aus' if (_l_m_forced | bool(false)) else ('Abwesend' if (_l_m_away | bool(false)) else 'Heizbetrieb') }}"
+
+  # ════════════════════════════════════════════════════════════
+  # LEITSTAND NORMAL: Live-Dashboard (überschreibt sich selbst)
   # ════════════════════════════════════════════════════════════
   - if:
-      - condition: template
-        value_template: >
-          {% set dl = inputs.debug_level | default('off') | string %}
-          {% if dl in ['off', ''] %}
-            {{ false }}
-          {% elif dl in ['normal', 'expert'] %}
-            {{ true }}
-          {% else %}
-            {# demand modes: only on event triggers or pending writes #}
-            {{
-              trigger_id_safe | default('manual') != 'scheduled'
-              or (master_write_allowed | bool(false))
-              or (master_forced_min_active | bool(false) and ((master_target_delta_abs | float(0)) > 0.5))
-            }}
-          {% endif %}
+      - "{{ _leitstand_normal | bool(false) }}"
     then:
-      - variables:
-          _dl: "{{ inputs.debug_level | default('off') | string }}"
-          _is_expert: "{{ _dl in ['expert', 'expert_demand'] }}"
       - action: persistent_notification.create
         continue_on_error: true
         data:
           notification_id: "vaillant_leitstand"
           title: "🔥 Vaillant Leitstand ({{ now().strftime('%H:%M:%S') }})"
-          message: >
-            {% set m_target = master_final_target | default(0) | float(0) %}
-            {% set m_base = master_base_required_target | default(0) | float(0) %}
-            {% set m_forced = master_forced_min_active | default(false) | bool(false) %}
-            {% set m_away = away_mode_entity_on | default(false) | bool(false) %}
-            {% set m_boost = master_boost_active | default(false) | bool(false) %}
-            {% set m_weather = weather_modifier_sanitized | default(0) | float(0) %}
-            {% set m_humidity = master_humidity_drop | default(0) | float(0) %}
-            {% set m_state = master_state | default('ECO', true) | string %}
-            {% set m_reason = master_reason | default('base', true) | string %}
-            {% set m_hvac = master_hvac_action | default('n/a', true) | string %}
-            {% set m_set_now = master_set_now | default(0) | float(0) %}
-            {% set m_delta = master_target_delta_abs | default(0) | float(0) %}
-            {% set hys = inputs.hysteresis | float(0.6) %}
-            {% set climate_curr = state_attr(inputs.master_climate, 'current_temperature') | float(21) %}
-            {% set master_temp_id = inputs.master_temp_sensor | default('') | string %}
-            {% if master_temp_id not in ['', 'sensor.none', 'none'] and states(master_temp_id) not in ['unknown', 'unavailable', 'none', ''] %}
-            {% set master_current_temp = states(master_temp_id) | float(climate_curr) %}
-            {% else %}
-            {% set master_current_temp = climate_curr %}
-            {% endif %}
-            {% set m_sched = master_schedule_active | default(false) | bool(false) %}
-            {% set m_pres = master_presence_detected | default(false) | bool(false) %}
-            {% set m_man = master_is_manual | default(false) | bool(false) %}
-            {% set m_sens_valid = master_sensors_valid | default(false) | bool(false) %}
-            {% set m_help_valid = master_helper_valid | default(false) | bool(false) %}
-            {% set m_mode_modus = 'Not-Aus' if m_forced else ('Abwesend' if m_away else 'Heizbetrieb') %}
-            {% set hvac_icon = '🔥' if m_hvac == 'heating' else '💤' %}
-            {% set hvac_label = 'Heizen' if m_hvac == 'heating' else ('Inaktiv (' ~ m_hvac ~ ')') %}
-            {% if _is_expert | bool(false) %}
-            🚨 **System, Ereignis & Modi**
+          message: >-
+            {%- set n = '\n' -%}
+            {%- set msg = namespace(out='') -%}
+            {%- set msg.out = msg.out ~ '🚨 Trigger: ' ~ (trigger_id_safe | default('manual')) ~ ' | Boost ' ~ ('AN' if (_l_m_boost | bool(false)) else 'AUS') ~ ' | Wetter ' ~ (_l_m_weather | float(0) | round(1)) ~ '°C | Away ' ~ ('✅' if (_l_m_away | bool(false)) else '❌') -%}
+            {%- set msg.out = msg.out ~ n ~ n ~ '🌡️ **Master — ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus ~ '** (' ~ _l_m_reason ~ ')' -%}
+            {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Komfort ' ~ (master_comfort_temp | default(0) | float(0) | round(1)) ~ '°C' -%}
+            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '❌') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '❌') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '❌') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '❌') ~ ' Sensoren' -%}
+            {%- set msg.out = msg.out ~ n ~ n ~ '🚪 **Räume**' -%}
+            {%- set ns_dis = namespace(labels=[]) -%}
+            {%- for room in rooms_runtime_list | default([], true) -%}
+              {%- set rk = room.key | default('?') | string -%}
+              {%- set cid = room.climate | default('') | string -%}
+              {%- set rok = room.room_ok | default(false) | bool(false) -%}
+              {%- set rl = state_attr(cid, 'friendly_name') | default(rk, true) if rok else rk -%}
+              {%- set ft = room.final_target | default(0) | float(0) -%}
+              {%- set ml = room.mode_label | default('n/a') | string -%}
+              {%- set ha_i = '🔥' if (room.hvac_action | default('n/a')) == 'heating' else '💤' -%}
+              {%- if room.enabled | default(false) | bool(false) -%}
+                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ (ft | round(1)) ~ '°C — ' ~ ml ~ ' ' ~ ha_i -%}
+              {%- else -%}
+                {%- set ns_dis.labels = ns_dis.labels + [rk] -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- if ns_dis.labels | length > 0 -%}
+              {%- set msg.out = msg.out ~ n ~ '▸ Deaktiviert: ' ~ (ns_dis.labels | join(', ')) -%}
+            {%- endif -%}
+            {%- set msg.out = msg.out ~ n ~ n ~ '📱 **Geräte**' -%}
+            {%- for room in rooms_runtime_list | default([], true) -%}
+              {%- if room.enabled | default(false) | bool(false) -%}
+                {%- set cid = room.climate | default('') | string -%}
+                {%- set rok = room.room_ok | default(false) | bool(false) -%}
+                {%- set rl = state_attr(cid, 'friendly_name') | default(room.key | default('?'), true) if rok else (room.key | default('?')) -%}
+                {%- set cok = room.climate_ok | default(false) | bool(false) -%}
+                {%- set wid = room.window | default('') | string -%}
+                {%- set wok = wid not in ['', 'sensor.none', 'none'] and states(wid) not in ['unknown', 'unavailable'] -%}
+                {%- set pok = (room.presence_sensors_sanitized | default([]) | length) > 0 -%}
+                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ ('✅' if cok else '❌') ~ 'TRV  ' ~ ('✅' if wok else '❌') ~ 'Fenster  ' ~ ('✅' if pok else '❌') ~ 'Präsenz' -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- set msg.out = msg.out ~ n ~ n ~ '🚧 ' -%}
+            {%- if master_write_allowed | default(false) | bool(false) -%}
+              {%- set msg.out = msg.out ~ 'Schreiben erlaubt' -%}
+            {%- elif not (master_needs_raise | default(false) | bool(false)) and not (master_needs_global_drop | default(false) | bool(false)) -%}
+              {%- set msg.out = msg.out ~ 'Blockiert (kein Δ)' -%}
+            {%- else -%}
+              {%- set msg.out = msg.out ~ 'Blockiert (Cooldown/Hold)' -%}
+            {%- endif -%}
+            {%- set msg.out = msg.out ~ ' | Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ' | Write vor ' ~ (master_last_update_age_step55 | default(0) | float(0) | round(0)) ~ 's' -%}
+            {{ msg.out }}
 
-            * Build & Zeit: LEITSTAND_V4 ({{ now().strftime('%H:%M:%S') }})
-            * Entität: {{ inputs.master_climate | default('n/a', true) }}
-            * Trigger: {{ trigger_id_safe | default('manual', true) }}
-            * Modifikatoren: Boost {{ 'AN' if m_boost else 'AUS' }} | Wetter {{ m_weather | round(1) }}°C | Feuchtigkeit {{ m_humidity | round(1) }}°C
-            * Sommermodus: {{ '✅ Aktiv' if (summer_mode | default(false) | bool(false)) else '❌ Inaktiv' }}
-            * Away: {{ '✅ ON' if m_away else '❌ OFF' }}
-
-            🌡️ **Master (Wohnzimmer)**
-
-            * Status: {{ m_state }} / {{ m_mode_modus }} (Grund: {{ m_reason }})
-            * HVAC: {{ hvac_icon }} {{ hvac_label }}
-            * Temperaturen: Ist {{ master_current_temp | round(1) }}°C | Soll {{ m_target | round(1) }}°C | Base {{ m_base | round(1) }}°C | Komfort {{ master_comfort_temp | default(0) | float(0) | round(1) }}°C | Eco {{ eco_temp | default(0) | float(0) | round(1) }}°C | Δ={{ m_delta | round(1) }}°C
-            * Demand Chain Details:
-               * {{ '✅' if m_pres else '❌' }} Präsenz erkannt (master_presence_detected: {{ m_pres }})
-               * {{ '✅' if m_sched else '❌' }} Zeitplan (master_schedule_active: {{ m_sched }} | sched_valid: {{ master_sched_valid | default('?') }})
-               * {{ '✅' if m_man else '❌' }} Manuell (master_is_manual: {{ m_man }})
-               * {{ '✅' if (m_sens_valid or m_help_valid) else '❌' }} Sensoren & Helper (sensors_valid: {{ m_sens_valid }} | helper_valid: {{ m_help_valid }})
-
-            🚪 **Räume** (Insgesamt: {{ rooms_runtime_list | default([]) | length }} ausgelesen)
-
-            {% set ns_active = namespace(items=[]) %}
-            {% set ns_disabled = namespace(items=[]) %}
-            {% for room in rooms_runtime_list | default([], true) %}
-            {% set rk = room.key | default('?', true) | string %}
-            {% set climate_id = room.climate | default('', true) | string %}
-            {% set room_ok = room.room_ok | default(false) | bool(false) %}
-            {% if room_ok %}
-            {% set rl = state_attr(climate_id, 'friendly_name') | default(rk, true) %}
-            {% else %}
-            {% set rl = rk %}
-            {% endif %}
-            {% set ft = room.final_target | default(0) | float(0) %}
-            {% set sp = room.current_setpoint | default(0) | float(0) %}
-            {% set rd = ((ft - sp) | abs) | round(1) %}
-            {% set ml = room.mode_label | default('n/a', true) | string %}
-            {% set ha = room.hvac_action | default('n/a', true) | string %}
-            {% set ha_l = 'Heizen' if ha == 'heating' else 'Inaktiv' %}
-            {% if room.enabled | default(false) | bool(false) %}
-            {% set ns_active.items = ns_active.items + [
-              '* ' ~ rl ~ ' (' ~ rk ~ '): Soll ' ~ (ft | round(1)) ~ '°C | Ist ' ~ (sp | round(1)) ~ '°C | Δ=' ~ rd ~ '°C\n'
-              ~ '   * Details: aktiv=' ~ ('Ja' if room.active_for_demand | default(false) | bool(false) else 'Nein')
-              ~ ' | manuell=' ~ ('Ja' if room.manual_mode | default(false) | bool(false) else 'Nein')
-              ~ ' | comfort=' ~ (room.comfort_target | default(0) | float(0) | round(1))
-              ~ ' | base=' ~ (room.base_target | default(0) | float(0) | round(1))
-              ~ ' | sp=' ~ (sp | round(1))
-              ~ ' | HVAC: ' ~ ha_l
-            ] %}
-            {% else %}
-            {% set ns_disabled.items = ns_disabled.items + [
-              '   * ' ~ rk ~ ': comfort=' ~ (room.comfort_target | default(0) | float(0) | round(1))
-              ~ ' | base=' ~ (room.base_target | default(0) | float(0) | round(1))
-              ~ ' | final=' ~ (ft | round(1))
-              ~ ' | sp=' ~ (sp | round(1))
-            ] %}
-            {% endif %}
-            {% endfor %}
-            {% for item in ns_active.items %}
-            {{ item }}
-            {% endfor %}
-            {% if ns_disabled.items | length > 0 %}
-            * Deaktivierte Räume & Follower:
-            {% for item in ns_disabled.items %}
-            {{ item }}
-            {% endfor %}
-            {% endif %}
-
-            📱 **Geräte-Status (Devices)**
-
-            {% for room in rooms_runtime_list | default([], true) %}
-            {% set rk = room.key | default('?', true) | string %}
-            {% set climate_id = room.climate | default('', true) | string %}
-            {% set climate_ok = room.climate_ok | default(false) | bool(false) %}
-            {% set window_id = room.window | default('', true) | string %}
-            {% set window_ok = window_id not in ['', 'sensor.none', 'none'] and states(window_id) not in ['unknown', 'unavailable'] %}
-            {% set pres_sensors = room.presence_sensors_sanitized | default([], true) %}
-            {% set pres_ok = (pres_sensors | length) > 0 %}
-            {% if room.enabled | default(false) | bool(false) %}
-            {% set room_ok = room.room_ok | default(false) | bool(false) %}
-            {% set label = state_attr(climate_id, 'friendly_name') | default(rk, true) if room_ok else rk %}
-            * {{ label }} ({{ rk }}): {{ '✅' if climate_ok else '❌' }} TRV | {{ '✅' if window_ok else '❌' }} Fenster | {{ '✅' if pres_ok else '❌' }} Präsenz
-            {% else %}
-            * {{ rk }}: {{ '❌' if not climate_ok else '✅' }} TRV | {{ '➖' if not window_ok else '✅' }} Fenster | {{ '➖' if not pres_ok else '✅' }} Präsenz
-            {% endif %}
-            {% endfor %}
-
-            🚧 **Write Gate & API**
-
-            * Gate-Status: {{ 'Schreiben erlaubt' if (master_write_allowed | default(false) | bool(false)) else 'Schreiben blockiert' }} (write_allowed: {{ master_write_allowed | default('?') }})
-            * Gate-Logik:
-               * Raise: needs_raise: {{ master_needs_raise | default('?') }} | raise_allowed: {{ master_raise_allowed | default('?') }} | raise_hold: {{ master_raise_hold_active | default('?') }}
-               * Drop: needs_drop: {{ master_needs_global_drop | default('?') }} | drop_allowed: {{ master_drop_allowed | default('?') }} | drop_hold: {{ master_drop_hold_active | default('?') }} | sig_drop: {{ master_significant_drop | default('?') }}
-               * Bypass: hold_bypass: {{ master_hold_bypass | default('?') }}
-            * API-Budget: {{ master_write_budget_remaining | int(0) }}/{{ max_changes_per_hour_effective | int(10) }} verfügbar ({{ master_write_budget_used | int(0) }} genutzt in den letzten 60 Min.)
-            * Letzter Schreibvorgang: Typ {{ master_last_write_kind | default('?') }} vor {{ master_last_update_age_step55 | default(0) | float(0) | round(0) }}s
-            {% else %}
-            🚨 **Ereignis & Modi**
-
-            * Trigger: {{ trigger_id_safe | default('manual', true) }}
-            * Modifikatoren: Boost {{ 'AN' if m_boost else 'AUS' }} | Wetter {{ m_weather | round(1) }}°C
-            * Away: {{ '✅ ON' if m_away else '❌ OFF' }}
-
-            🌡️ **Master (Wohnzimmer)**
-
-            * Status: {{ m_state }} / {{ m_mode_modus }} (Grund: {{ m_reason }})
-            * HVAC: {{ hvac_icon }} {{ hvac_label }}
-            * Temperaturen: Ist {{ master_current_temp | round(1) }}°C | Soll {{ m_target | round(1) }}°C | Komfort {{ master_comfort_temp | default(0) | float(0) | round(1) }}°C
-            * Bedingungen: {{ '✅' if m_pres else '❌' }} Präsenz | {{ '✅' if m_sched else '❌' }} Zeitplan | {{ '✅' if m_man else '❌' }} Manuell | {{ '✅' if (m_sens_valid or m_help_valid) else '❌' }} Sensoren OK
-
-            🚪 **Räume**
-
-            {% set ns_active_n = namespace(items=[]) %}
-            {% set ns_disabled_n = namespace(labels=[]) %}
-            {% for room in rooms_runtime_list | default([], true) %}
-            {% set rk = room.key | default('?', true) | string %}
-            {% set climate_id = room.climate | default('', true) | string %}
-            {% set room_ok = room.room_ok | default(false) | bool(false) %}
-            {% if room_ok %}
-            {% set rl = state_attr(climate_id, 'friendly_name') | default(rk, true) %}
-            {% else %}
-            {% set rl = rk %}
-            {% endif %}
-            {% set ft = room.final_target | default(0) | float(0) %}
-            {% set ml = room.mode_label | default('n/a', true) | string %}
-            {% set ha = room.hvac_action | default('n/a', true) | string %}
-            {% set ha_l = 'Heizen' if ha == 'heating' else 'Inaktiv' %}
-            {% if room.enabled | default(false) | bool(false) %}
-            {% set ns_active_n.items = ns_active_n.items + [
-              '* ' ~ rl ~ ' (' ~ rk ~ '): ' ~ (ft | round(1)) ~ '°C (Modus: ' ~ ml ~ ' | HVAC: ' ~ ha_l ~ ')'
-            ] %}
-            {% else %}
-            {% set ns_disabled_n.labels = ns_disabled_n.labels + [rk] %}
-            {% endif %}
-            {% endfor %}
-            {% for item in ns_active_n.items %}
-            {{ item }}
-            {% endfor %}
-            {% if ns_disabled_n.labels | length > 0 %}
-            * Deaktiviert: {{ ns_disabled_n.labels | join(', ') }}
-            {% endif %}
-
-            📱 **Geräte-Status (Devices)**
-
-            {% for room in rooms_runtime_list | default([], true) %}
-            {% if room.enabled | default(false) | bool(false) %}
-            {% set rk = room.key | default('?', true) | string %}
-            {% set climate_id = room.climate | default('', true) | string %}
-            {% set climate_ok = room.climate_ok | default(false) | bool(false) %}
-            {% set room_ok = room.room_ok | default(false) | bool(false) %}
-            {% set label = state_attr(climate_id, 'friendly_name') | default(rk, true) if room_ok else rk %}
-            {% set window_id = room.window | default('', true) | string %}
-            {% set window_ok = window_id not in ['', 'sensor.none', 'none'] and states(window_id) not in ['unknown', 'unavailable'] %}
-            {% set pres_sensors = room.presence_sensors_sanitized | default([], true) %}
-            {% set pres_ok = (pres_sensors | length) > 0 %}
-            * {{ label }} ({{ rk }}): {{ '✅' if climate_ok else '❌' }} TRV | {{ '✅' if window_ok else '❌' }} Fenster | {{ '✅' if pres_ok else '❌' }} Präsenz
-            {% endif %}
-            {% endfor %}
-            {% set ns_offline = namespace(items=[]) %}
-            {% for room in rooms_runtime_list | default([], true) %}
-            {% if not (room.enabled | default(false) | bool(false)) %}
-            {% set ns_offline.items = ns_offline.items + [room.key | default('?', true) | string] %}
-            {% endif %}
-            {% endfor %}
-            {% if ns_offline.items | length > 0 %}
-            * Deaktivierte Räume: ❌ TRVs offline / nicht verfügbar
-            {% endif %}
-
-            🚧 **Write Gate & API**
-
-            {% if master_write_allowed | default(false) | bool(false) %}
-            {% set gate_label = 'Schreiben erlaubt' %}
-            {% elif not (master_needs_raise | default(false) | bool(false)) and not (master_needs_global_drop | default(false) | bool(false)) %}
-            {% set gate_label = 'Blockiert (Keine Anhebung/Absenkung nötig)' %}
-            {% else %}
-            {% set gate_label = 'Blockiert (Cooldown/Hold aktiv)' %}
-            {% endif %}
-            * Gate-Status: {{ gate_label }}
-            * API-Budget: {{ master_write_budget_remaining | int(0) }}/{{ max_changes_per_hour_effective | int(10) }} verfügbar
-            * Letzter Schreibvorgang: vor {{ master_last_update_age_step55 | default(0) | float(0) | round(0) }}s
-            {% endif %}
+  # ════════════════════════════════════════════════════════════
+  # LEITSTAND EXPERT: Verlauf (unique ID, nur bei Events/Writes)
+  # ════════════════════════════════════════════════════════════
+  - if:
+      - "{{ _leitstand_expert | bool(false) }}"
+      - "{{ _is_demand_event | bool(false) }}"
+    then:
+      - action: persistent_notification.create
+        continue_on_error: true
+        data:
+          notification_id: "vaillant_expert_{{ now().strftime('%Y%m%d_%H%M%S') }}"
+          title: "🔍 Expert Leitstand ({{ now().strftime('%H:%M:%S') }})"
+          message: >-
+            {%- set n = '\n' -%}
+            {%- set msg = namespace(out='') -%}
+            {%- set msg.out = msg.out ~ '🚨 Trigger: ' ~ (trigger_id_safe | default('manual')) ~ ' | Boost ' ~ ('AN' if (_l_m_boost | bool(false)) else 'AUS') ~ ' | Wetter ' ~ (_l_m_weather | float(0) | round(1)) ~ '°C | Feucht. ' ~ (_l_m_humidity | float(0) | round(1)) ~ '°C' -%}
+            {%- set msg.out = msg.out ~ n ~ 'Away ' ~ ('✅' if (_l_m_away | bool(false)) else '❌') ~ ' | Sommer ' ~ ('✅' if (summer_mode | default(false) | bool(false)) else '❌') ~ ' | Entität: ' ~ (inputs.master_climate | default('n/a')) -%}
+            {%- set msg.out = msg.out ~ n ~ n ~ '🌡️ **Master — ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus ~ '** (' ~ _l_m_reason ~ ')' -%}
+            {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Base ' ~ (_l_m_base | float(0) | round(1)) ~ '°C | Eco ' ~ (eco_temp | default(0) | float(0) | round(1)) ~ '°C | Δ=' ~ (_l_m_delta | float(0) | round(1)) -%}
+            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '❌') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '❌') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '❌') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '❌') ~ ' Sensoren' -%}
+            {%- set msg.out = msg.out ~ n ~ n ~ '🚪 **Räume**' -%}
+            {%- set ns_dis = namespace(labels=[]) -%}
+            {%- for room in rooms_runtime_list | default([], true) -%}
+              {%- set rk = room.key | default('?') | string -%}
+              {%- set cid = room.climate | default('') | string -%}
+              {%- set rok = room.room_ok | default(false) | bool(false) -%}
+              {%- set rl = state_attr(cid, 'friendly_name') | default(rk, true) if rok else rk -%}
+              {%- set ft = room.final_target | default(0) | float(0) -%}
+              {%- set ct = room.current_temp | default(0) | float(0) -%}
+              {%- set rd = ((ft - ct) | abs) | round(1) -%}
+              {%- set ml = room.mode_label | default('n/a') | string -%}
+              {%- set ha_i = '🔥' if (room.hvac_action | default('n/a')) == 'heating' else '💤' -%}
+              {%- set is_active = room.active_for_demand | default(false) | bool(false) -%}
+              {%- if room.enabled | default(false) | bool(false) -%}
+                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ (ft | round(1)) ~ '°C (Ist ' ~ (ct | round(1)) ~ '°C Δ=' ~ rd ~ ') — ' ~ ml ~ ' ' ~ ha_i ~ (' — aktiv' if is_active else '') -%}
+              {%- else -%}
+                {%- set ns_dis.labels = ns_dis.labels + [rk] -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- if ns_dis.labels | length > 0 -%}
+              {%- set msg.out = msg.out ~ n ~ '▸ Deaktiviert: ' ~ (ns_dis.labels | join(', ')) -%}
+            {%- endif -%}
+            {%- set msg.out = msg.out ~ n ~ n ~ '📱 **Geräte**' -%}
+            {%- for room in rooms_runtime_list | default([], true) -%}
+              {%- if room.enabled | default(false) | bool(false) -%}
+                {%- set cid = room.climate | default('') | string -%}
+                {%- set rok = room.room_ok | default(false) | bool(false) -%}
+                {%- set rl = state_attr(cid, 'friendly_name') | default(room.key | default('?'), true) if rok else (room.key | default('?')) -%}
+                {%- set cok = room.climate_ok | default(false) | bool(false) -%}
+                {%- set wid = room.window | default('') | string -%}
+                {%- set wok = wid not in ['', 'sensor.none', 'none'] and states(wid) not in ['unknown', 'unavailable'] -%}
+                {%- set pok = (room.presence_sensors_sanitized | default([]) | length) > 0 -%}
+                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ ('✅' if cok else '❌') ~ 'TRV  ' ~ ('✅' if wok else '❌') ~ 'Fenster  ' ~ ('✅' if pok else '❌') ~ 'Präsenz' -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- set msg.out = msg.out ~ n ~ n ~ '🚧 ' -%}
+            {%- if master_write_allowed | default(false) | bool(false) -%}
+              {%- set msg.out = msg.out ~ 'Schreiben erlaubt' -%}
+            {%- elif not (master_needs_raise | default(false) | bool(false)) and not (master_needs_global_drop | default(false) | bool(false)) -%}
+              {%- set msg.out = msg.out ~ 'Blockiert (kein Δ)' -%}
+            {%- else -%}
+              {%- set msg.out = msg.out ~ 'Blockiert (Cooldown/Hold)' -%}
+            {%- endif -%}
+            {%- set msg.out = msg.out ~ ' | Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ' | Write vor ' ~ (master_last_update_age_step55 | default(0) | float(0) | round(0)) ~ 's' -%}
+            {%- set msg.out = msg.out ~ n ~ 'Raise ' ~ ('✅' if (master_needs_raise | default(false) | bool(false)) else '❌') ~ ' | Drop ' ~ ('✅' if (master_needs_global_drop | default(false) | bool(false)) else '❌') ~ ' | Hold ' ~ ('✅' if (master_drop_hold_active | default(false) | bool(false)) or (master_raise_hold_active | default(false) | bool(false)) else '❌') ~ ' | Bypass ' ~ ('✅' if (master_hold_bypass | default(false) | bool(false)) else '❌') ~ ' | Letzter: ' ~ (master_last_write_kind | default('?')) ~ ' vor ' ~ (master_last_update_age_step55 | default(0) | float(0) | round(0)) ~ 's' -%}
+            {{ msg.out }}
 
 mode: restart
