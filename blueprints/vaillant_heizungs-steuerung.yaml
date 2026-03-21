@@ -1036,6 +1036,7 @@ blueprint:
       name: "🛠️ System & Debugging"
       description: |
         Leitstand und Administrator-Tools.
+        ⚠️ Kritische Alerts (Master offline, NOT-AUS, TRV offline, API-Budget erschöpft) werden **immer** automatisch als Notification gefeuert und löschen sich selbst, sobald das Problem behoben ist.
       collapsed: true
       input:
         enable_leitstand_normal:
