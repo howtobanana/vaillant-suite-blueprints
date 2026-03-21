@@ -3142,4 +3142,52 @@ actions:
             {%- set msg.out = msg.out ~ n ~ 'Raise ' ~ ('✅' if (master_needs_raise | default(false) | bool(false)) else '❌') ~ ' | Drop ' ~ ('✅' if (master_needs_global_drop | default(false) | bool(false)) else '❌') ~ ' | Hold ' ~ ('✅' if (master_drop_hold_active | default(false) | bool(false)) or (master_raise_hold_active | default(false) | bool(false)) else '❌') ~ ' | Bypass ' ~ ('✅' if (master_hold_bypass | default(false) | bool(false)) else '❌') ~ ' | Letzter: ' ~ (master_last_write_kind | default('?')) ~ ' vor ' ~ (master_last_update_age_step55 | default(0) | float(0) | round(0)) ~ 's' -%}
             {{ msg.out }}
 
+  # ════════════════════════════════════════════════════════════
+  # ALWAYS-ON ALERT: Fires only on critical problems, auto-dismisses
+  # ════════════════════════════════════════════════════════════
+  - variables:
+      _alert_problems: >
+        {%- set ns = namespace(items=[]) -%}
+        {%- if not (master_climate_available | bool(false)) -%}
+          {%- set ns.items = ns.items + ['🔴 Master-Thermostat (' ~ (inputs.master_climate | default('?')) ~ ') ist offline/unavailable!'] -%}
+        {%- endif -%}
+        {%- if _l_m_forced | default(false) | bool(false) -%}
+          {%- set ns.items = ns.items + ['🔴 NOT-AUS aktiv — Kälteeinbruch erkannt, Master auf Minimum (' ~ (inputs.min_trv_temp | float(12)) ~ '°C)'] -%}
+        {%- endif -%}
+        {%- if (master_write_budget_remaining | default(1) | int(1)) <= 0 -%}
+          {%- set ns.items = ns.items + ['🟡 API-Budget erschöpft — keine Writes möglich bis Timestamps ablaufen'] -%}
+        {%- endif -%}
+        {%- for room in rooms_runtime_list | default([], true) -%}
+          {%- if room.enabled | default(false) | bool(false) and not (room.climate_ok | default(false) | bool(false)) -%}
+            {%- set rl = room.key | default('?') | string -%}
+            {%- set ns.items = ns.items + ['🔴 TRV ' ~ rl ~ ' (' ~ (room.climate | default('?')) ~ ') ist offline/unavailable!'] -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ ns.items }}
+  - choose:
+      - conditions:
+          - "{{ (_alert_problems | length) > 0 }}"
+        sequence:
+          - action: persistent_notification.create
+            continue_on_error: true
+            data:
+              notification_id: "vaillant_alert"
+              title: "⚠️ Vaillant Heizung — Problem erkannt"
+              message: >-
+                {%- set n = '\n' -%}
+                {%- set msg = namespace(out='') -%}
+                {%- for item in _alert_problems -%}
+                  {%- if not loop.first -%}{%- set msg.out = msg.out ~ n -%}{%- endif -%}
+                  {%- set msg.out = msg.out ~ item -%}
+                {%- endfor -%}
+                {%- set msg.out = msg.out ~ n ~ n ~ '🕐 Erkannt: ' ~ now().strftime('%H:%M:%S') -%}
+                {{ msg.out }}
+      - conditions:
+          - "{{ (_alert_problems | length) == 0 }}"
+        sequence:
+          - action: persistent_notification.dismiss
+            continue_on_error: true
+            data:
+              notification_id: "vaillant_alert"
+
 mode: restart
