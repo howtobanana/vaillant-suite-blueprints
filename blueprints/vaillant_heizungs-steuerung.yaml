@@ -1041,16 +1041,16 @@ blueprint:
         enable_leitstand_normal:
           name: "📣 Leitstand Normal"
           description: |
-            Kompakte Live-Übersicht als Push-Notification.
-            Überschreibt sich bei jedem Lauf selbst (Dashboard).
+            Kompakte Übersicht als Push-Notification.
+            Feuert nur bei Events/Writes (nicht bei Routine-Läufen).
+            Überschreibt sich selbst (Dashboard).
           default: false
           selector:
             boolean:
         enable_leitstand_expert:
           name: "📣 Leitstand Expert (Verlauf)"
           description: |
-            Volle Diagnose-Details als Verlauf.
-            Feuert nur bei Events/Writes (nicht bei Routine-Läufen).
+            Volle Diagnose-Details bei jedem Lauf (alle 3 Min).
             Jede Notification bleibt erhalten (History).
           default: false
           selector:
@@ -3015,10 +3015,11 @@ actions:
       _l_m_mode_modus: "{{ 'Not-Aus' if (_l_m_forced | bool(false)) else ('Abwesend' if (_l_m_away | bool(false)) else 'Heizbetrieb') }}"
 
   # ════════════════════════════════════════════════════════════
-  # LEITSTAND NORMAL: Live-Dashboard (überschreibt sich selbst)
+  # LEITSTAND NORMAL: Demand-only Dashboard (überschreibt sich selbst)
   # ════════════════════════════════════════════════════════════
   - if:
       - "{{ _leitstand_normal | bool(false) }}"
+      - "{{ _is_demand_event | bool(false) }}"
     then:
       - action: persistent_notification.create
         continue_on_error: true
@@ -3080,7 +3081,6 @@ actions:
   # ════════════════════════════════════════════════════════════
   - if:
       - "{{ _leitstand_expert | bool(false) }}"
-      - "{{ _is_demand_event | bool(false) }}"
     then:
       - action: persistent_notification.create
         continue_on_error: true
