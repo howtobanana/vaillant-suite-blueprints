@@ -224,15 +224,12 @@ max_exceeded: silent
 trigger:
   - platform: state
     entity_id: !input proximity_entity
-    id: proximity_change
 
   - platform: state
     entity_id: !input person_entity
-    id: person_state_change
 
   - platform: time_pattern
     minutes: "/5"
-    id: watchdog_check
 
   - platform: event
     event_type: mobile_app_notification_action
