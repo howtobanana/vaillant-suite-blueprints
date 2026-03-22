@@ -5,24 +5,26 @@ blueprint:
 
     Überwacht die Gesundheit Ihrer Vaillant-Heizung und Sensoren. Sendet Warnungen, greift aber niemals in die Heizung ein.
 
-    **Funktionen:**
+    **Kern-Funktionen:**
     - 🔋 Batterie-Check aller TRVs & Sensoren.
     - 📡 Offline-Erkennung (tote Geräte finden).
     - 💧 Wasserdruck-Überwachung (Schutz vor Trockenlauf).
     - 📉 Effizienz-Check (COP/JAZ Warnungen).
     - ⚠️ Master-Thermostat Offline Alarm.
 
-    **Kompatibilität:**
-    Kann parallel zu "Core Heating" oder alleine genutzt werden.
-
-    **Autor:** bananapower | **Version:** v1.0 (Microservices Edition)
+    **Das Ökosystem:**
+    Entwickelt für den Betrieb im Verbund mit:
+    *   🌡️ `(Vaillant) Heizungs-Steuerung` (Zentrale Heizungslogik).
+    *   📍 `(Vaillant) Geofencing` (Anwesenheit & Eco).
+    *   💨 `(Vaillant) Lüftungs-Steuerung` (Luftaustausch & Feuchtigkeit).
+    
+    **Version:** 1.0 | **Autor:** BananaPower
 
   domain: automation
   source_url: https://raw.githubusercontent.com/howtobanana/vaillant-suite-blueprints/main/blueprints/vaillant_system-diagnose.yaml
   author: "bananapower"
 
   input:
-
     section_overview:
       name: "🧰 Health & Monitoring"
       description: |
@@ -335,6 +337,16 @@ blueprint:
         Ziele und Schalter für Warnungen, Infos und kritische Meldungen.
       collapsed: true
       input:
+        quiet_schedule:
+          name: "🌙 Ruhezeit-Zeitplan"
+          description: |
+            Optionaler Zeitplan (schedule-Helfer) für Ruhezeiten.
+            Wenn aktiv (on), werden alle Benachrichtigungen unterdrückt.
+            Leer lassen = keine Ruhezeit-Blockierung.
+          default: ""
+          selector:
+            entity:
+              domain: schedule
         notifications_enabled:
           name: "🔘 Benachrichtigungen global"
           description: |
@@ -376,37 +388,44 @@ blueprint:
             Sendet einmal täglich eine Zusammenfassung der Systemwerte (Druck, Effizienz).
           default: false
           selector:
-            boolean: {}
+            boolean:
         briefing_time:
           name: "🕒 Briefing-Uhrzeit"
           description: |
             Uhrzeit für den täglichen Report (z.B. 18:00:00).
           default: "18:00:00"
           selector:
-            time: {}
+            time:
 
-    notify_warning_entities:
-      name: "📨 Empfänger: Normal Mobile-App Geräte"
+    section_notify_devices:
+      name: "📨 Empfänger"
       description: |
-        Mobile-App Geräte für Warnungen/Infos.
-      default: []
-      selector:
-        device:
-          filter:
-            integration: mobile_app
-          multiple: true
-    notify_critical_entities:
-      name: "📨 Empfänger: Kritische Mobile-App Geräte"
-      description: |
-        Mobile-App Geräte für kritische Alerts.
-      default: []
-      selector:
-        device:
-          filter:
-            integration: mobile_app
-          multiple: true
+        Mobile-App Geräte für Warnungen und kritische Alerts.
+      collapsed: false
+      input:
+        notify_warning_entities:
+          name: "📨 Empfänger: Normal Mobile-App Geräte"
+          description: |
+            Mobile-App Geräte für Warnungen/Infos.
+          default: []
+          selector:
+            device:
+              filter:
+                integration: mobile_app
+              multiple: true
+        notify_critical_entities:
+          name: "📨 Empfänger: Kritische Mobile-App Geräte"
+          description: |
+            Mobile-App Geräte für kritische Alerts.
+          default: []
+          selector:
+            device:
+              filter:
+                integration: mobile_app
+              multiple: true
 
-mode: restart
+mode: parallel
+max: 5
 
 trigger_variables:
   tv_water_pressure_sensor: !input water_pressure_sensor
@@ -415,43 +434,41 @@ trigger_variables:
   tv_min_efficiency_cop: !input min_efficiency_cop
 
 trigger:
-  - platform: time_pattern
+  - trigger: time_pattern
     minutes: "/30"
     id: main_loop
 
-  - platform: state
+  - trigger: state
     entity_id: !input vaillant_error_entity
     id: error_code_change
 
-  - platform: template
+  - trigger: template
     value_template: >
       {{
         tv_water_pressure_sensor != ''
-        and states(tv_water_pressure_sensor) not in ['unknown', 'unavailable', 'none', '']
+        and has_value(tv_water_pressure_sensor)
         and (states(tv_water_pressure_sensor) | float(999)) < ((tv_min_water_pressure | float(1.0)) + 0.2)
         and (states(tv_water_pressure_sensor) | float(999)) >= (tv_min_water_pressure | float(1.0))
       }}
     id: low_pressure
 
-  - platform: numeric_state
+  - trigger: numeric_state
     entity_id: !input water_pressure_sensor
     below: !input min_water_pressure
     id: critical_pressure
 
-  - platform: template
+  - trigger: template
     value_template: >
       {{
         tv_efficiency_sensor != ''
-        and states(tv_efficiency_sensor) not in ['unknown', 'unavailable', 'none', '']
+        and has_value(tv_efficiency_sensor)
         and (states(tv_efficiency_sensor) | float(999)) < (tv_min_efficiency_cop | float(2.5))
       }}
     id: bad_efficiency
-    
-  - platform: time
+
+  - trigger: time
     at: !input briefing_time
     id: daily_briefing
-
-condition: []
 
 action:
   - variables:
@@ -536,8 +553,7 @@ action:
         {% for ent_raw in r_list %}
           {% set ent = (ent_raw | string) | trim %}
           {% if ent != '' %}
-            {% set user_name = device_attr(ent, 'name_by_user') %}
-            {% set dev_name = user_name if (user_name is string and (user_name | trim) != '') else device_attr(ent, 'name') %}
+            {% set dev_name = device_attr(ent, 'name') %}
             {% if dev_name is string and (dev_name | trim) != '' %}
               {% set ns.items = ns.items + ['notify.mobile_app_' ~ ((dev_name | slugify) | replace('-', '_'))] %}
             {% endif %}
@@ -551,8 +567,7 @@ action:
         {% for ent_raw in r_list %}
           {% set ent = (ent_raw | string) | trim %}
           {% if ent != '' %}
-            {% set user_name = device_attr(ent, 'name_by_user') %}
-            {% set dev_name = user_name if (user_name is string and (user_name | trim) != '') else device_attr(ent, 'name') %}
+            {% set dev_name = device_attr(ent, 'name') %}
             {% if dev_name is string and (dev_name | trim) != '' %}
               {% set ns.items = ns.items + ['notify.mobile_app_' ~ ((dev_name | slugify) | replace('-', '_'))] %}
             {% endif %}
@@ -563,9 +578,13 @@ action:
         {% else %}
           {{ ns.items | unique | join(',') }}
         {% endif %}
-      critical_notify_direct_targets_list: >
-        {{ critical_notify_targets_list }}
-      notifications_enabled: "{{ inputs.notifications_enabled }}"
+      quiet_active: >
+        {% if inputs.quiet_schedule | default('') | string | trim not in ['', 'none', 'None'] %}
+          {{ is_state(inputs.quiet_schedule, 'on') }}
+        {% else %}
+          {{ false }}
+        {% endif %}
+      notifications_enabled: "{{ inputs.notifications_enabled and not (quiet_active | bool(false)) }}"
       warning_notifications_allowed: "{{ notifications_enabled and inputs.notify_warnings }}"
       info_notifications_allowed: "{{ notifications_enabled and inputs.notify_info }}"
       critical_notifications_allowed: "{{ notifications_enabled and inputs.notify_critical_errors }}"
@@ -606,7 +625,7 @@ action:
           unknown
         {% endif %}
       error_code_state: "{{ (error_code_state_raw | string) | trim }}"
-      error_code_valid: "{{ error_code_state not in ['unknown', 'unavailable', 'none', 'None', ''] }}"
+      error_code_valid: "{{ error_code_state not in ['unknown', 'unavailable', 'none', 'None', ''] and error_code_state | length > 0 }}"
       error_code_ok: "{{ error_code_state in ['OK', 'ok', 'No Error', 'no error', '0', 'False', 'false', 'off', 'safe'] }}"
 
   # ===== ERROR CODE MONITORING =====
@@ -616,7 +635,7 @@ action:
           - "{{ trigger.id == 'error_code_change' }}"
           - "{{ inputs.vaillant_error_entity != '' }}"
           - "{{ critical_notifications_allowed }}"
-          - "{{ critical_notify_direct_targets_list | length > 0 }}"
+          - "{{ critical_notify_targets_list | length > 0 }}"
           - "{{ trigger.to_state is defined and trigger.to_state is not none }}"
           - "{{ trigger.to_state.state not in ['unknown', 'unavailable', 'none', 'None', ''] }}"
           - "{{ error_code_valid }}"
@@ -626,14 +645,16 @@ action:
               - conditions: "{{ critical_beep_allowed }}"
                 sequence:
                   - repeat:
-                      for_each: "{{ critical_notify_direct_targets_list.split(',') if (critical_notify_direct_targets_list | trim) != '' else [] }}"
+                      for_each: "{{ (critical_notify_targets_list | trim).split(',') if (critical_notify_targets_list | trim) != '' else [] }}"
                       sequence:
-                        - service: "{{ item }}"
+                        - action: "{{ repeat.item | trim }}"
                           data:
                             title: "🚨 Heizung Störung!"
-                            message: "Fehlercode erkannt: {{ error_code_state }}."
+                            message: "Fehlercode: {{ error_code_state }}"
                             data:
+                              tag: vaillant_diag_error
                               push:
+                                sticky: true
                                 interruption-level: critical
                                 sound:
                                   name: alarm.caf
@@ -644,12 +665,16 @@ action:
                           continue_on_error: true
             default:
               - repeat:
-                  for_each: "{{ critical_notify_direct_targets_list.split(',') if (critical_notify_direct_targets_list | trim) != '' else [] }}"
+                  for_each: "{{ (critical_notify_targets_list | trim).split(',') if (critical_notify_targets_list | trim) != '' else [] }}"
                   sequence:
-                    - service: "{{ item }}"
+                    - action: "{{ repeat.item | trim }}"
                       data:
                         title: "🚨 Heizung Störung!"
-                        message: "Fehlercode erkannt: {{ error_code_state }}."
+                        message: "Fehlercode: {{ error_code_state }}"
+                        data:
+                          tag: vaillant_diag_error
+                          push:
+                            sticky: true
                       continue_on_error: true
   # ===== STEP 1.75: MASTER OFFLINE >3H REMINDER =====
   - choose:
@@ -658,20 +683,22 @@ action:
           - "{{ inputs.master_climate != '' }}"
           - "{{ trigger.id == 'main_loop' }}"
           - "{{ master_climate_state in ['unavailable', 'unknown'] }}"
-          - "{{ master_offline_hours >= 3 }}"
-          - "{{ master_offline_hours < 3.5 }}"
+          - "{{ (master_offline_hours | float(0)) >= 3 }}"
+          - "{{ (master_offline_hours | float(0)) < 3.5 }}"
           - "{{ warning_notifications_allowed }}"
           - "{{ normal_notify_targets_list | length > 0 }}"
         sequence:
           - repeat:
-              for_each: "{{ normal_notify_targets_list.split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
+              for_each: "{{ (normal_notify_targets_list | trim).split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
               sequence:
-                - service: "{{ item }}"
+                - action: "{{ repeat.item | trim }}"
                   data:
-                    title: "⚠️ MyVaillant länger offline"
-                    message: >
-                      Master seit {{ master_offline_hours | round(1) }}h offline.
-                      Bitte Master-Thermostat manuell auf AUTO setzen, bis die Integration wieder online ist.
+                    title: "⚠️ Master-Thermostat offline"
+                    message: "Seit {{ master_offline_hours | float(0) | round(1) }}h nicht erreichbar. Manuell auf AUTO setzen."
+                    data:
+                      tag: vaillant_diag_master_offline
+                      push:
+                        sticky: true
                   continue_on_error: true
 
 
@@ -684,7 +711,6 @@ action:
         sequence:
           - variables:
               trv_health_delay_sec: "{{ (inputs.trv_health_alert_delay_min | int(15)) * 60 }}"
-              trv_health_alert_window_sec: 1800
               trv_offline_recent: >
                 {% set ns = namespace(items=[]) %}
                 {% set devices = [{'entity': inputs.master_climate, 'label': master_label + ' (TRV)'}] %}
@@ -755,7 +781,7 @@ action:
                     {% if state_obj.last_changed is defined %}
                       {% set raw = state_obj.state %}
                       {% set val = raw | float(999) %}
-                      {% set valid = raw not in ['unknown', 'unavailable', 'none', ''] %}
+                      {% set valid = has_value(e_id) %}
                       {% set changed_dt = state_obj.last_changed | as_datetime %}
                       {% set age = ((as_timestamp(now()) - as_timestamp(changed_dt, as_timestamp(now()))) if changed_dt is not none else 999999) %}
                       {% if valid and val <= (inputs.trv_battery_threshold | float(20)) and age >= (trv_health_delay_sec | int(900)) %}
@@ -772,14 +798,16 @@ action:
                   - "{{ trv_offline_recent | length > 0 }}"
                 sequence:
                   - repeat:
-                      for_each: "{{ normal_notify_targets_list.split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
+                      for_each: "{{ (normal_notify_targets_list | trim).split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
                       sequence:
-                        - service: "{{ item }}"
+                        - action: "{{ repeat.item | trim }}"
                           data:
                             title: "⚠️ TRV/Sensor offline"
-                            message: >
-                              Keine Daten von: {{ trv_offline_recent | join(', ') }}.
-                              Bitte Geräte/Funkverbindung prüfen.
+                            message: "Keine Daten: {{ trv_offline_recent | join(', ') }}. Geräte/Funkverbindung prüfen."
+                            data:
+                              tag: vaillant_diag_trv_offline
+                              push:
+                                sticky: true
                           continue_on_error: true
           - choose:
               - conditions:
@@ -788,15 +816,16 @@ action:
                   - "{{ trv_battery_low_recent | length > 0 }}"
                 sequence:
                   - repeat:
-                      for_each: "{{ normal_notify_targets_list.split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
+                      for_each: "{{ (normal_notify_targets_list | trim).split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
                       sequence:
-                        - service: "{{ item }}"
+                        - action: "{{ repeat.item | trim }}"
                           data:
                             title: "🔋 TRV Batterie niedrig"
-                            message: >
-                              Niedrige Batterie erkannt (<= {{ inputs.trv_battery_threshold | int }}%):
-                              {{ trv_battery_low_recent | join(', ') }}.
-                              Bitte Batterien tauschen.
+                            message: "{{ trv_battery_low_recent | join(', ') }}. Batterien tauschen."
+                            data:
+                              tag: vaillant_diag_battery_low
+                              push:
+                                sticky: true
                           continue_on_error: true
 
 
@@ -809,7 +838,7 @@ action:
         sequence:
           - variables:
               current_pressure: >
-                {% if inputs.water_pressure_sensor != '' and states(inputs.water_pressure_sensor) not in ['unknown', 'unavailable', 'none', ''] %}
+                {% if inputs.water_pressure_sensor != '' and has_value(inputs.water_pressure_sensor) %}
                   {{ states(inputs.water_pressure_sensor) | float(1.5) }}
                 {% else %}
                   1.5
@@ -830,14 +859,16 @@ action:
                       - conditions: "{{ critical_notifications_allowed and critical_beep_allowed }}"
                         sequence:
                           - repeat:
-                              for_each: "{{ pressure_alert_targets.split(',') if (pressure_alert_targets | trim) != '' else [] }}"
+                              for_each: "{{ (pressure_alert_targets | trim).split(',') if (pressure_alert_targets | trim) != '' else [] }}"
                               sequence:
-                                - service: "{{ item }}"
+                                - action: "{{ repeat.item | trim }}"
                                   data:
-                                    title: "🚨 WASSERDRUCK KRITISCH"
-                                    message: "Nur {{ current_pressure | round(2) }} bar! Therme in Gefahr - sofort nachfüllen!"
+                                    title: "🚨 Wasserdruck kritisch!"
+                                    message: "Nur {{ current_pressure | round(2) }} bar — sofort nachfüllen!"
                                     data:
+                                      tag: vaillant_diag_pressure
                                       push:
+                                        sticky: true
                                         sound:
                                           name: default
                                           critical: 1
@@ -845,56 +876,35 @@ action:
                                   continue_on_error: true
                     default:
                       - repeat:
-                          for_each: "{{ pressure_alert_targets.split(',') if (pressure_alert_targets | trim) != '' else [] }}"
+                          for_each: "{{ (pressure_alert_targets | trim).split(',') if (pressure_alert_targets | trim) != '' else [] }}"
                           sequence:
-                            - service: "{{ item }}"
+                            - action: "{{ repeat.item | trim }}"
                               data:
-                                title: "⚠️ Wasserdruck kritisch (leise)"
-                                message: "Nur {{ current_pressure | round(2) }} bar! Therme in Gefahr - sofort nachfüllen!"
+                                title: "⚠️ Wasserdruck kritisch"
+                                message: "Nur {{ current_pressure | round(2) }} bar — sofort nachfüllen!"
+                                data:
+                                  tag: vaillant_diag_pressure
+                                  push:
+                                    sticky: true
                               continue_on_error: true
               - conditions:
                   - "{{ trigger.id == 'low_pressure' }}"
-                  - "{{ (current_pressure | float(0)) < (inputs.min_water_pressure | float(1.0)) }}"
                   - "{{ warning_notifications_allowed }}"
                   - "{{ normal_notify_targets_list | length > 0 }}"
                 sequence:
                   - repeat:
-                      for_each: "{{ normal_notify_targets_list.split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
+                      for_each: "{{ (normal_notify_targets_list | trim).split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
                       sequence:
-                        - service: "{{ item }}"
+                        - action: "{{ repeat.item | trim }}"
                           data:
                             title: "⚠️ Wasserdruck niedrig"
-                            message: "{{ current_pressure | round(2) }} bar - bald nachfüllen empfohlen"
+                            message: "{{ current_pressure | round(2) }} bar — bald nachfüllen."
+                            data:
+                              tag: vaillant_diag_pressure_low
+                              push:
+                                sticky: true
                           continue_on_error: true
 
-
-  # ===== EFFICIENCY MONITORING =====
-  - choose:
-      - conditions:
-          - "{{ inputs.enable_monitoring }}"
-          - "{{ trigger.id == 'bad_efficiency' }}"
-          - "{{ efficiency_sensor_configured }}"
-        sequence:
-          - variables:
-              current_efficiency: >
-                {% if inputs.efficiency_sensor != '' and states(inputs.efficiency_sensor) not in ['unknown', 'unavailable', 'none', ''] %}
-                  {{ states(inputs.efficiency_sensor) | float(0) }}
-                {% else %}
-                  0
-                {% endif %}
-          - choose:
-              - conditions:
-                  - "{{ warning_notifications_allowed }}"
-                  - "{{ normal_notify_targets_list | length > 0 }}"
-                sequence:
-                  - repeat:
-                      for_each: "{{ normal_notify_targets_list.split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
-                      sequence:
-                        - service: "{{ item }}"
-                          data:
-                            title: "⚠️ Schlechte Heiz-Effizienz"
-                            message: "Nur {{ current_efficiency | round(2) }} COP/JAZ - Wartung prüfen!"
-                          continue_on_error: true
 
   # ════════════════════════════════════════════════════════════
   # FLOW 4: DAILY BRIEFING
@@ -908,14 +918,14 @@ action:
         sequence:
           - variables:
               curr_press: >
-                {% if water_pressure_sensor_configured | bool(false) and states(inputs.water_pressure_sensor) not in ['unknown', 'unavailable'] %}
+                {% if water_pressure_sensor_configured | bool(false) and has_value(inputs.water_pressure_sensor) %}
                   {{ states(inputs.water_pressure_sensor) | float(0.0) | round(2) }} bar
                 {% else %}
                   Unbekannt
                 {% endif %}
               curr_eff: >
-                {% if efficiency_sensor_configured | bool(false) and states(inputs.efficiency_sensor) not in ['unknown', 'unavailable'] %}
-                  {{ states(inputs.efficiency_sensor) | float(0.0) | round(2) }} COP
+                {% if efficiency_sensor_configured | bool(false) and has_value(inputs.efficiency_sensor) %}
+                  {{ states(inputs.efficiency_sensor) | float(0.0) | round(0) }}%
                 {% else %}
                   Unbekannt
                 {% endif %}
@@ -926,15 +936,14 @@ action:
                   Offline ❌
                 {% endif %}
           - repeat:
-              for_each: "{{ normal_notify_targets_list.split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
+              for_each: "{{ (normal_notify_targets_list | trim).split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
               sequence:
-                - service: "{{ item }}"
+                - action: "{{ repeat.item | trim }}"
                   data:
-                    title: "📊 Vaillant System-Briefing"
-                    message: >
-                      Guten Tag! Hier ist der aktuelle Status deiner Anlage:
-                      
-                      💧 Wasserdruck: {{ curr_press }}
-                      ⚡ Heizeffizienz: {{ curr_eff }}
-                      🏠 Master-Thermostat: {{ status_master }}
+                    title: "📊 System-Briefing"
+                    message: "💧 Druck: {{ curr_press }}\n⚡ Effizienz: {{ curr_eff }}\n🏠 Master: {{ status_master }}"
+                    data:
+                      tag: vaillant_diag_briefing
+                      push:
+                        sticky: true
                   continue_on_error: true

@@ -443,9 +443,11 @@ action:
                 - action: "{{ repeat.item | trim }}"
                   data:
                     title: "❌ Vorheizen abgebrochen"
-                    message: "Pre-Heat wurde deaktiviert."
+                    message: "Pre-Heat deaktiviert."
                     data:
-                      tag: vaillant_pre_heat_ask
+                      tag: vaillant_pre_heat
+                      push:
+                        sticky: true
                   continue_on_error: true
       - stop: "Pre-Heat abgebrochen durch User"
 
@@ -464,11 +466,12 @@ action:
               sequence:
                 - action: "{{ repeat.item | trim }}"
                   data:
-                    title: "🌍 Away-Mode aktiviert"
-                    message: >
-                      Distanz {{ distance_km | float(0) | round(2) }} km –
-                      alle getrackten Personen abwesend seit
-                      {{ minutes_since_left | float(0) | round(0) | int }} min.
+                    title: "🌍 Away-Mode aktiv"
+                    message: "Alle Personen abwesend ({{ distance_km | float(0) | round(1) }} km, seit {{ minutes_since_left | float(0) | round(0) | int }} min)."
+                    data:
+                      tag: vaillant_away
+                      push:
+                        sticky: true
                   continue_on_error: true
 
   # ── Away deaktivieren ──────────────────────────────────────────────────────
@@ -486,8 +489,12 @@ action:
               sequence:
                 - action: "{{ repeat.item | trim }}"
                   data:
-                    title: "🏠 Away-Mode deaktiviert"
-                    message: "Person wieder zu Hause oder Radius-Bedingung nicht mehr erfüllt."
+                    title: "🏠 Willkommen Zuhause"
+                    message: "Away-Mode deaktiviert."
+                    data:
+                      tag: vaillant_away
+                      push:
+                        sticky: true
                   continue_on_error: true
 
   # ── Pre-Heat: Vorheizen bei Heimweg ──────────────────────────────────────
@@ -515,9 +522,11 @@ action:
                         - action: "{{ repeat.item | trim }}"
                           data:
                             title: "🔥 Vorheizen gestartet"
-                            message: >-
-                              Heimweg erkannt ({{ distance_km | float(0) | round(1) }} km).
-                              {{ pre_heat_helpers_list | length }} Raum/Räume werden vorgeheizt.
+                            message: "Heimweg erkannt ({{ distance_km | float(0) | round(1) }} km) — {{ pre_heat_helpers_list | length }} Räume werden vorgeheizt."
+                            data:
+                              tag: vaillant_pre_heat
+                              push:
+                                sticky: true
                           continue_on_error: true
 
           # ── Modus DYNAMIC: Optimistisch vorheizen + Abbrechen-Option ──
@@ -544,12 +553,11 @@ action:
                     - action: "{{ repeat.item | trim }}"
                       data:
                         title: "🔥 Vorheizen gestartet"
-                        message: >-
-                          Heimweg erkannt ({{ distance_km | float(0) | round(1) }} km).
-                          {{ pre_heat_helpers_list | length }} Raum/Räume werden vorgeheizt.
-                          Tippe Abbrechen um das Vorheizen zu stoppen.
+                        message: "Heimweg erkannt ({{ distance_km | float(0) | round(1) }} km) — {{ pre_heat_helpers_list | length }} Räume werden vorgeheizt."
                         data:
-                          tag: vaillant_pre_heat_ask
+                          tag: vaillant_pre_heat
+                          push:
+                            sticky: true
                           actions:
                             - action: "VAILLANT_PRE_HEAT_CANCEL"
                               title: "Abbrechen ❌"

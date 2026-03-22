@@ -5,16 +5,22 @@ blueprint:
 
     Managt das Stoßlüften und schützt vor vergessenen Fenstern. Unabhängig von der Heizung.
 
-    **Funktionen:**
+    **Kern-Funktionen:**
     - 🌬️ Erinnerung zum Lüften (Zeit, CO2 oder Feuchte).
     - ⏱️ Close-Timer: Erinnert ans Schließen nach X Minuten.
     - 🚨 Eskalation: Nerviger Alarm, wenn Fenster offen bleiben.
     - 🌧️ Sicherheits-Warnung bei Regen oder Verlassen des Hauses.
 
+    **Das Ökosystem:**
+    Entwickelt für den Betrieb im Verbund mit:
+    *   🌡️ `(Vaillant) Heizungs-Steuerung` (Zentrale Heizungslogik).
+    *   📍 `(Vaillant) Geofencing` (Anwesenheit & Eco).
+    *   ❤️ `(Vaillant) System-Diagnose` (Wartung & Batterien).
+
     **Info:**
     Dieses Modul sendet nur Nachrichten. Das "Core Heating" Modul erkennt die offenen Fenster separat und stoppt die Heizung automatisch.
 
-    **Autor:** bananapower | **Version:** v1.0 (Microservices Edition)
+    **Version:** 1.0 | **Autor:** BananaPower
 
   domain: automation
   source_url: https://raw.githubusercontent.com/howtobanana/vaillant-suite-blueprints/main/blueprints/vaillant_l%C3%BCftungs-steuerung.yaml
@@ -137,27 +143,6 @@ blueprint:
               domain: binary_sensor
               device_class: window
 
-    notify_device:
-      name: "📩 Notify Gerät (Normal)"
-      description: |
-        Mobile-App Gerät(e) für Standard-Reminder.
-      default: []
-      selector:
-        device:
-          filter:
-            integration: mobile_app
-          multiple: true
-    critical_notify_device:
-      name: "🚨 Notify Gerät (Critical)"
-      description: |
-        Mobile-App Gerät(e) für kritische Alarm-Meldungen.
-      default: []
-      selector:
-        device:
-          filter:
-            integration: mobile_app
-          multiple: true
-
     section_room2:
       name: "🛏️ Raum 2"
       description: |
@@ -222,7 +207,45 @@ blueprint:
               domain: binary_sensor
               device_class: window
 
-mode: restart
+    section_notifications:
+      name: "📩 Benachrichtigungen"
+      description: |
+        Geräte für Push-Notifications (Normal & Kritisch).
+      collapsed: false
+      input:
+        quiet_schedule:
+          name: "🌙 Ruhezeit-Zeitplan"
+          description: |
+            Optionaler Zeitplan (schedule-Helfer) für Ruhezeiten.
+            Wenn aktiv (on), werden alle Benachrichtigungen unterdrückt.
+            Leer lassen = keine Ruhezeit-Blockierung.
+          default: ""
+          selector:
+            entity:
+              domain: schedule
+        notify_device:
+          name: "📩 Notify Gerät (Normal)"
+          description: |
+            Mobile-App Gerät(e) für Standard-Reminder.
+          default: []
+          selector:
+            device:
+              filter:
+                integration: mobile_app
+              multiple: true
+        critical_notify_device:
+          name: "🚨 Notify Gerät (Critical)"
+          description: |
+            Mobile-App Gerät(e) für kritische Alarm-Meldungen.
+          default: []
+          selector:
+            device:
+              filter:
+                integration: mobile_app
+              multiple: true
+
+mode: parallel
+max: 10
 
 trigger_variables:
   tv_co2_sensor: !input co2_sensor
@@ -232,80 +255,69 @@ trigger_variables:
 
 trigger:
   # Need Fresh Air
-  - platform: time
+  - trigger: time
     at: !input reminder_time
     id: need_fresh_air_time
 
-  - platform: template
+  - trigger: template
     value_template: >
-      {{ tv_co2_sensor != '' and states(tv_co2_sensor) not in ['unknown', 'unavailable', 'none', ''] and (states(tv_co2_sensor) | float(0)) > (tv_co2_threshold | float(1200)) }}
+      {{ tv_co2_sensor != '' and has_value(tv_co2_sensor) and (states(tv_co2_sensor) | float(0)) > (tv_co2_threshold | float(1200)) }}
+    for: "00:05:00"
     id: need_fresh_air_co2
 
-  - platform: template
+  - trigger: template
     value_template: >
-      {{ tv_humidity_sensor != '' and states(tv_humidity_sensor) not in ['unknown', 'unavailable', 'none', ''] and (states(tv_humidity_sensor) | float(0)) > (tv_humidity_threshold | float(60)) }}
+      {{ tv_humidity_sensor != '' and has_value(tv_humidity_sensor) and (states(tv_humidity_sensor) | float(0)) > (tv_humidity_threshold | float(60)) }}
+    for: "00:05:00"
     id: need_fresh_air_humidity
 
   # Window opened (per room)
-  - platform: event
+  - trigger: event
     event_type: state_changed
     event_data:
       entity_id: !input master_window
     id: master_window_change
 
-  - platform: event
+  - trigger: event
     event_type: state_changed
     event_data:
       entity_id: !input room2_window
     id: room2_window_change
 
-  - platform: event
+  - trigger: event
     event_type: state_changed
     event_data:
       entity_id: !input room3_window
     id: room3_window_change
 
-  - platform: event
+  - trigger: event
     event_type: state_changed
     event_data:
       entity_id: !input room4_window
     id: room4_window_change
 
-  - platform: event
+  - trigger: event
     event_type: state_changed
     event_data:
       entity_id: !input room5_window
     id: room5_window_change
 
   # Safety: Rain detected
-  - platform: state
+  - trigger: state
     entity_id: !input weather_entity
-    to: "rainy"
-    id: safety_rain
-  - platform: state
-    entity_id: !input weather_entity
-    to: "pouring"
-    id: safety_rain
-  - platform: state
-    entity_id: !input weather_entity
-    to: "lightning-rainy"
-    id: safety_rain
-  - platform: state
-    entity_id: !input weather_entity
-    to: "hail"
-    id: safety_rain
-  - platform: state
-    entity_id: !input weather_entity
-    to: "snowy-rainy"
+    to:
+      - "rainy"
+      - "pouring"
+      - "lightning-rainy"
+      - "hail"
+      - "snowy-rainy"
     id: safety_rain
 
   # Safety: Away Mode activated
-  - platform: state
+  - trigger: state
     entity_id: !input away_mode_boolean
     to: "on"
     id: safety_away_mode
-
-condition: []
 
 action:
   - variables:
@@ -340,7 +352,6 @@ action:
       rain_states:
         - rainy
         - pouring
-        - lightning
         - lightning-rainy
         - hail
         - snowy-rainy
@@ -359,58 +370,34 @@ action:
           {{ false }}
         {% endif %}
 
-      is_night: "{{ is_state('sun.sun', 'below_horizon') }}"
+      quiet_active: >
+        {% if inputs.quiet_schedule | default('') | string | trim not in ['', 'none', 'None'] %}
+          {{ is_state(inputs.quiet_schedule, 'on') }}
+        {% else %}
+          {{ false }}
+        {% endif %}
 
       rain_now: "{{ states(inputs.weather_entity) in rain_states }}"
 
-      co2_sensor_entity: >
-        {% if inputs.co2_sensor is string %}
-          {{ inputs.co2_sensor }}
-        {% elif inputs.co2_sensor is iterable and inputs.co2_sensor is not string and (inputs.co2_sensor | length > 0) %}
-          {{ inputs.co2_sensor[0] }}
-        {% else %}
-
-        {% endif %}
-
-      humidity_sensor_entity: >
-        {% if inputs.humidity_sensor is string %}
-          {{ inputs.humidity_sensor }}
-        {% elif inputs.humidity_sensor is iterable and inputs.humidity_sensor is not string and (inputs.humidity_sensor | length > 0) %}
-          {{ inputs.humidity_sensor[0] }}
-        {% else %}
-
-        {% endif %}
-
-      co2_eval_entity: >
-        {% if trigger.id == 'need_fresh_air_co2' and trigger.entity_id is defined and trigger.entity_id is not none %}
-          {{ trigger.entity_id }}
-        {% else %}
-          {{ co2_sensor_entity }}
-        {% endif %}
-
-      humidity_eval_entity: >
-        {% if trigger.id == 'need_fresh_air_humidity' and trigger.entity_id is defined and trigger.entity_id is not none %}
-          {{ trigger.entity_id }}
-        {% else %}
-          {{ humidity_sensor_entity }}
-        {% endif %}
+      co2_sensor_entity: "{{ inputs.co2_sensor | default('') | string | trim }}"
+      humidity_sensor_entity: "{{ inputs.humidity_sensor | default('') | string | trim }}"
 
       co2_value: >
-        {% if co2_eval_entity != '' and states(co2_eval_entity) not in ['unknown', 'unavailable', 'none', ''] %}
-          {{ states(co2_eval_entity) | float(0) }}
+        {% if co2_sensor_entity != '' and has_value(co2_sensor_entity) %}
+          {{ states(co2_sensor_entity) | float(0) }}
         {% else %}
           {{ 0 }}
         {% endif %}
 
       humidity_value: >
-        {% if humidity_eval_entity != '' and states(humidity_eval_entity) not in ['unknown', 'unavailable', 'none', ''] %}
-          {{ states(humidity_eval_entity) | float(0) }}
+        {% if humidity_sensor_entity != '' and has_value(humidity_sensor_entity) %}
+          {{ states(humidity_sensor_entity) | float(0) }}
         {% else %}
           {{ 0 }}
         {% endif %}
 
-      co2_high: "{{ co2_eval_entity != '' and (co2_value | float(0)) > (inputs.co2_threshold | float(1200)) }}"
-      humidity_high: "{{ humidity_eval_entity != '' and (humidity_value | float(0)) > (inputs.humidity_threshold | float(60)) }}"
+      co2_high: "{{ co2_sensor_entity != '' and (co2_value | float(0)) > (inputs.co2_threshold | float(1200)) }}"
+      humidity_high: "{{ humidity_sensor_entity != '' and (humidity_value | float(0)) > (inputs.humidity_threshold | float(60)) }}"
 
       reminder_triggered: >
         {{
@@ -450,27 +437,13 @@ action:
         {% endfor %}
         {{ ns.open | bool(false) }}
 
-      window_trigger_entity: >
-        {% if trigger.event is defined and trigger.event.data is defined and trigger.event.data.entity_id is defined %}
-          {{ trigger.event.data.entity_id }}
-        {% elif trigger.entity_id is defined and trigger.entity_id is not none %}
-          {{ trigger.entity_id }}
-        {% else %}
-
-        {% endif %}
-
       window_opened_trigger: >
         {% if trigger.id in window_trigger_ids and trigger.event is defined and trigger.event.data is defined and trigger.event.data.new_state is defined and trigger.event.data.new_state is not none and trigger.event.data.new_state.state is defined %}
-          {{ trigger.event.data.new_state.state == 'on' }}
+          {% set new_s = trigger.event.data.new_state.state %}
+          {% set old_s = trigger.event.data.old_state.state if (trigger.event.data.old_state is defined and trigger.event.data.old_state is not none and trigger.event.data.old_state.state is defined) else '' %}
+          {{ new_s == 'on' and old_s != 'on' }}
         {% else %}
           {{ false }}
-        {% endif %}
-
-      trigger_window_name: >
-        {% if window_trigger_entity | trim != '' %}
-          {{ state_attr(window_trigger_entity, 'friendly_name') if state_attr(window_trigger_entity, 'friendly_name') is not none else window_trigger_entity }}
-        {% else %}
-          Fenster
         {% endif %}
 
       notify_targets_list: >
@@ -480,8 +453,7 @@ action:
         {% for ent_raw in r_list %}
           {% set ent = (ent_raw | string) | trim %}
           {% if ent != '' %}
-            {% set user_name = device_attr(ent, 'name_by_user') %}
-            {% set dev_name = user_name if (user_name is string and (user_name | trim) != '') else device_attr(ent, 'name') %}
+            {% set dev_name = device_attr(ent, 'name') %}
             {% if dev_name is string and (dev_name | trim) != '' %}
               {% set ns.items = ns.items + ['notify.mobile_app_' ~ ((dev_name | slugify) | replace('-', '_'))] %}
             {% endif %}
@@ -496,8 +468,7 @@ action:
         {% for ent_raw in r_list %}
           {% set ent = (ent_raw | string) | trim %}
           {% if ent != '' %}
-            {% set user_name = device_attr(ent, 'name_by_user') %}
-            {% set dev_name = user_name if (user_name is string and (user_name | trim) != '') else device_attr(ent, 'name') %}
+            {% set dev_name = device_attr(ent, 'name') %}
             {% if dev_name is string and (dev_name | trim) != '' %}
               {% set ns.items = ns.items + ['notify.mobile_app_' ~ ((dev_name | slugify) | replace('-', '_'))] %}
             {% endif %}
@@ -513,60 +484,31 @@ action:
   - choose:
       - conditions:
           - "{{ reminder_triggered | bool(false) }}"
+          - "{{ not (away_mode_active | bool(false)) }}"
+          - "{{ not (quiet_active | bool(false)) }}"
+          - "{{ (notify_targets_list | trim) != '' }}"
         sequence:
-          - service: weather.get_forecasts
-            target:
-              entity_id: "{{ inputs.weather_entity }}"
-            data:
-              type: hourly
-            response_variable: weather_forecast
-            continue_on_error: true
-
           - variables:
-              forecast_list: >
-                {% set ent = inputs.weather_entity %}
-                {% if weather_forecast is defined and weather_forecast is mapping and (ent in weather_forecast) %}
-                  {% set payload = weather_forecast[ent] %}
-                  {% if payload is mapping and ('forecast' in payload) and (payload['forecast'] is iterable) and (payload['forecast'] is not string) %}
-                    {{ payload['forecast'][:6] }}
-                  {% else %}
-                    {{ [] }}
-                  {% endif %}
-                {% else %}
-                  {{ [] }}
-                {% endif %}
+              rain_hint: >
+                {%- if rain_now | bool(false) -%}
+                  ⛈️ Aktuell Regen – kurz und gezielt lüften!
+                {%- else -%}
+                  ☀️ Kein Regen – perfekt zum Lüften.
+                {%- endif -%}
+          - repeat:
+              for_each: "{{ (notify_targets_list | trim).split(',') }}"
+              sequence:
+                - action: "{{ repeat.item | trim }}"
+                  data:
+                    title: "🪟 Lüften empfohlen"
+                    message: "Stoßlüften — {{ reminder_reason if (reminder_reason | trim) != '' else 'Trigger' }}. {{ rain_hint }} Fenster: {{ open_windows_text }}."
+                    data:
+                      tag: vaillant_lueftung_reminder
+                      push:
+                        sticky: true
+                  continue_on_error: true
 
-              rain_soon: >
-                {% set ns = namespace(hit=false) %}
-                {% for slot in forecast_list %}
-                  {% if slot is mapping and ('condition' in slot) and (slot.condition in rain_states) %}
-                    {% set ns.hit = true %}
-                  {% endif %}
-                {% endfor %}
-                {{ ns.hit | bool(false) }}
-
-              weather_blocked: "{{ (rain_now | bool(false)) or (rain_soon | bool(false)) }}"
-              reminder_allowed: "{{ (not (away_mode_active | bool(false))) and (not (is_night | bool(false))) and (reminder_triggered | bool(false)) and (not (weather_blocked | bool(false))) }}"
-
-          - choose:
-              - conditions:
-                  - "{{ reminder_allowed | bool(false) }}"
-                  - "{{ (notify_targets_list | trim) != '' }}"
-                sequence:
-                  - repeat:
-                      for_each: "{{ notify_targets_list.split(',') }}"
-                      sequence:
-                        - service: "{{ item }}"
-                          data:
-                            title: "🪟 Bitte kurz lüften"
-                            message: >
-                              Stoßlüften empfohlen.
-                              Grund: {{ reminder_reason if (reminder_reason | trim) != '' else 'Zeit-/Schwellwert-Trigger' }}.
-                              Aktuelle Fenster: {{ open_windows_text }}.
-                          continue_on_error: true
-
-  # ===== FLOW 2: WINDOW OPENED -> TIMER -> ESCALATION =====
-  - choose:
+      # ===== FLOW 2: WINDOW OPENED -> TIMER -> ESCALATION =====
       - conditions:
           - "{{ window_opened_trigger | bool(false) }}"
         sequence:
@@ -598,15 +540,20 @@ action:
                   - "{{ (notify_targets_list | trim) != '' }}"
                 sequence:
                   - repeat:
-                      for_each: "{{ notify_targets_list.split(',') }}"
+                      for_each: "{{ (notify_targets_list | trim).split(',') if (notify_targets_list | trim) != '' else [] }}"
                       sequence:
-                        - service: "{{ item }}"
+                        - action: "{{ repeat.item | trim }}"
                           data:
-                            title: "🪟 Zeit zum Schließen"
-                            message: >
-                              Die Lüftungszeit ({{ inputs.airing_duration | int }} min) ist erreicht.
-                              Bitte Fenster schließen: {{ open_windows_now_text }}.
+                            title: "🪟 Fenster schließen"
+                            message: "Lüftungszeit erreicht ({{ inputs.airing_duration | int }} min). Noch offen: {{ open_windows_now_text }}."
+                            data:
+                              tag: vaillant_lueftung_close
+                              push:
+                                sticky: true
                           continue_on_error: true
+
+          - condition: template
+            value_template: "{{ any_window_open_now | bool(false) }}"
 
           - delay:
               minutes: "{{ inputs.escalation_delay }}"
@@ -625,16 +572,27 @@ action:
                                 {% set ns.open = true %}
                               {% endif %}
                             {% endfor %}
-                            {{ ns.open | bool(false) }}
+                            {{ ns.open | bool(false) and repeat.index <= 60 }}
                       sequence:
+                        - variables:
+                            escalation_open_text: >
+                              {% set ns = namespace(items=[]) %}
+                              {% for w in window_entities %}
+                                {% if w != '' and states[w] is defined and is_state(w, 'on') %}
+                                  {% set label = state_attr(w, 'friendly_name') if state_attr(w, 'friendly_name') is not none else w %}
+                                  {% set ns.items = ns.items + [label] %}
+                                {% endif %}
+                              {% endfor %}
+                              {{ ns.items | join(', ') if ns.items | length > 0 else 'Fenster' }}
                         - repeat:
-                            for_each: "{{ critical_targets_list.split(',') }}"
+                            for_each: "{{ (critical_targets_list | trim).split(',') if (critical_targets_list | trim) != '' else [] }}"
                             sequence:
-                              - service: "{{ item }}"
+                              - action: "{{ repeat.item | trim }}"
                                 data:
-                                  title: "🚨 CLOSE WINDOWS NOW!"
-                                  message: "{{ trigger_window_name }} ist noch offen. Bitte sofort schließen!"
+                                  title: "🚨 Fenster sofort schließen!"
+                                  message: "{{ escalation_open_text }} noch offen!"
                                   data:
+                                    tag: vaillant_lueftung_critical
                                     push:
                                       interruption-level: critical
                                       sound:
@@ -647,8 +605,7 @@ action:
                         - delay:
                             minutes: 1
 
-  # ===== FLOW 3: SAFETY (RAIN / AWAY MODE) =====
-  - choose:
+      # ===== FLOW 3: SAFETY (RAIN / AWAY MODE) =====
       - conditions:
           - "{{ (trigger.id in ['safety_rain', 'safety_away_mode']) | bool(false) }}"
         sequence:
@@ -671,13 +628,14 @@ action:
                   - "{{ (critical_targets_list | trim) != '' }}"
                 sequence:
                   - repeat:
-                      for_each: "{{ critical_targets_list.split(',') }}"
+                      for_each: "{{ (critical_targets_list | trim).split(',') if (critical_targets_list | trim) != '' else [] }}"
                       sequence:
-                        - service: "{{ item }}"
+                        - action: "{{ repeat.item | trim }}"
                           data:
-                            title: "⚠️ Rain/Left Home - CLOSE WINDOWS!"
+                            title: "⚠️ Fenster offen — Achtung!"
                             message: "{{ safety_reason }}. Offene Fenster: {{ open_windows_text }}."
                             data:
+                              tag: vaillant_lueftung_safety
                               push:
                                 interruption-level: critical
                                 sound:

@@ -3277,7 +3277,7 @@ actions:
                 - action: "{{ repeat.item | trim }}"
                   continue_on_error: true
                   data:
-                    title: "📣 Vaillant Leitstand"
+                    title: "📣 Heizung Leitstand"
                     message: >-
                       {%- set n = '\n' -%}
                       {%- set msg = namespace(out='') -%}
@@ -3298,6 +3298,8 @@ actions:
                       {{ msg.out }}
                     data:
                       tag: vaillant_heizung_leitstand
+                      push:
+                        sticky: true
 
   # ════════════════════════════════════════════════════════════
   # LEITSTAND EXPERT: Verlauf (unique ID, nur bei Events/Writes)
@@ -3381,20 +3383,14 @@ actions:
       _alert_problems: >
         {%- set ns = namespace(items=[]) -%}
         {%- if not (master_climate_available | bool(false)) -%}
-          {%- set ns.items = ns.items + ['🔴 Master-Thermostat (' ~ (inputs.master_climate | default('?')) ~ ') ist offline/unavailable!'] -%}
+          {%- set ns.items = ns.items + ['🔴 Master-Thermostat offline!'] -%}
         {%- endif -%}
         {%- if _l_m_forced | default(false) | bool(false) -%}
-          {%- set ns.items = ns.items + ['🔴 NOT-AUS aktiv — Kälteeinbruch erkannt, Master auf Minimum (' ~ (inputs.min_trv_temp | float(12)) ~ '°C)'] -%}
+          {%- set ns.items = ns.items + ['🔴 NOT-AUS aktiv — Master auf Minimum (' ~ (inputs.min_trv_temp | float(12)) ~ '°C)'] -%}
         {%- endif -%}
         {%- if (master_write_budget_remaining | default(1) | int(1)) <= 0 -%}
-          {%- set ns.items = ns.items + ['🟡 API-Budget erschöpft — keine Writes möglich bis Timestamps ablaufen'] -%}
+          {%- set ns.items = ns.items + ['🟡 API-Budget erschöpft'] -%}
         {%- endif -%}
-        {%- for room in rooms_runtime_list | default([], true) -%}
-          {%- if room.enabled | default(false) | bool(false) and not (room.climate_ok | default(false) | bool(false)) -%}
-            {%- set rl = room.key | default('?') | string -%}
-            {%- set ns.items = ns.items + ['🔴 TRV ' ~ rl ~ ' (' ~ (room.climate | default('?')) ~ ') ist offline/unavailable!'] -%}
-          {%- endif -%}
-        {%- endfor -%}
         {{ ns.items }}
   - choose:
       - conditions:
@@ -3404,7 +3400,7 @@ actions:
             continue_on_error: true
             data:
               notification_id: "vaillant_alert"
-              title: "⚠️ Vaillant Heizung — Problem erkannt"
+              title: "⚠️ Heizung — Problem erkannt"
               message: >-
                 {%- set n = '\n' -%}
                 {%- set msg = namespace(out='') -%}
@@ -3423,7 +3419,7 @@ actions:
                     - action: "{{ repeat.item | trim }}"
                       continue_on_error: true
                       data:
-                        title: "⚠️ Vaillant — Problem erkannt"
+                        title: "⚠️ Heizung — Problem erkannt"
                         message: >-
                           {%- set n = '\n' -%}
                           {%- set msg = namespace(out='') -%}
@@ -3434,6 +3430,8 @@ actions:
                           {{ msg.out }}
                         data:
                           tag: vaillant_heizung_alert
+                          push:
+                            sticky: true
       - conditions:
           - "{{ (_alert_problems | length) == 0 }}"
         sequence:
