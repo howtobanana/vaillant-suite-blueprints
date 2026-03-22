@@ -173,6 +173,21 @@ blueprint:
               max: 120
               step: 5
               unit_of_measurement: "min"
+        pre_heat_timeout:
+          name: "🔥 Pre-Heat Timeout (min)"
+          description: |
+            Maximale Vorheizdauer ab Einschalten des Toggles.
+            Nach Ablauf wird der Pre-Heat Toggle automatisch auf OFF gesetzt.
+            Bei Räumen MIT Präsenz oder Zeitplan wird Pre-Heat auch vorher schon
+            automatisch deaktiviert, sobald Präsenz erkannt oder der Zeitplan aktiv wird.
+            Für lange Anreisen (z.B. Zug) entsprechend höher setzen.
+          default: 90
+          selector:
+            number:
+              min: 30
+              max: 480
+              step: 15
+              unit_of_measurement: "min"
         max_changes_per_hour:
           name: "🔧 API: Budget/h"
           description: |
@@ -296,6 +311,19 @@ blueprint:
           description: |
 
             Input boolean to store master presence state. Create manually: Settings -> Helpers -> Toggle -> Name: 'Heating: Master Presence Active'
+
+          default: ""
+          selector:
+            entity:
+              domain: input_boolean
+        master_pre_heat_helper:
+          name: "🔥 Master Pre-Heat Helper (opt)"
+          description: |
+
+            Optionaler Toggle zum Vorheizen des Master-Raums auf Comfort-Temperatur,
+            auch wenn Zeitplan/Präsenz gerade inaktiv sind.
+            Wird automatisch deaktiviert bei: Präsenz ON, Zeitplan aktiv, oder Timeout.
+            Erforderlicher Helfer-Typ: **Umschalter** (input_boolean).
 
           default: ""
           selector:
@@ -544,6 +572,17 @@ blueprint:
           selector:
             entity:
               domain: input_boolean
+        room2_pre_heat_helper:
+          name: "🔥 Pre-Heat Helper (opt)"
+          description: |
+
+            Optionaler Toggle zum Vorheizen auf Comfort, auch bei inaktivem Zeitplan/Präsenz.
+            Auto-OFF bei: Präsenz ON, Zeitplan aktiv, oder Timeout.
+
+          default: ""
+          selector:
+            entity:
+              domain: input_boolean
         room2_window:
           name: "🪟 Fenster"
           description: |
@@ -646,6 +685,17 @@ blueprint:
           description: |
 
             Input boolean for room3 presence state. Create manually: Settings -> Helpers -> Toggle -> Name: 'Heating: Room3 Presence Active'
+
+          default: ""
+          selector:
+            entity:
+              domain: input_boolean
+        room3_pre_heat_helper:
+          name: "🔥 Pre-Heat Helper (opt)"
+          description: |
+
+            Optionaler Toggle zum Vorheizen auf Comfort, auch bei inaktivem Zeitplan/Präsenz.
+            Auto-OFF bei: Präsenz ON, Zeitplan aktiv, oder Timeout.
 
           default: ""
           selector:
@@ -758,6 +808,17 @@ blueprint:
           selector:
             entity:
               domain: input_boolean
+        room4_pre_heat_helper:
+          name: "🔥 Pre-Heat Helper (opt)"
+          description: |
+
+            Optionaler Toggle zum Vorheizen auf Comfort, auch bei inaktivem Zeitplan/Präsenz.
+            Auto-OFF bei: Präsenz ON, Zeitplan aktiv, oder Timeout.
+
+          default: ""
+          selector:
+            entity:
+              domain: input_boolean
         room4_window:
           name: "🪟 Fenster"
           description: |
@@ -860,6 +921,17 @@ blueprint:
           description: |
 
             Input boolean for room5 presence state. Create manually: Settings -> Helpers -> Toggle -> Name: 'Heating: Room5 Presence Active'
+
+          default: ""
+          selector:
+            entity:
+              domain: input_boolean
+        room5_pre_heat_helper:
+          name: "🔥 Pre-Heat Helper (opt)"
+          description: |
+
+            Optionaler Toggle zum Vorheizen auf Comfort, auch bei inaktivem Zeitplan/Präsenz.
+            Auto-OFF bei: Präsenz ON, Zeitplan aktiv, oder Timeout.
 
           default: ""
           selector:
@@ -1039,6 +1111,16 @@ blueprint:
         ⚠️ Kritische Alerts (Master offline, NOT-AUS, TRV offline, API-Budget erschöpft) werden **immer** automatisch als Notification gefeuert und löschen sich selbst, sobald das Problem behoben ist.
       collapsed: true
       input:
+        quiet_schedule:
+          name: "🌙 Ruhezeit-Zeitplan"
+          description: |
+            Optionaler Zeitplan (schedule-Helfer) für Ruhezeiten.
+            Wenn aktiv (on), werden alle Benachrichtigungen unterdrückt.
+            Leer lassen = keine Ruhezeit-Blockierung.
+          default: ""
+          selector:
+            entity:
+              domain: schedule
         enable_leitstand_normal:
           name: "📣 Leitstand Normal"
           description: |
@@ -1056,17 +1138,18 @@ blueprint:
           default: false
           selector:
             boolean:
-        notify_service:
+        notify_devices:
           name: "📱 Mobile Push (opt)"
           description: |
-            Optionaler Notify-Service für Push-Notifications aufs Handy (z.B. `notify.mobile_app_iphone_von_fabian`).
+            Mobile-App Gerät(e) für Push-Notifications aufs Handy.
             Wird für **Normal-Leitstand** und **Kritische Alerts** genutzt.
             Expert-Verlauf wird NICHT aufs Handy gepusht (zu häufig).
-
-            Den Service-Namen findest du unter: Entwicklerwerkzeuge → Dienste → `notify.`
-          default: ""
+          default: []
           selector:
-            text:
+            device:
+              filter:
+                integration: mobile_app
+              multiple: true
 
 trigger_variables:
   tv_master_presence_sensors: !input master_presence_sensors
@@ -1646,6 +1729,7 @@ actions:
         away_temp_input: !input away_temp_input
         away_temp_fixed: !input away_temp_fixed
         away_mode_boolean: !input away_mode_boolean
+        pre_heat_timeout: !input pre_heat_timeout
         room_boost_activation_threshold: !input room_boost_activation_threshold
         min_trv_temp: !input min_trv_temp
         window_heat_delay: !input window_heat_delay
@@ -1664,7 +1748,7 @@ actions:
         humidity_drop_amount: !input humidity_drop_amount
         enable_leitstand_normal: !input enable_leitstand_normal
         enable_leitstand_expert: !input enable_leitstand_expert
-        notify_service: !input notify_service
+        notify_devices: !input notify_devices
         master_climate: !input master_climate
         master_write_log_helper: !input master_write_log_helper
         master_comfort_input: !input master_comfort_input
@@ -1672,6 +1756,7 @@ actions:
         master_schedule: !input master_schedule
         master_presence_sensors: !input master_presence_sensors
         master_presence_helper: !input master_presence_helper
+        master_pre_heat_helper: !input master_pre_heat_helper
         enable_master_presence_priority: !input enable_master_presence_priority
         master_presence_priority_helper: !input master_presence_priority_helper
         enable_room_boost: !input enable_room_boost
@@ -1686,6 +1771,7 @@ actions:
         room2_schedule: !input room2_schedule
         room2_presence_sensors: !input room2_presence_sensors
         room2_presence_helper: !input room2_presence_helper
+        room2_pre_heat_helper: !input room2_pre_heat_helper
         room2_window: !input room2_window
         room2_temp_sensor: !input room2_temp_sensor
         room3_enabled: !input room3_enabled
@@ -1695,6 +1781,7 @@ actions:
         room3_schedule: !input room3_schedule
         room3_presence_sensors: !input room3_presence_sensors
         room3_presence_helper: !input room3_presence_helper
+        room3_pre_heat_helper: !input room3_pre_heat_helper
         room3_window: !input room3_window
         room3_temp_sensor: !input room3_temp_sensor
         room4_enabled: !input room4_enabled
@@ -1704,6 +1791,7 @@ actions:
         room4_schedule: !input room4_schedule
         room4_presence_sensors: !input room4_presence_sensors
         room4_presence_helper: !input room4_presence_helper
+        room4_pre_heat_helper: !input room4_pre_heat_helper
         room4_window: !input room4_window
         room4_temp_sensor: !input room4_temp_sensor
         room5_enabled: !input room5_enabled
@@ -1713,6 +1801,7 @@ actions:
         room5_schedule: !input room5_schedule
         room5_presence_sensors: !input room5_presence_sensors
         room5_presence_helper: !input room5_presence_helper
+        room5_pre_heat_helper: !input room5_pre_heat_helper
         room5_window: !input room5_window
         room5_temp_sensor: !input room5_temp_sensor
         follower1_enabled: !input follower1_enabled
@@ -1733,6 +1822,7 @@ actions:
           schedule: !input room2_schedule
           presence_helper: !input room2_presence_helper
           presence_sensors: !input room2_presence_sensors
+          pre_heat_helper: !input room2_pre_heat_helper
           comfort_input: !input room2_comfort_input
           comfort_fixed: !input room2_comfort_fixed
         - key: room3
@@ -1744,6 +1834,7 @@ actions:
           schedule: !input room3_schedule
           presence_helper: !input room3_presence_helper
           presence_sensors: !input room3_presence_sensors
+          pre_heat_helper: !input room3_pre_heat_helper
           comfort_input: !input room3_comfort_input
           comfort_fixed: !input room3_comfort_fixed
         - key: room4
@@ -1755,6 +1846,7 @@ actions:
           schedule: !input room4_schedule
           presence_helper: !input room4_presence_helper
           presence_sensors: !input room4_presence_sensors
+          pre_heat_helper: !input room4_pre_heat_helper
           comfort_input: !input room4_comfort_input
           comfort_fixed: !input room4_comfort_fixed
         - key: room5
@@ -1766,6 +1858,7 @@ actions:
           schedule: !input room5_schedule
           presence_helper: !input room5_presence_helper
           presence_sensors: !input room5_presence_sensors
+          pre_heat_helper: !input room5_pre_heat_helper
           comfort_input: !input room5_comfort_input
           comfort_fixed: !input room5_comfort_fixed
         - key: follower1
@@ -1875,6 +1968,15 @@ actions:
         {{ (inputs.master_presence_sensors | reject('in', ['', 'sensor.none', 'none']) | list | length > 0) if inputs.master_presence_sensors else false }}
       master_is_manual: >
         {{ (not (master_sched_valid | bool(false))) and (not (master_helper_valid | bool(false))) and (not (master_sensors_valid | bool(false))) }}
+      master_pre_heat_valid: >
+        {{ inputs.master_pre_heat_helper | string not in ['', 'sensor.none', 'none'] }}
+      master_pre_heat_active: >
+        {% set _ph_eid = inputs.master_pre_heat_helper | string %}
+        {% if _ph_eid in ['', 'sensor.none', 'none'] %}
+          {{ false }}
+        {% else %}
+          {{ (states(_ph_eid) | string | lower) in ['on', 'true', '1'] }}
+        {% endif %}
       # ===== TARGET CALCULATION PREREQUISITES =====
       away_mode_helper_set: >
         {{ (inputs.away_mode_boolean | reject('in', ['', 'sensor.none', 'none']) | list | length) > 0 if inputs.away_mode_boolean else false }}
@@ -1913,13 +2015,13 @@ actions:
           {{ inputs.master_comfort_fixed }}
         {% endif %}
       master_demand: >
-        {% if master_schedule_active | bool(false) or master_presence_detected | bool(false) or master_is_manual | bool(false) %}
+        {% if master_schedule_active | bool(false) or master_presence_detected | bool(false) or master_is_manual | bool(false) or master_pre_heat_active | bool(false) %}
           {{ master_comfort_temp }}
         {% else %}
           {{ eco_temp }}
         {% endif %}
       master_target_temp: >
-        {% if away_mode_entity_on | bool(false) %}
+        {% if away_mode_entity_on | bool(false) and not (master_pre_heat_active | bool(false)) %}
           {{ away_temp | float(inputs.away_temp_fixed | float(16)) }}
         {% else %}
           {{ master_demand | float(eco_temp | float(inputs.eco_temp_fixed | float(19))) }}
@@ -2057,6 +2159,7 @@ actions:
           {% set schedule = room.schedule | string if room.schedule is defined else '' %}
           {% set presence_helper = room.presence_helper | string if room.presence_helper is defined else '' %}
           {% set presence_sensors_sanitized = (room.presence_sensors if room.presence_sensors is defined else []) | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+          {% set pre_heat_helper = room.pre_heat_helper | string if room.pre_heat_helper is defined else '' %}
           {% set comfort_input = room.comfort_input | string if room.comfort_input is defined else '' %}
           {% set comfort_fixed = room.comfort_fixed | float(20) if room.comfort_fixed is defined else 20 %}
           {% set offset = room.offset | float(0) if room.offset is defined else 0 %}
@@ -2064,6 +2167,8 @@ actions:
           {% set sched_valid = schedule not in ['', 'sensor.none', 'none'] %}
           {% set helper_valid = presence_helper not in ['', 'sensor.none', 'none'] %}
           {% set sensors_valid = (presence_sensors_sanitized | length) > 0 %}
+          {% set pre_heat_valid = (role == 'isolated') and pre_heat_helper not in ['', 'sensor.none', 'none'] %}
+          {% set pre_heat_active = pre_heat_valid and ((states(pre_heat_helper) | string | lower) in ['on', 'true', '1']) %}
           {% set schedule_active = (role == 'isolated') and (sched_valid) and is_state(schedule, 'on') %}
           {# Case-insensitive boolean check: handles 'on', 'On', 'true', '1' from non-standard helpers #}
           {% set _helper_state = states(presence_helper) | string | lower if helper_valid else '' %}
@@ -2085,7 +2190,7 @@ actions:
           {% if not (enabled | bool(false)) %}
             {% set active_for_demand = false %}
           {% elif role == 'isolated' %}
-            {% set active_for_demand = (schedule_active | bool(false)) or (helper_on | bool(false)) or (sensor_on_long_enough | bool(false)) or (manual_mode | bool(false)) %}
+            {% set active_for_demand = (schedule_active | bool(false)) or (helper_on | bool(false)) or (sensor_on_long_enough | bool(false)) or (manual_mode | bool(false)) or (pre_heat_active | bool(false)) %}
           {% else %}
             {% set active_for_demand = master_active_for_followers | bool(false) %}
           {% endif %}
@@ -2174,12 +2279,12 @@ actions:
             {% set boost_deactivate = (not (active_for_demand | bool(false))) or ((boost_delta | float(0)) < (threshold / 2)) %}
             {% if window_open_too_long | bool(false) %}
               {% set mode_label = 'WindowOpen' %}
-            {% elif away_mode_entity_on | bool(false) %}
-              {% set mode_label = 'Away' %}
             {% elif schedule_active | bool(false) %}
               {% set mode_label = 'Zeitplan' %}
             {% elif (helper_on | bool(false)) or (sensor_on_long_enough | bool(false)) %}
               {% set mode_label = 'Praesenz' %}
+            {% elif pre_heat_active | bool(false) %}
+              {% set mode_label = 'PreHeat' %}
             {% elif manual_mode | bool(false) %}
               {% set mode_label = 'Manual' %}
             {% else %}
@@ -2219,6 +2324,9 @@ actions:
             'helper_on': helper_on | bool(false),
             'sensors_valid': sensors_valid | bool(false),
             'sensor_on_long_enough': sensor_on_long_enough | bool(false),
+            'pre_heat_valid': pre_heat_valid | bool(false),
+            'pre_heat_active': pre_heat_active | bool(false),
+            'pre_heat_helper': pre_heat_helper | string,
             'manual_mode': manual_mode | bool(false),
             'active_for_demand': active_for_demand | bool(false),
             'window_open_too_long': window_open_too_long | bool(false),
@@ -2271,6 +2379,47 @@ actions:
             target:
               entity_id: "{{ inputs.summer_mode_helper }}"
             continue_on_error: true
+  # ===== STEP 0.005: PRE-HEAT AUTO-OFF =====
+  # Master pre-heat auto-off: deactivate when presence ON, schedule active, or timeout exceeded
+  - if:
+      - "{{ master_pre_heat_active | bool(false) }}"
+      - >
+        {% set ph_eid = inputs.master_pre_heat_helper | string %}
+        {% set now_ts = as_timestamp(now()) | float(0) %}
+        {% set ph_changed = as_timestamp(states[ph_eid].last_changed, now_ts) | float(now_ts) if ph_eid not in ['', 'sensor.none', 'none'] else now_ts %}
+        {% set timeout_s = (inputs.pre_heat_timeout | float(60)) * 60 %}
+        {% set timed_out = (now_ts - ph_changed) >= timeout_s %}
+        {% set presence_took_over = master_presence_detected | bool(false) %}
+        {% set schedule_took_over = master_schedule_active | bool(false) %}
+        {{ timed_out or presence_took_over or schedule_took_over }}
+    then:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: "{{ inputs.master_pre_heat_helper }}"
+        continue_on_error: true
+  # Room pre-heat auto-off: deactivate when presence ON, schedule active, or timeout exceeded
+  - repeat:
+      for_each: "{{ rooms_runtime_list | default([], true) }}"
+      sequence:
+        - variables:
+            _ph_room: "{{ repeat.item }}"
+            _ph_helper: "{{ _ph_room.pre_heat_helper | default('') | string }}"
+            _ph_valid: "{{ _ph_helper not in ['', 'sensor.none', 'none'] }}"
+            _ph_on: "{{ _ph_valid and ((states(_ph_helper) | string | lower) in ['on', 'true', '1']) }}"
+        - if:
+            - "{{ _ph_on | bool(false) }}"
+            - >
+              {% set now_ts = as_timestamp(now()) | float(0) %}
+              {% set ph_changed = as_timestamp(states[_ph_helper].last_changed, now_ts) | float(now_ts) if (_ph_valid | bool(false)) else now_ts %}
+              {% set timeout_s = (inputs.pre_heat_timeout | float(60)) * 60 %}
+              {% set timed_out = (now_ts - ph_changed) >= timeout_s %}
+              {% set presence_took_over = (_ph_room.schedule_active | default(false) | bool(false)) or (_ph_room.helper_on | default(false) | bool(false)) or (_ph_room.sensor_on_long_enough | default(false) | bool(false)) %}
+              {{ timed_out or presence_took_over }}
+          then:
+            - action: input_boolean.turn_off
+              target:
+                entity_id: "{{ _ph_helper }}"
+              continue_on_error: true
   # ===== STEP 0.01: HELPER INPUT DEBOUNCE =====
   # Note: This automation uses mode: restart.
   # When a slider is moved (helper_input_trigger), a delay of helper_input_settle_seconds is inserted.
@@ -2991,11 +3140,30 @@ actions:
   # LEITSTAND: Shared variables for both modes
   # ════════════════════════════════════════════════════════════
   - variables:
-      _leitstand_normal: "{{ inputs.enable_leitstand_normal | default(false) | bool(false) }}"
-      _leitstand_expert: "{{ inputs.enable_leitstand_expert | default(false) | bool(false) }}"
+      _quiet_active: >
+        {% if inputs.quiet_schedule | default('') | string | trim not in ['', 'none', 'None'] %}
+          {{ is_state(inputs.quiet_schedule, 'on') }}
+        {% else %}
+          {{ false }}
+        {% endif %}
+      _leitstand_normal: "{{ inputs.enable_leitstand_normal | default(false) | bool(false) and not (_quiet_active | bool(false)) }}"
+      _leitstand_expert: "{{ inputs.enable_leitstand_expert | default(false) | bool(false) and not (_quiet_active | bool(false)) }}"
       _leitstand_any: "{{ (_leitstand_normal | bool(false)) or (_leitstand_expert | bool(false)) }}"
-      _notify_service: "{{ inputs.notify_service | default('') | string | trim }}"
-      _notify_configured: "{{ _notify_service | length > 5 and _notify_service.startswith('notify.') }}"
+      _notify_targets_list: >
+        {% set raw = inputs.notify_devices %}
+        {% set ns = namespace(items=[]) %}
+        {% set r_list = raw if (raw is iterable and raw is not string) else ([raw] if raw != '' else []) %}
+        {% for ent_raw in r_list %}
+          {% set ent = (ent_raw | string) | trim %}
+          {% if ent != '' %}
+            {% set dev_name = device_attr(ent, 'name') %}
+            {% if dev_name is string and (dev_name | trim) != '' %}
+              {% set ns.items = ns.items + ['notify.mobile_app_' ~ ((dev_name | slugify) | replace('-', '_'))] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items | unique | join(',') }}
+      _notify_configured: "{{ (_notify_targets_list | trim) != '' and not (_quiet_active | bool(false)) }}"
       _is_demand_event: >
         {{
           trigger_id_safe | default('manual') != 'scheduled'
@@ -3025,9 +3193,10 @@ actions:
       _l_m_sched: "{{ master_schedule_active | default(false) | bool(false) }}"
       _l_m_pres: "{{ master_presence_detected | default(false) | bool(false) }}"
       _l_m_man: "{{ master_is_manual | default(false) | bool(false) }}"
+      _l_m_pre_heat: "{{ master_pre_heat_active | default(false) | bool(false) }}"
       _l_m_sens_valid: "{{ master_sensors_valid | default(false) | bool(false) }}"
       _l_m_help_valid: "{{ master_helper_valid | default(false) | bool(false) }}"
-      _l_m_mode_modus: "{{ 'Not-Aus' if (_l_m_forced | bool(false)) else ('Abwesend' if (_l_m_away | bool(false)) else 'Heizbetrieb') }}"
+      _l_m_mode_modus: "{{ 'Not-Aus' if (_l_m_forced | bool(false)) else ('Abwesend' if (_l_m_away | bool(false) and not (_l_m_pre_heat | bool(false))) else ('PreHeat' if (_l_m_pre_heat | bool(false)) else 'Heizbetrieb')) }}"
 
   # ════════════════════════════════════════════════════════════
   # LEITSTAND NORMAL: Demand-only Dashboard (überschreibt sich selbst)
@@ -3047,7 +3216,7 @@ actions:
             {%- set msg.out = msg.out ~ '🚨 Trigger: ' ~ (trigger_id_safe | default('manual')) ~ ' | Boost ' ~ ('AN' if (_l_m_boost | bool(false)) else 'AUS') ~ ' | Wetter ' ~ (_l_m_weather | float(0) | round(1)) ~ '°C | Away ' ~ ('✅' if (_l_m_away | bool(false)) else '⬜') -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🌡️ **Master — ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus ~ '** (' ~ _l_m_reason ~ ')' -%}
             {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Komfort ' ~ (master_comfort_temp | default(0) | float(0) | round(1)) ~ '°C' -%}
-            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren' -%}
+            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren | ' ~ ('🔥' if (_l_m_pre_heat | bool(false)) else '⬜') ~ ' PreHeat' -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🚪 **Räume**' -%}
             {%- set ns_dis = namespace(labels=[]) -%}
             {%- for room in rooms_runtime_list | default([], true) -%}
@@ -3102,28 +3271,33 @@ actions:
       - if:
           - "{{ _notify_configured | bool(false) }}"
         then:
-          - action: "{{ _notify_service }}"
-            continue_on_error: true
-            data:
-              title: "📣 Vaillant Leitstand"
-              message: >-
-                {%- set n = '\n' -%}
-                {%- set msg = namespace(out='') -%}
-                {%- set msg.out = msg.out ~ '🌡️ Master: ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus -%}
-                {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C' -%}
-                {%- set msg.out = msg.out ~ n ~ '🚧 Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) -%}
-                {%- for room in rooms_runtime_list | default([], true) -%}
-                  {%- if room.enabled | default(false) | bool(false) -%}
-                    {%- set cid = room.climate | default('') | string -%}
-                    {%- set rok = room.room_ok | default(false) | bool(false) -%}
-                    {%- set rl = state_attr(cid, 'friendly_name') | default(room.key | default('?'), true) if rok else (room.key | default('?')) -%}
-                    {%- set ft = room.final_target | default(0) | float(0) -%}
-                    {%- set ml = room.mode_label | default('n/a') | string -%}
-                    {%- set ha_i = '🔥' if (room.hvac_action | default('n/a')) == 'heating' else '💤' -%}
-                    {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ (ft | round(1)) ~ '°C ' ~ ml ~ ' ' ~ ha_i -%}
-                  {%- endif -%}
-                {%- endfor -%}
-                {{ msg.out }}
+          - repeat:
+              for_each: "{{ (_notify_targets_list | trim).split(',') if (_notify_targets_list | trim) != '' else [] }}"
+              sequence:
+                - action: "{{ repeat.item | trim }}"
+                  continue_on_error: true
+                  data:
+                    title: "📣 Vaillant Leitstand"
+                    message: >-
+                      {%- set n = '\n' -%}
+                      {%- set msg = namespace(out='') -%}
+                      {%- set msg.out = msg.out ~ '🌡️ Master: ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus -%}
+                      {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C' -%}
+                      {%- set msg.out = msg.out ~ n ~ '🚧 Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) -%}
+                      {%- for room in rooms_runtime_list | default([], true) -%}
+                        {%- if room.enabled | default(false) | bool(false) -%}
+                          {%- set cid = room.climate | default('') | string -%}
+                          {%- set rok = room.room_ok | default(false) | bool(false) -%}
+                          {%- set rl = state_attr(cid, 'friendly_name') | default(room.key | default('?'), true) if rok else (room.key | default('?')) -%}
+                          {%- set ft = room.final_target | default(0) | float(0) -%}
+                          {%- set ml = room.mode_label | default('n/a') | string -%}
+                          {%- set ha_i = '🔥' if (room.hvac_action | default('n/a')) == 'heating' else '💤' -%}
+                          {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ (ft | round(1)) ~ '°C ' ~ ml ~ ' ' ~ ha_i -%}
+                        {%- endif -%}
+                      {%- endfor -%}
+                      {{ msg.out }}
+                    data:
+                      tag: vaillant_heizung_leitstand
 
   # ════════════════════════════════════════════════════════════
   # LEITSTAND EXPERT: Verlauf (unique ID, nur bei Events/Writes)
@@ -3143,7 +3317,7 @@ actions:
             {%- set msg.out = msg.out ~ n ~ 'Away ' ~ ('✅' if (_l_m_away | bool(false)) else '⬜') ~ ' | Sommer ' ~ ('✅' if (summer_mode | default(false) | bool(false)) else '⬜') ~ ' | Entität: ' ~ (inputs.master_climate | default('n/a')) -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🌡️ **Master — ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus ~ '** (' ~ _l_m_reason ~ ')' -%}
             {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Base ' ~ (_l_m_base | float(0) | round(1)) ~ '°C | Eco ' ~ (eco_temp | default(0) | float(0) | round(1)) ~ '°C | Δ=' ~ (_l_m_delta | float(0) | round(1)) -%}
-            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren' -%}
+            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren | ' ~ ('🔥' if (_l_m_pre_heat | bool(false)) else '⬜') ~ ' PreHeat' -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🚪 **Räume**' -%}
             {%- set ns_dis = namespace(labels=[]) -%}
             {%- for room in rooms_runtime_list | default([], true) -%}
@@ -3243,18 +3417,23 @@ actions:
           - if:
               - "{{ _notify_configured | bool(false) }}"
             then:
-              - action: "{{ _notify_service }}"
-                continue_on_error: true
-                data:
-                  title: "⚠️ Vaillant — Problem erkannt"
-                  message: >-
-                    {%- set n = '\n' -%}
-                    {%- set msg = namespace(out='') -%}
-                    {%- for item in _alert_problems -%}
-                      {%- if not loop.first -%}{%- set msg.out = msg.out ~ n -%}{%- endif -%}
-                      {%- set msg.out = msg.out ~ item -%}
-                    {%- endfor -%}
-                    {{ msg.out }}
+              - repeat:
+                  for_each: "{{ (_notify_targets_list | trim).split(',') if (_notify_targets_list | trim) != '' else [] }}"
+                  sequence:
+                    - action: "{{ repeat.item | trim }}"
+                      continue_on_error: true
+                      data:
+                        title: "⚠️ Vaillant — Problem erkannt"
+                        message: >-
+                          {%- set n = '\n' -%}
+                          {%- set msg = namespace(out='') -%}
+                          {%- for item in _alert_problems -%}
+                            {%- if not loop.first -%}{%- set msg.out = msg.out ~ n -%}{%- endif -%}
+                            {%- set msg.out = msg.out ~ item -%}
+                          {%- endfor -%}
+                          {{ msg.out }}
+                        data:
+                          tag: vaillant_heizung_alert
       - conditions:
           - "{{ (_alert_problems | length) == 0 }}"
         sequence:

@@ -6,13 +6,19 @@ blueprint:
     Schlanke Radius-/Personen-Logik für den globalen Away-Helper.
     Keine Physik-/ETA-Berechnung mehr, nur robuste Distanz- und Person-Regeln.
 
-    **Funktionen:**
+    **Kern-Funktionen:**
     - 📍 Distanzbasierte Away-Entscheidung über `proximity`.
-    - 👤 Person-basierter Home-Abgleich (`person`-Entity).
+    - 👥 Person-basierter Home-Abgleich – Away nur wenn ALLE Personen weg sind.
     - ⏱️ Kurzabwesenheits-Filter (Timeout).
     - 🎚️ Steuert den zentralen "Away-Mode Helper" für Modul 1.
 
-    **Autor:** bananapower | **Version:** v1.0 (Person-Based Edition)
+    **Das Ökosystem:**
+    Entwickelt für den Betrieb im Verbund mit:
+    *   🌡️ `(Vaillant) Heizungs-Steuerung` (Zentrale Heizungslogik).
+    *   💨 `(Vaillant) Lüftungs-Steuerung` (Luftaustausch & Feuchtigkeit).
+    *   ❤️ `(Vaillant) System-Diagnose` (Wartung & Batterien).
+      
+    **Version:** 1.0 | **Autor:** BananaPower
 
   domain: automation
   source_url: https://raw.githubusercontent.com/howtobanana/vaillant-suite-blueprints/main/blueprints/vaillant_geofencing.yaml
@@ -26,31 +32,61 @@ blueprint:
         Der Away-Helper wird sofort gesetzt, wenn die Bedingungen erfüllt sind.
       collapsed: false
       input:
-        enable_geofencing:
-          name: "🔘 GeoFencing aktiv"
-          description: |
-            Schalter für die automatische Away-Steuerung.
-          default: false
-          selector:
-            boolean:
         proximity_entity:
-          name: "📍 Proximity-Entity"
+          name: "📍 Distanz-Sensor"
           description: |
-            Distanzsensor zur Home-Zone (z.B. proximity.home_distance).
-            Erwartete Einheit: km oder m.
+            Distanzsensor zur Home-Zone. Einheit wird automatisch erkannt (km oder m).
+
+            In modernen HA-Versionen (2023+) gibt es KEINE proximity.{name} Entity mehr.
+            Stattdessen werden Sensor-Sub-Entities verwendet:
+
+            📌 Empfohlen (alle Personen automatisch): sensor.{name}_nearest_distance
+               z.B. → sensor.wien_nearest_distance
+
+            👤 Personen-spezifisch (nur eine Person): sensor.{name}_{person}_distance
+               z.B. → sensor.wien_fabian_distance
           selector:
             entity:
               domain:
                 - sensor
                 - proximity
+
+        direction_entity:
+          name: "🧭 Fahrtrichtungs-Sensor (optional)"
+          description: |
+            Optionaler Sensor für die Fahrtrichtung zur Home-Zone.
+            Aktiviert Richtungs-Hysterese: Radius wird verdoppelt wenn du dich
+            auf die Zone zubewegst – verhindert frühzeitiges Deaktivieren.
+
+            In modernen HA-Versionen: sensor.{name}_nearest_direction_of_travel
+               z.B. → sensor.wien_nearest_direction_of_travel
+
+            👤 Personen-spezifisch: sensor.{name}_{person}_direction_of_travel
+               z.B. → sensor.wien_fabian_direction_of_travel
+
+            Erwartete Werte: towards, away_from, stationary, unknown.
+            Leer lassen → Hysterese deaktiviert (sicherer Fallback).
+          default: ""
+          selector:
+            entity:
+              domain:
+                - sensor
+                - proximity
+
         person_entity:
           name: "👥 Personen zum Tracken"
           description: |
-            Die Person-Entities, die für Anwesenheit geprüft werden.
+            Alle Haushaltsmitglieder als Person-Entities eintragen.
+            Away wird NUR aktiviert, wenn ALLE hier gelisteten Personen abwesend sind.
+            Ist eine Person noch zu Hause → Away bleibt aus.
+
+            Beispiel: person.fabian + person.teresa
           default: []
           selector:
             entity:
               multiple: true
+              domain: person
+
         preheat_radius:
           name: "🎯 Radius-Schwelle (km)"
           description: |
@@ -62,6 +98,7 @@ blueprint:
               max: 100
               step: 0.1
               unit_of_measurement: "km"
+
         short_absence_timeout:
           name: "⏱️ Kurzabwesenheit Timeout (min)"
           description: |
@@ -73,24 +110,84 @@ blueprint:
               max: 180
               step: 1
               unit_of_measurement: "min"
+
         away_mode_boolean:
-          name: "Zu steuernder Away-Helper"
-          description: >
+          name: "🎚️ Zu steuernder Away-Helper"
+          description: |
             Dieser input_boolean wird AN/AUS geschaltet (Pflichtfeld für Modul-Verbund).
-            So erstellen Sie ihn: Einstellungen -> Geräte & Dienste -> Helfer -> Helfer erstellen -> Umschalter (input_boolean).
-            Beispiel-Entity: input_boolean.away_mode.
-            Wichtig: Muss derselbe Helper sein, der in "Modul 1 Core Heating" als Eingang gewählt ist.
-          default: []
+            So erstellen: Einstellungen → Geräte & Dienste → Helfer → Helfer erstellen → Umschalter (input_boolean).
+            Beispiel: input_boolean.away_mode
+            ⚠️ Muss derselbe Helper sein, der in "Modul 1 Core Heating" gewählt ist.
           selector:
             entity:
               multiple: true
+              domain: input_boolean
 
+    section_pre_heat:
+      name: "🔥 Pre-Heat (Vorheizen)"
+      description: |
+        Optionales Vorheizen beim Heimweg. Steuert Pre-Heat Toggles in der Heizungs-Steuerung.
+        **OFF:** Kein Vorheizen.
+        **ON:** Automatisch vorheizen wenn auf dem Heimweg.
+        **Dynamisch:** Push-Notification mit Ja/Nein-Buttons bei Heimweg-Erkennung.
+      collapsed: true
+      input:
+        pre_heat_mode:
+          name: "🔥 Pre-Heat Modus"
+          description: |
+            **off:** Kein Vorheizen.
+            **on:** Automatisch alle konfigurierten Räume vorheizen wenn Heimweg erkannt.
+            **dynamic:** Actionable Push-Notification — du entscheidest per Tap ob vorgeheizt wird.
+          default: "off"
+          selector:
+            select:
+              options:
+                - label: "Aus"
+                  value: "off"
+                - label: "Automatisch"
+                  value: "on"
+                - label: "Dynamisch (Nachfragen)"
+                  value: "dynamic"
+        pre_heat_helpers:
+          name: "🏠 Pre-Heat Helper (Räume)"
+          description: |
+            Die input_boolean Helper zum Vorheizen der gewünschten Räume.
+            Müssen dieselben sein, die in der Heizungs-Steuerung konfiguriert sind.
+            z.B. input_boolean.pre_heat_office, input_boolean.pre_heat_schlafzimmer
+          default: []
+          selector:
+            entity:
+              domain: input_boolean
+              multiple: true
+        pre_heat_radius:
+          name: "📍 Pre-Heat Radius (km)"
+          description: |
+            Ab welcher Distanz soll der Heimweg erkannt werden?
+            Sollte KLEINER sein als der Away-Radius.
+            Wird nur ausgelöst wenn Fahrtrichtung = "towards".
+          default: 3.0
+          selector:
+            number:
+              min: 0.5
+              max: 50
+              step: 0.5
+              unit_of_measurement: "km"
     section_notifications:
       name: "🔔 Benachrichtigungen"
       description: |
         Optionale Info-Pushs beim Umschalten des Away-Helpers.
       collapsed: true
       input:
+        quiet_schedule:
+          name: "🌙 Ruhezeit-Zeitplan"
+          description: |
+            Optionaler Zeitplan (schedule-Helfer) für Ruhezeiten.
+            Wenn aktiv (on), werden alle Benachrichtigungen unterdrückt.
+            Leer lassen = keine Ruhezeit-Blockierung.
+          default: ""
+          selector:
+            entity:
+              domain: schedule
         notifications_enabled:
           name: "🔘 Benachrichtigungen aktiv"
           description: |
@@ -98,6 +195,7 @@ blueprint:
           default: false
           selector:
             boolean:
+
         notify_info:
           name: "🔔 Info-Updates senden"
           description: |
@@ -105,16 +203,23 @@ blueprint:
           default: false
           selector:
             boolean:
+
         notify_entities:
           name: "📨 Empfänger (Geräte)"
           description: |
-            Geräte für Info-Meldungen.
+            Geräte für Push-Benachrichtigungen (Companion App).
+            Einfach das gewünschte iPhone/Android-Gerät auswählen.
+
+            ⚠️ Der Gerätename muss mit dem in der Companion App registrierten Namen übereinstimmen.
+            Den tatsächlichen Service-Namen prüfen: Entwicklerwerkzeuge → Aktionen → suche "notify.mobile_app_"
           default: []
           selector:
             device:
               multiple: true
+              integration: mobile_app
 
 mode: restart
+max_exceeded: silent
 
 trigger:
   - platform: state
@@ -129,26 +234,36 @@ trigger:
     minutes: "/5"
     id: watchdog_check
 
+  - platform: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: "VAILLANT_PRE_HEAT_CANCEL"
+    id: pre_heat_cancel
+
 condition: []
 
 action:
   - variables:
       inputs:
-        enable_geofencing: !input enable_geofencing
         proximity_entity: !input proximity_entity
+        direction_entity: !input direction_entity
         person_entity: !input person_entity
         preheat_radius: !input preheat_radius
         short_absence_timeout: !input short_absence_timeout
         away_mode_boolean: !input away_mode_boolean
+        pre_heat_mode: !input pre_heat_mode
+        pre_heat_helpers: !input pre_heat_helpers
+        pre_heat_radius: !input pre_heat_radius
         notifications_enabled: !input notifications_enabled
         notify_info: !input notify_info
         notify_entities: !input notify_entities
+        quiet_schedule: !input quiet_schedule
 
-      geofencing_enabled: "{{ inputs.enable_geofencing }}"
-      away_mode_helper_set: "{{ inputs.away_mode_boolean | length > 0 }}"
+      away_mode_helper_set: "{{ (inputs.away_mode_boolean | list | length) > 0 }}"
 
       proximity_valid: >
-        {{ inputs.proximity_entity != '' and states(inputs.proximity_entity) not in ['unknown', 'unavailable', 'none', ''] }}
+        {{ inputs.proximity_entity != '' and
+           states(inputs.proximity_entity) not in ['unknown', 'unavailable', 'none', ''] }}
 
       distance_km: >
         {% if proximity_valid %}
@@ -164,31 +279,33 @@ action:
         {% endif %}
 
       person_entity_valid: >
-        {% if inputs.person_entity is iterable and inputs.person_entity is not string %}
-          {{ (inputs.person_entity | length) > 0 }}
-        {% elif inputs.person_entity is string and (inputs.person_entity | trim) != '' %}
-          {{ true }}
+        {% set p = inputs.person_entity %}
+        {% if p is iterable and p is not string %}
+          {{ (p | list | length) > 0 }}
+        {% elif p is string %}
+          {{ (p | trim) != '' }}
         {% else %}
           {{ false }}
         {% endif %}
 
       anyone_home: >
-        {% if person_entity_valid | bool(false) %}
+        {% if not (person_entity_valid | bool(false)) %}
+          {{ true }}
+        {% else %}
           {% set ns = namespace(home=false) %}
           {% set p_list = inputs.person_entity if (inputs.person_entity is iterable and inputs.person_entity is not string) else [inputs.person_entity] %}
           {% for p in p_list %}
-            {% set p_str = p | string %}
-            {% if p_str != '' and states[p_str] is defined and is_state(p_str, 'home') %}
+            {% if p | string != '' and is_state(p | string, 'home') %}
               {% set ns.home = true %}
             {% endif %}
           {% endfor %}
-          {{ ns.home | bool(false) }}
-        {% else %}
-          {{ true }}
+          {{ ns.home }}
         {% endif %}
 
       minutes_since_left: >
-        {% if person_entity_valid | bool(false) and not (anyone_home | bool(false)) %}
+        {% if not (person_entity_valid | bool(false)) or (anyone_home | bool(false)) %}
+          {{ 0 }}
+        {% else %}
           {% set now_ts = as_timestamp(now()) | float(0) %}
           {% set ns = namespace(latest=0) %}
           {% set p_list = inputs.person_entity if (inputs.person_entity is iterable and inputs.person_entity is not string) else [inputs.person_entity] %}
@@ -201,126 +318,243 @@ action:
               {% endif %}
             {% endif %}
           {% endfor %}
-          {% if ns.latest > 0 %}
-            {{ ((now_ts - ns.latest) / 60) | float(0) }}
-          {% else %}
-            {{ 0 }}
-          {% endif %}
-        {% else %}
-          {{ 0 }}
+          {{ ((now_ts - ns.latest) / 60) | float(0) if ns.latest > 0 else 0 }}
         {% endif %}
 
       dir_of_travel: >
-        {% if proximity_valid | bool(false) %}
+        {% set d_id = (inputs.direction_entity | default('', true)) | string | trim %}
+        {% if d_id != '' and states[d_id] is defined and states(d_id) not in ['unknown', 'unavailable', 'none', ''] %}
+          {{ states(d_id) | string | lower }}
+        {% elif proximity_valid | bool(false) %}
           {% set p_id = inputs.proximity_entity | string %}
-          {% if p_id != '' and states[p_id] is defined %}
-            {{ (state_attr(p_id, 'dir_of_travel') | default('unknown', true) | string | lower) }}
-          {% else %}
-            {{ 'unknown' }}
-          {% endif %}
+          {{ (state_attr(p_id, 'dir_of_travel') | default('unknown', true)) | string | lower }}
         {% else %}
           {{ 'unknown' }}
         {% endif %}
 
       away_mode_entity_on: >
-        {% if away_mode_helper_set | bool(false) %}
+        {% if not (away_mode_helper_set | bool(false)) %}
+          {{ false }}
+        {% else %}
           {% set ns = namespace(active=false) %}
-          {% for ent in inputs.away_mode_boolean %}
-            {% if ent is string and ent != '' and is_state(ent, 'on') %}
+          {% set b_list = inputs.away_mode_boolean if (inputs.away_mode_boolean is iterable and inputs.away_mode_boolean is not string) else [inputs.away_mode_boolean] %}
+          {% for ent in b_list %}
+            {% if ent | string != '' and is_state(ent | string, 'on') %}
               {% set ns.active = true %}
             {% endif %}
           {% endfor %}
-          {{ ns.active | bool(false) }}
-        {% else %}
-          {{ false }}
+          {{ ns.active }}
         {% endif %}
 
       should_be_away: >
-        {% if (geofencing_enabled | bool(false)) and (away_mode_helper_set | bool(false)) and (proximity_valid | bool(false)) %}
-          {% set dist = distance_km | float(0) %}
-          {% set base_radius = inputs.preheat_radius | float(5) %}
-          {% set dir = dir_of_travel | string | lower %}
-          {% set effective_radius = (base_radius * 2.0) if dir == 'towards' else base_radius %}
-          {% set calc_hyst = (effective_radius * 0.1) | float(0.0) %}
-          {% set hysteresis_km = [calc_hyst, 0.5] | max %}
-          {% set currently_away = away_mode_entity_on | bool(false) %}
-          {% if currently_away | bool(false) %}
-            {% set far_away = dist >= (effective_radius - hysteresis_km) %}
-          {% else %}
-            {% set far_away = dist >= (effective_radius + hysteresis_km) %}
-          {% endif %}
+        {% if not (away_mode_helper_set | bool(false)) %}
+          {{ false }}
+        {% else %}
           {% set timeout_min = inputs.short_absence_timeout | float(20) %}
           {% set short_absence_rule = (not (anyone_home | bool(false))) and ((minutes_since_left | float(0)) >= timeout_min) %}
-          {{ (far_away or short_absence_rule) | bool(false) }}
+          {% set far_away = false %}
+          {% if proximity_valid | bool(false) %}
+            {% set dist = distance_km | float(0) %}
+            {% set base_radius = inputs.preheat_radius | float(5) %}
+            {% set dir = dir_of_travel | string | lower %}
+            {% set effective_radius = (base_radius * 2.0) if dir == 'towards' else base_radius %}
+            {% set hysteresis_km = [effective_radius * 0.1, 0.5] | max %}
+            {% if away_mode_entity_on | bool(false) %}
+              {% set far_away = dist >= (effective_radius - hysteresis_km) %}
+            {% else %}
+              {% set far_away = dist >= (effective_radius + hysteresis_km) %}
+            {% endif %}
+          {% endif %}
+          {{ far_away or short_absence_rule }}
+        {% endif %}
+
+      quiet_active: >
+        {% if inputs.quiet_schedule | default('') | string | trim not in ['', 'none', 'None'] %}
+          {{ is_state(inputs.quiet_schedule, 'on') }}
         {% else %}
           {{ false }}
         {% endif %}
 
-      info_notifications_allowed: "{{ inputs.notifications_enabled and inputs.notify_info }}"
+      info_notifications_allowed: "{{ inputs.notifications_enabled | bool(false) and inputs.notify_info | bool(false) and not (quiet_active | bool(false)) }}"
 
-      normal_notify_targets_list: >
-        {% set raw = inputs.notify_entities %}
+      notify_services: >
         {% set ns = namespace(items=[]) %}
-        {% if raw is iterable %}
-          {% for ent_raw in raw %}
-            {% set ent = (ent_raw | string) | trim %}
-            {% if ent != '' %}
-              {% set user_name = device_attr(ent, 'name_by_user') %}
-              {% set dev_name = user_name if (user_name is string and (user_name | trim) != '') else device_attr(ent, 'name') %}
-              {% if dev_name is string and (dev_name | trim) != '' %}
-                {% set ns.items = ns.items + ['notify.mobile_app_' ~ ((dev_name | slugify) | replace('-', '_'))] %}
+        {% set raw = inputs.notify_entities %}
+        {% if raw is iterable and raw is not string %}
+          {% for dev_id in raw %}
+            {% set dev_id = dev_id | string | trim %}
+            {% if dev_id != '' %}
+              {% set dev_name = device_attr(dev_id, 'name') | default('', true) | string | trim %}
+              {% if dev_name != '' %}
+                {% set svc = 'notify.mobile_app_' ~ (dev_name | slugify | replace('-', '_')) %}
+                {% set ns.items = ns.items + [svc] %}
               {% endif %}
             {% endif %}
           {% endfor %}
         {% endif %}
-        {{ ns.items | unique | join(',') }}
+        {{ ns.items | unique | list }}
 
-  - choose:
-      - conditions: "{{ (should_be_away | bool(false)) and (not (away_mode_entity_on | bool(false))) }}"
-        sequence:
+      has_notify_targets: "{{ (inputs.notify_entities | list | length) > 0 }}"
+
+      # ── Pre-Heat Variables ──
+      pre_heat_mode: "{{ inputs.pre_heat_mode | default('off') | string | lower }}"
+      pre_heat_helpers_list: >
+        {% set raw = inputs.pre_heat_helpers | default([]) %}
+        {% if raw is iterable and raw is not string %}
+          {{ raw | reject('in', ['', 'none', 'sensor.none']) | list }}
+        {% else %}
+          {{ [] }}
+        {% endif %}
+      pre_heat_configured: "{{ (pre_heat_mode != 'off') and ((pre_heat_helpers_list | length) > 0) }}"
+      pre_heat_any_already_on: >
+        {% set ns = namespace(any_on=false) %}
+        {% for h in pre_heat_helpers_list %}
+          {% if is_state(h, 'on') %}
+            {% set ns.any_on = true %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.any_on }}
+      heading_home: >
+        {% if not (pre_heat_configured | bool(false)) or not (proximity_valid | bool(false)) %}
+          {{ false }}
+        {% else %}
+          {% set dist = distance_km | float(0) %}
+          {% set ph_radius = inputs.pre_heat_radius | float(3) %}
+          {% set dir = dir_of_travel | string | lower %}
+          {{ dir == 'towards' and dist <= ph_radius and dist > 0 }}
+        {% endif %}
+
+  # ── Pre-Heat Cancel: User tapped Cancel on notification ──────────────────
+  - if:
+      - "{{ trigger.id | default('') == 'pre_heat_cancel' }}"
+    then:
+      - repeat:
+          for_each: "{{ pre_heat_helpers_list }}"
+          sequence:
+            - action: input_boolean.turn_off
+              target:
+                entity_id: "{{ repeat.item }}"
+              continue_on_error: true
+      - if: "{{ has_notify_targets }}"
+        then:
           - repeat:
-              for_each: "{{ inputs.away_mode_boolean if (inputs.away_mode_boolean is iterable and inputs.away_mode_boolean is not string) else [] }}"
+              for_each: "{{ notify_services }}"
               sequence:
-                - service: input_boolean.turn_on
-                  target:
-                    entity_id: "{{ item }}"
+                - action: "{{ repeat.item | trim }}"
+                  data:
+                    title: "❌ Vorheizen abgebrochen"
+                    message: "Pre-Heat wurde deaktiviert."
+                    data:
+                      tag: vaillant_pre_heat_ask
+                  continue_on_error: true
+      - stop: "Pre-Heat abgebrochen durch User"
+
+  # ── Away aktivieren ────────────────────────────────────────────────────────
+  - if: "{{ (should_be_away | bool(false)) and not (away_mode_entity_on | bool(false)) }}"
+    then:
+      - service: input_boolean.turn_on
+        target:
+          entity_id: !input away_mode_boolean
+        continue_on_error: true
+
+      - if: "{{ info_notifications_allowed and has_notify_targets }}"
+        then:
+          - repeat:
+              for_each: "{{ notify_services }}"
+              sequence:
+                - action: "{{ repeat.item | trim }}"
+                  data:
+                    title: "🌍 Away-Mode aktiviert"
+                    message: >
+                      Distanz {{ distance_km | float(0) | round(2) }} km –
+                      alle getrackten Personen abwesend seit
+                      {{ minutes_since_left | float(0) | round(0) | int }} min.
                   continue_on_error: true
 
-          - choose:
-              - conditions:
-                  - "{{ info_notifications_allowed }}"
-                  - "{{ normal_notify_targets_list | length > 0 }}"
-                sequence:
-                  - repeat:
-                      for_each: "{{ normal_notify_targets_list.split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
-                      sequence:
-                        - service: "{{ item }}"
-                          data:
-                            title: "🌍 Away-Mode aktiviert"
-                            message: >
-                              Distanz {{ distance_km | float(0) | round(2) }} km. Personen-Status: Alle getrackten Personen abwesend.
-                          continue_on_error: true
+  # ── Away deaktivieren ──────────────────────────────────────────────────────
+  - if: "{{ not (should_be_away | bool(false)) and (away_mode_entity_on | bool(false)) }}"
+    then:
+      - service: input_boolean.turn_off
+        target:
+          entity_id: !input away_mode_boolean
+        continue_on_error: true
 
-      - conditions: "{{ (not (should_be_away | bool(false))) and (away_mode_entity_on | bool(false)) }}"
-        sequence:
+      - if: "{{ info_notifications_allowed and has_notify_targets }}"
+        then:
           - repeat:
-              for_each: "{{ inputs.away_mode_boolean if (inputs.away_mode_boolean is iterable and inputs.away_mode_boolean is not string) else [] }}"
+              for_each: "{{ notify_services }}"
               sequence:
-                - service: input_boolean.turn_off
-                  target:
-                    entity_id: "{{ item }}"
+                - action: "{{ repeat.item | trim }}"
+                  data:
+                    title: "🏠 Away-Mode deaktiviert"
+                    message: "Person wieder zu Hause oder Radius-Bedingung nicht mehr erfüllt."
                   continue_on_error: true
 
-          - choose:
-              - conditions:
-                  - "{{ info_notifications_allowed }}"
-                  - "{{ normal_notify_targets_list | length > 0 }}"
-                sequence:
+  # ── Pre-Heat: Vorheizen bei Heimweg ──────────────────────────────────────
+  # Triggers only when: heading home detected, pre-heat configured, helpers not already on
+  - if:
+      - "{{ (heading_home | bool(false)) and (pre_heat_configured | bool(false)) and not (pre_heat_any_already_on | bool(false)) }}"
+    then:
+      - choose:
+          # ── Modus ON: Automatisch vorheizen ──
+          - conditions:
+              - "{{ pre_heat_mode == 'on' }}"
+            sequence:
+              - repeat:
+                  for_each: "{{ pre_heat_helpers_list }}"
+                  sequence:
+                    - action: input_boolean.turn_on
+                      target:
+                        entity_id: "{{ repeat.item }}"
+                      continue_on_error: true
+              - if: "{{ has_notify_targets }}"
+                then:
                   - repeat:
-                      for_each: "{{ normal_notify_targets_list.split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
+                      for_each: "{{ notify_services }}"
                       sequence:
-                        - service: "{{ item }}"
+                        - action: "{{ repeat.item | trim }}"
                           data:
-                            title: "🏠 Away-Mode deaktiviert"
-                            message: "Person wieder zu Hause oder Radius-Bedingung nicht mehr erfüllt."
+                            title: "🔥 Vorheizen gestartet"
+                            message: >-
+                              Heimweg erkannt ({{ distance_km | float(0) | round(1) }} km).
+                              {{ pre_heat_helpers_list | length }} Raum/Räume werden vorgeheizt.
                           continue_on_error: true
+
+          # ── Modus DYNAMIC: Optimistisch vorheizen + Abbrechen-Option ──
+          # Note: mode:restart would cancel a wait_for_trigger on the next proximity update.
+          # Solution: Start pre-heating immediately (optimistic), send notification with Cancel button.
+          # If user taps Cancel → helpers turn off. If no response → pre-heat continues normally
+          # and auto-off in heating blueprint handles timeout/presence/schedule.
+          - conditions:
+              - "{{ pre_heat_mode == 'dynamic' }}"
+              - "{{ has_notify_targets }}"
+            sequence:
+              # Optimistisch: sofort vorheizen
+              - repeat:
+                  for_each: "{{ pre_heat_helpers_list }}"
+                  sequence:
+                    - action: input_boolean.turn_on
+                      target:
+                        entity_id: "{{ repeat.item }}"
+                      continue_on_error: true
+              # Push mit Abbrechen-Button
+              - repeat:
+                  for_each: "{{ notify_services }}"
+                  sequence:
+                    - action: "{{ repeat.item | trim }}"
+                      data:
+                        title: "🔥 Vorheizen gestartet"
+                        message: >-
+                          Heimweg erkannt ({{ distance_km | float(0) | round(1) }} km).
+                          {{ pre_heat_helpers_list | length }} Raum/Räume werden vorgeheizt.
+                          Tippe Abbrechen um das Vorheizen zu stoppen.
+                        data:
+                          tag: vaillant_pre_heat_ask
+                          actions:
+                            - action: "VAILLANT_PRE_HEAT_CANCEL"
+                              title: "Abbrechen ❌"
+                              destructive: true
+                      continue_on_error: true
+              # Cancel is handled via top-level trigger (pre_heat_cancel).
+              # mode:restart would kill a wait_for_trigger here, so we rely on the
+              # event trigger at the automation level instead.
