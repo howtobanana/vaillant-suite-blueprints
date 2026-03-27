@@ -1655,7 +1655,7 @@ actions:
   # or automation reload, sensors already "on" won't trigger — helper stays
   # stale. This compact sync corrects helpers that are out of step.
   - if:
-      - "{{ trigger.id | default('manual') in ['ha_start', 'scheduled'] }}"
+      - "{{ trigger.id | default('manual') == 'ha_start' }}"
     then:
       - variables:
           _sync_delay: "{{ (presence_activation_delay | float(2)) * 60 }}"
@@ -2514,7 +2514,7 @@ actions:
         sequence:
           - variables:
               master_forced_min_active: >
-                {{ master_rapid_temp_drop | bool(false) }}
+                {{ (master_rapid_temp_drop | bool(false)) or (master_window_open_too_long | bool(false)) }}
               away_mode_active_effective: >
                 {{ away_mode_entity_on | bool(false) }}
               master_safety_floor: >
@@ -2597,7 +2597,7 @@ actions:
               master_max: "{{ state_attr(inputs.master_climate, 'max_temp') | float(30) }}"
               # Room boost detection with anti-overshoot hysteresis
               room_boost_enabled_effective: >
-                {{ (inputs.enable_room_boost | bool(false)) and (inputs.room_boost_amount | float(0) > 0) and (not (master_forced_min_active | bool(false))) and (not (away_mode_active_effective | bool(false))) }}
+                {{ (inputs.enable_room_boost | bool(false)) and (inputs.room_boost_amount | float(0) > 0) and (not (master_forced_min_active | bool(false))) and (not (away_mode_active_effective | bool(false))) and (not (master_window_open_too_long | bool(false))) }}
               master_boost_participates: >
                 {{ (master_schedule_active | bool(false)) or (master_presence_detected | bool(false)) or (master_is_manual | bool(false)) }}
               master_needs_boost: >
@@ -3194,9 +3194,10 @@ actions:
       _l_m_pres: "{{ master_presence_detected | default(false) | bool(false) }}"
       _l_m_man: "{{ master_is_manual | default(false) | bool(false) }}"
       _l_m_pre_heat: "{{ master_pre_heat_active | default(false) | bool(false) }}"
+      _l_m_window: "{{ master_window_open_too_long | default(false) | bool(false) }}"
       _l_m_sens_valid: "{{ master_sensors_valid | default(false) | bool(false) }}"
       _l_m_help_valid: "{{ master_helper_valid | default(false) | bool(false) }}"
-      _l_m_mode_modus: "{{ 'Not-Aus' if (_l_m_forced | bool(false)) else ('Abwesend' if (_l_m_away | bool(false) and not (_l_m_pre_heat | bool(false))) else ('PreHeat' if (_l_m_pre_heat | bool(false)) else 'Heizbetrieb')) }}"
+      _l_m_mode_modus: "{{ 'Fenster offen' if (_l_m_window | bool(false)) else ('Not-Aus' if (_l_m_forced | bool(false)) else ('Abwesend' if (_l_m_away | bool(false) and not (_l_m_pre_heat | bool(false))) else ('PreHeat' if (_l_m_pre_heat | bool(false)) else 'Heizbetrieb'))) }}"
 
   # ════════════════════════════════════════════════════════════
   # LEITSTAND NORMAL: Demand-only Dashboard (überschreibt sich selbst)
@@ -3216,7 +3217,7 @@ actions:
             {%- set msg.out = msg.out ~ '🚨 Trigger: ' ~ (trigger_id_safe | default('manual')) ~ ' | Boost ' ~ ('AN' if (_l_m_boost | bool(false)) else 'AUS') ~ ' | Wetter ' ~ (_l_m_weather | float(0) | round(1)) ~ '°C | Away ' ~ ('✅' if (_l_m_away | bool(false)) else '⬜') -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🌡️ **Master — ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus ~ '** (' ~ _l_m_reason ~ ')' -%}
             {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Komfort ' ~ (master_comfort_temp | default(0) | float(0) | round(1)) ~ '°C' -%}
-            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren | ' ~ ('🔥' if (_l_m_pre_heat | bool(false)) else '⬜') ~ ' PreHeat' -%}
+            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren | ' ~ ('🔥' if (_l_m_pre_heat | bool(false)) else '⬜') ~ ' PreHeat' ~ (' 🪟' if (_l_m_window | bool(false)) else '') -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🚪 **Räume**' -%}
             {%- set ns_dis = namespace(labels=[]) -%}
             {%- for room in rooms_runtime_list | default([], true) -%}
@@ -3319,7 +3320,7 @@ actions:
             {%- set msg.out = msg.out ~ n ~ 'Away ' ~ ('✅' if (_l_m_away | bool(false)) else '⬜') ~ ' | Sommer ' ~ ('✅' if (summer_mode | default(false) | bool(false)) else '⬜') ~ ' | Entität: ' ~ (inputs.master_climate | default('n/a')) -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🌡️ **Master — ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus ~ '** (' ~ _l_m_reason ~ ')' -%}
             {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Base ' ~ (_l_m_base | float(0) | round(1)) ~ '°C | Eco ' ~ (eco_temp | default(0) | float(0) | round(1)) ~ '°C | Δ=' ~ (_l_m_delta | float(0) | round(1)) -%}
-            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren | ' ~ ('🔥' if (_l_m_pre_heat | bool(false)) else '⬜') ~ ' PreHeat' -%}
+            {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren | ' ~ ('🔥' if (_l_m_pre_heat | bool(false)) else '⬜') ~ ' PreHeat' ~ (' 🪟' if (_l_m_window | bool(false)) else '') -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🚪 **Räume**' -%}
             {%- set ns_dis = namespace(labels=[]) -%}
             {%- for room in rooms_runtime_list | default([], true) -%}
