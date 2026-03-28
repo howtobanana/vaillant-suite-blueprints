@@ -334,6 +334,7 @@ action:
         escalation_delay: !input escalation_delay
         notify_device: !input notify_device
         critical_notify_device: !input critical_notify_device
+        quiet_schedule: !input quiet_schedule
         master_window: !input master_window
         room2_window: !input room2_window
         room3_window: !input room3_window
@@ -612,7 +613,24 @@ action:
           - variables:
               safety_due_to_rain: "{{ (trigger.id == 'safety_rain') | bool(false) }}"
               safety_due_to_away_mode: "{{ ((trigger.id == 'safety_away_mode') and (away_mode_active | bool(false))) | bool(false) }}"
-              safety_should_alert: "{{ ((any_window_open | bool(false)) and ((safety_due_to_rain | bool(false)) or (safety_due_to_away_mode | bool(false)))) | bool(false) }}"
+              any_window_open_now: >
+                {% set ns = namespace(open=false) %}
+                {% for w in window_entities %}
+                  {% if w != '' and states[w] is defined and is_state(w, 'on') %}
+                    {% set ns.open = true %}
+                  {% endif %}
+                {% endfor %}
+                {{ ns.open | bool(false) }}
+              open_windows_now_text: >
+                {% set ns = namespace(items=[]) %}
+                {% for w in window_entities %}
+                  {% if w != '' and states[w] is defined and is_state(w, 'on') %}
+                    {% set label = state_attr(w, 'friendly_name') if state_attr(w, 'friendly_name') is not none else w %}
+                    {% set ns.items = ns.items + [label] %}
+                  {% endif %}
+                {% endfor %}
+                {{ ns.items | join(', ') if ns.items | length > 0 else 'Fenster' }}
+              safety_should_alert: "{{ ((any_window_open_now | bool(false)) and ((safety_due_to_rain | bool(false)) or (safety_due_to_away_mode | bool(false)))) | bool(false) }}"
               safety_reason: >
                 {% if safety_due_to_rain | bool(false) %}
                   🌧️ Regen erkannt
@@ -633,7 +651,7 @@ action:
                         - action: "{{ repeat.item | trim }}"
                           data:
                             title: "⚠️ Fenster offen — Achtung!"
-                            message: "{{ safety_reason }}. Offene Fenster: {{ open_windows_text }}."
+                            message: "{{ safety_reason }}. Offene Fenster: {{ open_windows_now_text }}."
                             data:
                               tag: vaillant_lueftung_safety
                               push:

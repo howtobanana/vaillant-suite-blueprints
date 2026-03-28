@@ -420,13 +420,19 @@ max: 5
 trigger_variables:
   tv_water_pressure_sensor: !input water_pressure_sensor
   tv_min_water_pressure: !input min_water_pressure
+  tv_vaillant_error_entity: !input vaillant_error_entity
 trigger:
   - trigger: time_pattern
     minutes: "/30"
     id: main_loop
 
-  - trigger: state
-    entity_id: !input vaillant_error_entity
+  - trigger: template
+    value_template: >
+      {{
+        tv_vaillant_error_entity != ''
+        and has_value(tv_vaillant_error_entity)
+        and states(tv_vaillant_error_entity) not in ['', 'none', 'ok', '0', 'no_error']
+      }}
     id: error_code_change
 
   - trigger: template
@@ -439,9 +445,13 @@ trigger:
       }}
     id: low_pressure
 
-  - trigger: numeric_state
-    entity_id: !input water_pressure_sensor
-    below: !input min_water_pressure
+  - trigger: template
+    value_template: >
+      {{
+        tv_water_pressure_sensor != ''
+        and has_value(tv_water_pressure_sensor)
+        and (states(tv_water_pressure_sensor) | float(999)) < (tv_min_water_pressure | float(1.0))
+      }}
     id: critical_pressure
 
   - trigger: time
@@ -493,6 +503,7 @@ action:
         notify_info: !input notify_info
         notify_warning_entities: !input notify_warning_entities
         notify_critical_entities: !input notify_critical_entities
+        quiet_schedule: !input quiet_schedule
       master_label: >
         {% if inputs.master_name != "" %}
           {{ inputs.master_name }}
@@ -755,15 +766,11 @@ action:
                   {% set e_id = b.entity | string %}
                   {% if e_id != '' and states[e_id] is defined %}
                     {% set state_obj = states[e_id] %}
-                    {% if state_obj.last_changed is defined %}
-                      {% set raw = state_obj.state %}
-                      {% set val = raw | float(999) %}
-                      {% set valid = has_value(e_id) %}
-                      {% set changed_dt = state_obj.last_changed | as_datetime %}
-                      {% set age = ((as_timestamp(now()) - as_timestamp(changed_dt, as_timestamp(now()))) if changed_dt is not none else 999999) %}
-                      {% if valid and val <= (inputs.trv_battery_threshold | float(20)) and age >= (trv_health_delay_sec | int(900)) %}
-                        {% set ns.items = ns.items + [b.label + ' (' + (val | round(0) | string) + '%)'] %}
-                      {% endif %}
+                    {% set raw = state_obj.state %}
+                    {% set val = raw | float(999) %}
+                    {% set valid = has_value(e_id) %}
+                    {% if valid and val <= (inputs.trv_battery_threshold | float(20)) %}
+                      {% set ns.items = ns.items + [b.label + ' (' + (val | round(0) | string) + '%)'] %}
                     {% endif %}
                   {% endif %}
                 {% endfor %}

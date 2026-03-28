@@ -304,18 +304,24 @@ action:
           {{ 0 }}
         {% else %}
           {% set now_ts = as_timestamp(now()) | float(0) %}
-          {% set ns = namespace(latest=0) %}
+          {% set ns = namespace(earliest=now_ts) %}
           {% set p_list = inputs.person_entity if (inputs.person_entity is iterable and inputs.person_entity is not string) else [inputs.person_entity] %}
           {% for p in p_list %}
             {% set p_str = p | string %}
             {% if p_str != '' and states[p_str] is defined %}
-              {% set leave_ts = as_timestamp(states[p_str].last_changed, 0) | float(0) %}
-              {% if leave_ts > ns.latest %}
-                {% set ns.latest = leave_ts %}
+              {% set p_state = states(p_str) | string | lower %}
+              {% if p_state != 'home' %}
+                {# Use last_changed only for 'not_home' state (first transition after leaving).
+                   For named zones (e.g. 'work'), last_changed resets on each zone entry,
+                   so we take the earliest timestamp to approximate departure time. #}
+                {% set leave_ts = as_timestamp(states[p_str].last_changed, 0) | float(0) %}
+                {% if leave_ts > 0 and leave_ts < ns.earliest %}
+                  {% set ns.earliest = leave_ts %}
+                {% endif %}
               {% endif %}
             {% endif %}
           {% endfor %}
-          {{ ((now_ts - ns.latest) / 60) | float(0) if ns.latest > 0 else 0 }}
+          {{ ((now_ts - ns.earliest) / 60) | float(0) if ns.earliest < now_ts else 0 }}
         {% endif %}
 
       dir_of_travel: >
@@ -425,13 +431,10 @@ action:
   - if:
       - "{{ trigger.id | default('') == 'pre_heat_cancel' }}"
     then:
-      - repeat:
-          for_each: "{{ pre_heat_helpers_list }}"
-          sequence:
-            - action: input_boolean.turn_off
-              target:
-                entity_id: "{{ repeat.item }}"
-              continue_on_error: true
+      - action: input_boolean.turn_off
+        target:
+          entity_id: "{{ pre_heat_helpers_list }}"
+        continue_on_error: true
       - if: "{{ has_notify_targets }}"
         then:
           - repeat:
@@ -533,7 +536,6 @@ action:
           # and auto-off in heating blueprint handles timeout/presence/schedule.
           - conditions:
               - "{{ pre_heat_mode == 'dynamic' }}"
-              - "{{ has_notify_targets }}"
             sequence:
               # Optimistisch: sofort vorheizen
               - repeat:
@@ -543,23 +545,25 @@ action:
                       target:
                         entity_id: "{{ repeat.item }}"
                       continue_on_error: true
-              # Push mit Abbrechen-Button
-              - repeat:
-                  for_each: "{{ notify_services }}"
-                  sequence:
-                    - action: "{{ repeat.item | trim }}"
-                      data:
-                        title: "🔥 Vorheizen gestartet"
-                        message: "Heimweg erkannt ({{ distance_km | float(0) | round(1) }} km) — {{ pre_heat_helpers_list | length }} Räume werden vorgeheizt."
-                        data:
-                          tag: vaillant_pre_heat
-                          push:
-                            sticky: true
-                          actions:
-                            - action: "VAILLANT_PRE_HEAT_CANCEL"
-                              title: "Abbrechen ❌"
-                              destructive: true
-                      continue_on_error: true
+              # Push mit Abbrechen-Button (nur wenn Notify-Targets konfiguriert)
+              - if: "{{ has_notify_targets }}"
+                then:
+                  - repeat:
+                      for_each: "{{ notify_services }}"
+                      sequence:
+                        - action: "{{ repeat.item | trim }}"
+                          data:
+                            title: "🔥 Vorheizen gestartet"
+                            message: "Heimweg erkannt ({{ distance_km | float(0) | round(1) }} km) — {{ pre_heat_helpers_list | length }} Räume werden vorgeheizt."
+                            data:
+                              tag: vaillant_pre_heat
+                              push:
+                                sticky: true
+                              actions:
+                                - action: "VAILLANT_PRE_HEAT_CANCEL"
+                                  title: "Abbrechen ❌"
+                                  destructive: true
+                          continue_on_error: true
               # Cancel is handled via top-level trigger (pre_heat_cancel).
               # mode:restart would kill a wait_for_trigger here, so we rely on the
               # event trigger at the automation level instead.
