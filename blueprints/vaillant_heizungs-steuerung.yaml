@@ -1749,6 +1749,7 @@ actions:
         enable_leitstand_normal: !input enable_leitstand_normal
         enable_leitstand_expert: !input enable_leitstand_expert
         notify_devices: !input notify_devices
+        quiet_schedule: !input quiet_schedule
         master_climate: !input master_climate
         master_write_log_helper: !input master_write_log_helper
         master_comfort_input: !input master_comfort_input
@@ -2143,7 +2144,7 @@ actions:
       master_climate_available: >
         {{ inputs.master_climate | string not in ['', 'sensor.none', 'none'] and states(inputs.master_climate) not in ['unavailable', 'unknown'] }}
       master_active_for_followers: >
-        {{ (master_schedule_active | bool(false)) or (master_presence_detected | bool(false)) or (master_is_manual | bool(false)) }}
+        {{ (master_schedule_active | bool(false)) or (master_presence_detected | bool(false)) or (master_is_manual | bool(false)) or (master_pre_heat_active | bool(false)) }}
       rooms_runtime: >
         {% set ns = namespace(items=[]) %}
         {% set now_ts = as_timestamp(now()) | float(0) %}
@@ -3164,6 +3165,7 @@ actions:
         {% endfor %}
         {{ ns.items | unique | join(',') }}
       _notify_configured: "{{ (_notify_targets_list | trim) != '' and not (_quiet_active | bool(false)) }}"
+      _alert_notify_configured: "{{ (_notify_targets_list | trim) != '' }}"
       _is_demand_event: >
         {{
           trigger_id_safe | default('manual') != 'scheduled'
@@ -3392,6 +3394,19 @@ actions:
         {%- if (master_write_budget_remaining | default(1) | int(1)) <= 0 -%}
           {%- set ns.items = ns.items + ['🟡 API-Budget erschöpft'] -%}
         {%- endif -%}
+        {%- set master_ts = inputs.master_temp_sensor | default('') | string -%}
+        {%- if master_ts not in ['', 'sensor.none', 'none'] and states(master_ts) in ['unavailable', 'unknown'] -%}
+          {%- set ns.items = ns.items + ['🟠 Temp-Sensor offline: Master'] -%}
+        {%- endif -%}
+        {%- for room in rooms_runtime_list | default([], true) -%}
+          {%- if room.enabled | default(false) | bool(false) -%}
+            {%- set ts_eid = room.temp_sensor | default('') | string -%}
+            {%- if ts_eid not in ['', 'sensor.none', 'none'] and states(ts_eid) in ['unavailable', 'unknown'] -%}
+              {%- set rl = state_attr(room.climate | default(''), 'friendly_name') | default(room.key | default('?'), true) -%}
+              {%- set ns.items = ns.items + ['🟠 Temp-Sensor offline: ' ~ rl] -%}
+            {%- endif -%}
+          {%- endif -%}
+        {%- endfor -%}
         {{ ns.items }}
   - choose:
       - conditions:
@@ -3412,7 +3427,7 @@ actions:
                 {%- set msg.out = msg.out ~ n ~ n ~ '🕐 Erkannt: ' ~ now().strftime('%H:%M:%S') -%}
                 {{ msg.out }}
           - if:
-              - "{{ _notify_configured | bool(false) }}"
+              - "{{ _alert_notify_configured | bool(false) }}"
             then:
               - repeat:
                   for_each: "{{ (_notify_targets_list | trim).split(',') if (_notify_targets_list | trim) != '' else [] }}"
