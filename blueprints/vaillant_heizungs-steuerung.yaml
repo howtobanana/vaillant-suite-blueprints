@@ -1655,7 +1655,7 @@ actions:
   # or automation reload, sensors already "on" won't trigger — helper stays
   # stale. This compact sync corrects helpers that are out of step.
   - if:
-      - "{{ trigger.id | default('manual') == 'ha_start' }}"
+      - "{{ trigger.id | default('manual') in ['ha_start', 'scheduled'] }}"
     then:
       - variables:
           _sync_delay: "{{ (presence_activation_delay | float(2)) * 60 }}"
@@ -2275,8 +2275,8 @@ actions:
           {% set needs_heat = (active_for_demand | bool(false)) and ((final_target | float(0)) > ((current_temp | float(0)) + (inputs.hysteresis | float(0.6)))) %}
           {% if role == 'isolated' %}
             {% set boost_delta = (comfort_target | float(0)) - (current_temp | float(0)) %}
-            {% set boost_needed = (active_for_demand | bool(false)) and (not (window_open_too_long | bool(false))) and ((boost_delta | float(0)) >= threshold) %}
-            {% set boost_deactivate = (not (active_for_demand | bool(false))) or ((boost_delta | float(0)) < (threshold / 2)) %}
+            {% set boost_needed = (inputs.enable_room_boost | bool(false)) and (active_for_demand | bool(false)) and (not (window_open_too_long | bool(false))) and ((boost_delta | float(0)) >= threshold) %}
+            {% set boost_deactivate = (not (inputs.enable_room_boost | bool(false))) or (not (active_for_demand | bool(false))) or ((boost_delta | float(0)) < (threshold / 2)) %}
             {% if window_open_too_long | bool(false) %}
               {% set mode_label = 'WindowOpen' %}
             {% elif schedule_active | bool(false) %}
