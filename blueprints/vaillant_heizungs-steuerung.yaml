@@ -260,7 +260,7 @@ blueprint:
           default: 20.5
           selector:
             number:
-              min: 19
+              min: 16
               max: 24
               step: 0.5
               unit_of_measurement: "°C"
@@ -536,7 +536,7 @@ blueprint:
           default: 21.0
           selector:
             number:
-              min: 18
+              min: 16
               max: 24
               step: 0.5
               unit_of_measurement: "°C"
@@ -654,7 +654,7 @@ blueprint:
           default: 20.0
           selector:
             number:
-              min: 18
+              min: 16
               max: 24
               step: 0.5
               unit_of_measurement: "°C"
@@ -772,7 +772,7 @@ blueprint:
           default: 22.0
           selector:
             number:
-              min: 18
+              min: 16
               max: 24
               step: 0.5
               unit_of_measurement: "°C"
@@ -890,7 +890,7 @@ blueprint:
           default: 21.0
           selector:
             number:
-              min: 18
+              min: 16
               max: 24
               step: 0.5
               unit_of_measurement: "°C"
@@ -1138,6 +1138,25 @@ blueprint:
           default: false
           selector:
             boolean:
+        window_presence_reminder_enabled:
+          name: "🪟 Fenster + Präsenz Erinnerung"
+          description: |
+            Wenn ein Fenster offen ist UND jemand im Raum ist (Presence Helper AN),
+            regelmäßig eine freundliche Erinnerung senden (kein Alarm).
+          default: false
+          selector:
+            boolean:
+        window_presence_reminder_interval:
+          name: "🪟 Erinnerungs-Intervall (min)"
+          description: |
+            Wie oft die Fenster-Erinnerung bei aktiver Präsenz gesendet wird.
+          default: 30
+          selector:
+            number:
+              min: 5
+              max: 120
+              step: 5
+              unit_of_measurement: "min"
         notify_devices:
           name: "📱 Mobile Push (opt)"
           description: |
@@ -1813,6 +1832,8 @@ actions:
         follower2_climate: !input follower2_climate
         follower2_offset: !input follower2_offset
         follower2_window: !input follower2_window
+        window_presence_reminder_enabled: !input window_presence_reminder_enabled
+        window_presence_reminder_interval: !input window_presence_reminder_interval
       rooms_model:
         - key: room2
           role: isolated
@@ -3269,7 +3290,7 @@ actions:
             {%- else -%}
               {%- set msg.out = msg.out ~ 'Blockiert (Cooldown/Hold)' -%}
             {%- endif -%}
-            {%- set msg.out = msg.out ~ ' | Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ' | Write vor ' ~ (master_last_update_age_step55 | default(0) | float(0) | round(0)) ~ 's' -%}
+            {%- set msg.out = msg.out ~ ' | Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ' | Write vor ' ~ (((master_last_update_age_step55 | default(0) | float(0)) // 60) | int) ~ 'm ' ~ (((master_last_update_age_step55 | default(0) | float(0)) % 60) | int) ~ 's' -%}
             {{ msg.out }}
       - if:
           - "{{ _notify_configured | bool(false) }}"
@@ -3375,9 +3396,56 @@ actions:
             {%- else -%}
               {%- set msg.out = msg.out ~ 'Blockiert (Cooldown/Hold)' -%}
             {%- endif -%}
-            {%- set msg.out = msg.out ~ ' | Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ' | Write vor ' ~ (master_last_update_age_step55 | default(0) | float(0) | round(0)) ~ 's' -%}
-            {%- set msg.out = msg.out ~ n ~ 'Raise ' ~ ('✅' if (master_needs_raise | default(false) | bool(false)) else '⬜') ~ ' | Drop ' ~ ('✅' if (master_needs_global_drop | default(false) | bool(false)) else '⬜') ~ ' | Hold ' ~ ('✅' if (master_drop_hold_active | default(false) | bool(false)) or (master_raise_hold_active | default(false) | bool(false)) else '⬜') ~ ' | Bypass ' ~ ('✅' if (master_hold_bypass | default(false) | bool(false)) else '⬜') ~ ' | Letzter: ' ~ (master_last_write_kind | default('?')) ~ ' vor ' ~ (master_last_update_age_step55 | default(0) | float(0) | round(0)) ~ 's' -%}
+            {%- set msg.out = msg.out ~ ' | Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ' | Write vor ' ~ (((master_last_update_age_step55 | default(0) | float(0)) // 60) | int) ~ 'm ' ~ (((master_last_update_age_step55 | default(0) | float(0)) % 60) | int) ~ 's' -%}
+            {%- set msg.out = msg.out ~ n ~ 'Raise ' ~ ('✅' if (master_needs_raise | default(false) | bool(false)) else '⬜') ~ ' | Drop ' ~ ('✅' if (master_needs_global_drop | default(false) | bool(false)) else '⬜') ~ ' | Hold ' ~ ('✅' if (master_drop_hold_active | default(false) | bool(false)) or (master_raise_hold_active | default(false) | bool(false)) else '⬜') ~ ' | Bypass ' ~ ('✅' if (master_hold_bypass | default(false) | bool(false)) else '⬜') ~ ' | Letzter: ' ~ (master_last_write_kind | default('?')) ~ ' vor ' ~ (((master_last_update_age_step55 | default(0) | float(0)) // 60) | int) ~ 'm ' ~ (((master_last_update_age_step55 | default(0) | float(0)) % 60) | int) ~ 's' -%}
             {{ msg.out }}
+
+  # ════════════════════════════════════════════════════════════
+  # WINDOW + PRESENCE REMINDER: Friendly reminder when someone is in a room with open window
+  # ════════════════════════════════════════════════════════════
+  - if:
+      - "{{ inputs.window_presence_reminder_enabled | bool(false) }}"
+      - "{{ _notify_configured | bool(false) }}"
+    then:
+      - variables:
+          _window_presence_rooms: >
+            {% set ns = namespace(items=[]) %}
+            {% set now_ts = as_timestamp(now()) | float(0) %}
+            {% set interval_s = (inputs.window_presence_reminder_interval | float(30)) * 60 %}
+            {% for room in rooms_runtime_list | default([], true) %}
+              {% if room.enabled | default(false) | bool(false) and room.window_open_too_long | default(false) | bool(false) and room.helper_on | default(false) | bool(false) %}
+                {% set w = room.window | default('') | string %}
+                {% if w not in ['', 'sensor.none', 'none'] and states[w] is defined %}
+                  {% set open_dur = now_ts - (as_timestamp(states[w].last_changed, now_ts) | float(now_ts)) %}
+                  {% set time_in_interval = open_dur - ((open_dur / interval_s) | int * interval_s) %}
+                  {% if time_in_interval < 200 %}
+                    {% set rl = state_attr(room.climate | default(''), 'friendly_name') | default(room.key | default('?'), true) %}
+                    {% set ns.items = ns.items + [{'key': room.key, 'label': rl, 'minutes': (open_dur / 60) | round(0) | int}] %}
+                  {% endif %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.items }}
+      - if:
+          - "{{ (_window_presence_rooms | length) > 0 }}"
+        then:
+          - repeat:
+              for_each: "{{ _window_presence_rooms }}"
+              sequence:
+                - variables:
+                    _wp_room: "{{ repeat.item }}"
+                - repeat:
+                    for_each: "{{ (_notify_targets_list | trim).split(',') if (_notify_targets_list | trim) != '' else [] }}"
+                    sequence:
+                      - action: "{{ repeat.item | trim }}"
+                        continue_on_error: true
+                        data:
+                          title: "🪟 Fenster offen — {{ _wp_room.label }}"
+                          message: "Fenster seit {{ _wp_room.minutes }} min offen. Heizung auf Minimum."
+                          data:
+                            tag: "vaillant_heizung_window_{{ _wp_room.key }}"
+                            push:
+                              sticky: true
 
   # ════════════════════════════════════════════════════════════
   # ALWAYS-ON ALERT: Fires only on critical problems, auto-dismisses
