@@ -1467,6 +1467,8 @@ actions:
       presence_deactivation_delay: !input presence_deactivation_delay
       enable_leitstand_normal: !input enable_leitstand_normal
       enable_leitstand_expert: !input enable_leitstand_expert
+      _presence_debug_enabled: >
+        {{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}
   - choose:
       - conditions:
           - condition: trigger
@@ -1481,7 +1483,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
+                value_template: "{{ _presence_debug_enabled | bool(false) }}"
             then:
               - action: system_log.write
                 data:
@@ -1501,7 +1503,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
+                value_template: "{{ _presence_debug_enabled | bool(false) }}"
             then:
               - action: system_log.write
                 data:
@@ -1521,7 +1523,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
+                value_template: "{{ _presence_debug_enabled | bool(false) }}"
             then:
               - action: system_log.write
                 data:
@@ -1541,7 +1543,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
+                value_template: "{{ _presence_debug_enabled | bool(false) }}"
             then:
               - action: system_log.write
                 data:
@@ -1561,7 +1563,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
+                value_template: "{{ _presence_debug_enabled | bool(false) }}"
             then:
               - action: system_log.write
                 data:
@@ -1581,7 +1583,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
+                value_template: "{{ _presence_debug_enabled | bool(false) }}"
             then:
               - action: system_log.write
                 data:
@@ -1601,7 +1603,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
+                value_template: "{{ _presence_debug_enabled | bool(false) }}"
             then:
               - action: system_log.write
                 data:
@@ -1621,7 +1623,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
+                value_template: "{{ _presence_debug_enabled | bool(false) }}"
             then:
               - action: system_log.write
                 data:
@@ -1641,7 +1643,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
+                value_template: "{{ _presence_debug_enabled | bool(false) }}"
             then:
               - action: system_log.write
                 data:
@@ -1661,7 +1663,7 @@ actions:
               entity_id: "{{ presence_helper_entity }}"
           - if:
               - condition: template
-                value_template: "{{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}"
+                value_template: "{{ _presence_debug_enabled | bool(false) }}"
             then:
               - action: system_log.write
                 data:
@@ -2535,6 +2537,8 @@ actions:
           - "{{ master_climate_available }}"
         sequence:
           - variables:
+              _debug_log_enabled: >
+                {{ (inputs.enable_leitstand_normal | default(false) | bool(false)) or (inputs.enable_leitstand_expert | default(false) | bool(false)) }}
               master_forced_min_active: >
                 {{ (master_rapid_temp_drop | bool(false)) or (master_window_open_too_long | bool(false)) }}
               away_mode_active_effective: >
@@ -2622,7 +2626,7 @@ actions:
                 {{ (inputs.enable_room_boost | bool(false)) and (inputs.room_boost_amount | float(0) > 0) and (not (master_forced_min_active | bool(false))) and (not (away_mode_active_effective | bool(false))) and (not (master_window_open_too_long | bool(false))) }}
               master_boost_participates: >
                 {{ (master_schedule_active | bool(false)) or (master_presence_detected | bool(false)) or (master_is_manual | bool(false)) }}
-              master_needs_boost: >
+              _master_boost_delta: >
                 {% if room_boost_enabled_effective | bool(false) and (master_boost_participates | bool(false)) %}
                   {% if inputs.master_climate | string not in ['', 'sensor.none', 'none'] %}
                     {% set fallback_current = state_attr(inputs.master_climate, 'current_temperature') | float(21) %}
@@ -2630,34 +2634,23 @@ actions:
                     {% set fallback_current = 21 %}
                   {% endif %}
                   {% if inputs.master_temp_sensor | string not in ['', 'sensor.none', 'none'] %}
-                    {% set master_raw = states(inputs.master_temp_sensor) %}
-                    {% set master_current = master_raw | float(fallback_current) %}
+                    {% set master_current = states(inputs.master_temp_sensor) | float(fallback_current) %}
                   {% else %}
                     {% set master_current = fallback_current %}
                   {% endif %}
-                  {% set master_target = master_target_final | float(0) %}
-                  {% set threshold = inputs.room_boost_activation_threshold | float(1.0) %}
-                  {% set delta = master_target - (master_current | float(0)) %}
-                  {{ delta >= threshold }}
+                  {{ master_target_final | float(0) - (master_current | float(0)) }}
+                {% else %}
+                  {{ none }}
+                {% endif %}
+              master_needs_boost: >
+                {% if _master_boost_delta is not none %}
+                  {{ (_master_boost_delta | float(0)) >= (inputs.room_boost_activation_threshold | float(1.0)) }}
                 {% else %}
                   {{ false }}
                 {% endif %}
               master_boost_deactivate: >
-                {% if room_boost_enabled_effective | bool(false) and (master_boost_participates | bool(false)) %}
-                  {% if inputs.master_climate | string not in ['', 'sensor.none', 'none'] %}
-                    {% set fallback_current = state_attr(inputs.master_climate, 'current_temperature') | float(21) %}
-                  {% else %}
-                    {% set fallback_current = 21 %}
-                  {% endif %}
-                  {% if inputs.master_temp_sensor | string not in ['', 'sensor.none', 'none'] %}
-                    {% set master_raw = states(inputs.master_temp_sensor) %}
-                    {% set master_current = master_raw | float(fallback_current) %}
-                  {% else %}
-                    {% set master_current = fallback_current %}
-                  {% endif %}
-                  {% set master_target = master_target_final | float(0) %}
-                  {% set delta = master_target - (master_current | float(0)) %}
-                  {{ delta < 0.5 }}
+                {% if _master_boost_delta is not none %}
+                  {{ (_master_boost_delta | float(0)) < 0.5 }}
                 {% else %}
                   {{ true }}
                 {% endif %}
@@ -2947,7 +2940,7 @@ actions:
           # ════════════════════════════════════════════════════════════
           - if:
               - condition: template
-                value_template: "{{ (inputs.enable_leitstand_normal | default(false) | bool(false)) or (inputs.enable_leitstand_expert | default(false) | bool(false)) }}"
+                value_template: "{{ _debug_log_enabled | bool(false) }}"
             then:
               - action: system_log.write
                 continue_on_error: true
@@ -2960,7 +2953,7 @@ actions:
           # ════════════════════════════════════════════════════════════
           - if:
               - condition: template
-                value_template: "{{ (inputs.enable_leitstand_normal | default(false) | bool(false)) or (inputs.enable_leitstand_expert | default(false) | bool(false)) }}"
+                value_template: "{{ _debug_log_enabled | bool(false) }}"
             then:
               - action: system_log.write
                 continue_on_error: true
@@ -3149,7 +3142,7 @@ actions:
                   {% set master_entity_valid = (master_entity not in ['', 'sensor.none', 'none']) and (master_state not in ['unknown', 'unavailable', 'none', '']) %}
                   {% set actual = (state_attr(master_entity, 'temperature') | float(0)) if master_entity_valid else 0.0 %}
                   {% set mismatch = ((actual | float(0)) - (master_final_target | float(0))) | abs %}
-                  {{ ((inputs.enable_leitstand_normal | default(false) | bool(false)) or (inputs.enable_leitstand_expert | default(false) | bool(false))) and (master_entity_valid | bool(false)) and (age_s <= verify_window_s) and ((mismatch | float(0)) > 0.11) }}
+                  {{ (_debug_log_enabled | bool(false)) and (master_entity_valid | bool(false)) and (age_s <= verify_window_s) and ((mismatch | float(0)) > 0.11) }}
             then:
               - action: system_log.write
                 continue_on_error: true
@@ -3248,25 +3241,12 @@ actions:
               {%- set cid = room.climate | default('') | string -%}
               {%- set rok = room.room_ok | default(false) | bool(false) -%}
               {%- set rl = state_attr(cid, 'friendly_name') | default(rk, true) if rok else rk -%}
-              {%- set ft = room.final_target | default(0) | float(0) -%}
-              {%- set ml = room.mode_label | default('n/a') | string -%}
-              {%- set ha_i = '🔥' if (room.hvac_action | default('n/a')) == 'heating' else '💤' -%}
-              {%- set w_icon = ' 🪟' if (room.window_open_too_long | default(false) | bool(false)) else '' -%}
               {%- if room.enabled | default(false) | bool(false) -%}
+                {%- set ft = room.final_target | default(0) | float(0) -%}
+                {%- set ml = room.mode_label | default('n/a') | string -%}
+                {%- set ha_i = '🔥' if (room.hvac_action | default('n/a')) == 'heating' else '💤' -%}
+                {%- set w_icon = ' 🪟' if (room.window_open_too_long | default(false) | bool(false)) else '' -%}
                 {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ (ft | round(1)) ~ '°C — ' ~ ml ~ ' ' ~ ha_i ~ w_icon -%}
-              {%- else -%}
-                {%- set ns_dis.labels = ns_dis.labels + [rk] -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- if ns_dis.labels | length > 0 -%}
-              {%- set msg.out = msg.out ~ n ~ '▸ Deaktiviert: ' ~ (ns_dis.labels | join(', ')) -%}
-            {%- endif -%}
-            {%- set msg.out = msg.out ~ n ~ n ~ '📱 **Geräte**' -%}
-            {%- for room in rooms_runtime_list | default([], true) -%}
-              {%- if room.enabled | default(false) | bool(false) -%}
-                {%- set cid = room.climate | default('') | string -%}
-                {%- set rok = room.room_ok | default(false) | bool(false) -%}
-                {%- set rl = state_attr(cid, 'friendly_name') | default(room.key | default('?'), true) if rok else (room.key | default('?')) -%}
                 {%- set cok = room.climate_ok | default(false) | bool(false) -%}
                 {%- set wid = room.window | default('') | string -%}
                 {%- set w_configured = wid not in ['', 'sensor.none', 'none'] -%}
@@ -3279,9 +3259,14 @@ actions:
                 {%- if p_configured -%}
                   {%- set dev_line = dev_line ~ '  ' ~ '✅Präsenz' -%}
                 {%- endif -%}
-                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ dev_line -%}
+                {%- set msg.out = msg.out ~ n ~ '  ' ~ dev_line -%}
+              {%- else -%}
+                {%- set ns_dis.labels = ns_dis.labels + [rk] -%}
               {%- endif -%}
             {%- endfor -%}
+            {%- if ns_dis.labels | length > 0 -%}
+              {%- set msg.out = msg.out ~ n ~ '▸ Deaktiviert: ' ~ (ns_dis.labels | join(', ')) -%}
+            {%- endif -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🚧 ' -%}
             {%- if master_write_allowed | default(false) | bool(false) -%}
               {%- set msg.out = msg.out ~ 'Schreiben erlaubt' -%}
@@ -3334,7 +3319,7 @@ actions:
       - action: persistent_notification.create
         continue_on_error: true
         data:
-          notification_id: "vaillant_expert_{{ now().strftime('%Y%m%d_%H%M%S') }}"
+          notification_id: "vaillant_expert_leitstand"
           title: "🔍 Expert Leitstand ({{ now().strftime('%H:%M:%S') }})"
           message: >-
             {%- set n = '\n' -%}
@@ -3351,28 +3336,15 @@ actions:
               {%- set cid = room.climate | default('') | string -%}
               {%- set rok = room.room_ok | default(false) | bool(false) -%}
               {%- set rl = state_attr(cid, 'friendly_name') | default(rk, true) if rok else rk -%}
-              {%- set ft = room.final_target | default(0) | float(0) -%}
-              {%- set ct = room.current_temp | default(0) | float(0) -%}
-              {%- set rd = ((ft - ct) | abs) | round(1) -%}
-              {%- set ml = room.mode_label | default('n/a') | string -%}
-              {%- set ha_i = '🔥' if (room.hvac_action | default('n/a')) == 'heating' else '💤' -%}
-              {%- set is_active = room.active_for_demand | default(false) | bool(false) -%}
-              {%- set w_icon = ' 🪟' if (room.window_open_too_long | default(false) | bool(false)) else '' -%}
               {%- if room.enabled | default(false) | bool(false) -%}
+                {%- set ft = room.final_target | default(0) | float(0) -%}
+                {%- set ct = room.current_temp | default(0) | float(0) -%}
+                {%- set rd = ((ft - ct) | abs) | round(1) -%}
+                {%- set ml = room.mode_label | default('n/a') | string -%}
+                {%- set ha_i = '🔥' if (room.hvac_action | default('n/a')) == 'heating' else '💤' -%}
+                {%- set is_active = room.active_for_demand | default(false) | bool(false) -%}
+                {%- set w_icon = ' 🪟' if (room.window_open_too_long | default(false) | bool(false)) else '' -%}
                 {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ (ft | round(1)) ~ '°C (Ist ' ~ (ct | round(1)) ~ '°C Δ=' ~ rd ~ ') — ' ~ ml ~ ' ' ~ ha_i ~ w_icon ~ (' — aktiv' if is_active else '') -%}
-              {%- else -%}
-                {%- set ns_dis.labels = ns_dis.labels + [rk] -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- if ns_dis.labels | length > 0 -%}
-              {%- set msg.out = msg.out ~ n ~ '▸ Deaktiviert: ' ~ (ns_dis.labels | join(', ')) -%}
-            {%- endif -%}
-            {%- set msg.out = msg.out ~ n ~ n ~ '📱 **Geräte**' -%}
-            {%- for room in rooms_runtime_list | default([], true) -%}
-              {%- if room.enabled | default(false) | bool(false) -%}
-                {%- set cid = room.climate | default('') | string -%}
-                {%- set rok = room.room_ok | default(false) | bool(false) -%}
-                {%- set rl = state_attr(cid, 'friendly_name') | default(room.key | default('?'), true) if rok else (room.key | default('?')) -%}
                 {%- set cok = room.climate_ok | default(false) | bool(false) -%}
                 {%- set wid = room.window | default('') | string -%}
                 {%- set w_configured = wid not in ['', 'sensor.none', 'none'] -%}
@@ -3385,9 +3357,14 @@ actions:
                 {%- if p_configured -%}
                   {%- set dev_line = dev_line ~ '  ' ~ '✅Präsenz' -%}
                 {%- endif -%}
-                {%- set msg.out = msg.out ~ n ~ '▸ ' ~ rl ~ ': ' ~ dev_line -%}
+                {%- set msg.out = msg.out ~ n ~ '  ' ~ dev_line -%}
+              {%- else -%}
+                {%- set ns_dis.labels = ns_dis.labels + [rk] -%}
               {%- endif -%}
             {%- endfor -%}
+            {%- if ns_dis.labels | length > 0 -%}
+              {%- set msg.out = msg.out ~ n ~ '▸ Deaktiviert: ' ~ (ns_dis.labels | join(', ')) -%}
+            {%- endif -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🚧 ' -%}
             {%- if master_write_allowed | default(false) | bool(false) -%}
               {%- set msg.out = msg.out ~ 'Schreiben erlaubt' -%}
