@@ -320,6 +320,28 @@ blueprint:
           selector:
             entity:
               domain: sensor
+        efficiency_weekly_avg_sensor:
+          name: "📊 Effizienz Wochen-Ø (opt)"
+          description: |
+            Statistik-Sensor für den 7-Tage-Durchschnitt der Effizienz.
+            Bleibt verfügbar auch wenn der Quellsensor temporär unavailable ist.
+            Erstellen: Einstellungen → Helfer → Statistik →
+            Quelle: Effizienz-Sensor, Typ: Mittelwert, Max. Alter: 7 Tage.
+            Leer = aktueller Einzelwert wird angezeigt.
+          default: ""
+          selector:
+            entity:
+              domain: sensor
+        pressure_cache_helper:
+          name: "💾 Druck Cache Helper (opt)"
+          description: |
+            Optionaler input_number für den letzten gültigen Wasserdruck-Wert.
+            Erstellen: Einstellungen → Helfer → Zahl (Min: 0, Max: 5, Schritt: 0.01).
+            Leer lassen = kein Cache.
+          default: ""
+          selector:
+            entity:
+              domain: input_number
 
     section_notifications:
       name: "🔔 Benachrichtigungen"
@@ -496,6 +518,8 @@ action:
         min_water_pressure: !input min_water_pressure
         water_pressure_sensor: !input water_pressure_sensor
         efficiency_sensor: !input efficiency_sensor
+        efficiency_weekly_avg_sensor: !input efficiency_weekly_avg_sensor
+        pressure_cache_helper: !input pressure_cache_helper
         notifications_enabled: !input notifications_enabled
         critical_beep_enabled: !input critical_beep_enabled
         notify_critical_errors: !input notify_critical_errors
@@ -604,6 +628,10 @@ action:
         {{ inputs.water_pressure_sensor != '' }}
       efficiency_sensor_configured: >
         {{ inputs.efficiency_sensor != '' }}
+      eff_avg_entity: "{{ inputs.efficiency_weekly_avg_sensor | default('') | string | trim }}"
+      eff_avg_configured: "{{ eff_avg_entity not in ['', 'none', 'None'] }}"
+      pressure_cache_entity: "{{ inputs.pressure_cache_helper | default('') | string | trim }}"
+      pressure_cache_configured: "{{ pressure_cache_entity not in ['', 'none', 'None'] }}"
       error_code_state_raw: >
         {% if trigger.id == 'error_code_change' and trigger.to_state is defined and trigger.to_state is not none %}
           {{ trigger.to_state.state }}
@@ -615,6 +643,17 @@ action:
       error_code_state: "{{ (error_code_state_raw | string) | trim }}"
       error_code_valid: "{{ error_code_state not in ['unknown', 'unavailable', 'none', 'None', ''] and error_code_state | length > 0 }}"
       error_code_ok: "{{ error_code_state in ['OK', 'ok', 'No Error', 'no error', '0', 'False', 'false', 'off', 'safe'] }}"
+
+  # ===== CACHE UPDATE: Druck-Wert sichern (bei jedem Run) =====
+  - if:
+      - "{{ pressure_cache_configured | bool(false) and water_pressure_sensor_configured | bool(false) and has_value(inputs.water_pressure_sensor) }}"
+    then:
+      - action: input_number.set_value
+        target:
+          entity_id: "{{ pressure_cache_entity }}"
+        data:
+          value: "{{ states(inputs.water_pressure_sensor) | float(0.0) | round(2) }}"
+        continue_on_error: true
 
   # ===== ERROR CODE MONITORING =====
   - choose:
@@ -901,17 +940,40 @@ action:
           - "{{ normal_notify_targets_list | length > 0 }}"
         sequence:
           - variables:
+              press_raw: "{{ states(inputs.water_pressure_sensor) if water_pressure_sensor_configured | bool(false) else '' }}"
+              press_valid: "{{ press_raw not in ['unavailable', 'unknown', 'none', 'None', ''] and press_raw is defined and water_pressure_sensor_configured | bool(false) }}"
+              eff_raw: "{{ states(inputs.efficiency_sensor) if efficiency_sensor_configured | bool(false) else '' }}"
+              eff_valid: "{{ eff_raw not in ['unavailable', 'unknown', 'none', 'None', ''] and eff_raw is defined and efficiency_sensor_configured | bool(false) }}"
+
               curr_press: >
-                {% if water_pressure_sensor_configured | bool(false) and has_value(inputs.water_pressure_sensor) %}
-                  {{ states(inputs.water_pressure_sensor) | float(0.0) | round(2) }} bar
+                {% if not (water_pressure_sensor_configured | bool(false)) %}
+                  Nicht konfiguriert
+                {% elif press_valid | bool(false) %}
+                  {{ press_raw | float(0.0) | round(2) }} bar
+                {% elif pressure_cache_configured | bool(false) and has_value(pressure_cache_entity) %}
+                  {{ states(pressure_cache_entity) | float(0.0) | round(2) }} bar (cached)
                 {% else %}
-                  Unbekannt
+                  {% set obj = states[inputs.water_pressure_sensor] %}
+                  {% if obj is defined and obj.last_changed is defined %}
+                    ⚠️ n/a seit {{ (obj.last_changed | as_datetime | as_local).strftime('%H:%M') }}
+                  {% else %}
+                    ⚠️ nicht verfügbar
+                  {% endif %}
                 {% endif %}
               curr_eff: >
-                {% if efficiency_sensor_configured | bool(false) and has_value(inputs.efficiency_sensor) %}
-                  {{ states(inputs.efficiency_sensor) | float(0.0) | round(0) }}%
+                {% if not (efficiency_sensor_configured | bool(false)) and not (eff_avg_configured | bool(false)) %}
+                  Nicht konfiguriert
+                {% elif eff_avg_configured | bool(false) and has_value(eff_avg_entity) %}
+                  Ø {{ states(eff_avg_entity) | float(0.0) | round(1) }}% (7 Tage)
+                {% elif eff_valid | bool(false) %}
+                  {{ eff_raw | float(0.0) | round(0) }}%
                 {% else %}
-                  Unbekannt
+                  {% set obj = states[inputs.efficiency_sensor] %}
+                  {% if obj is defined and obj.last_changed is defined %}
+                    ⚠️ n/a seit {{ (obj.last_changed | as_datetime | as_local).strftime('%H:%M') }}
+                  {% else %}
+                    ⚠️ nicht verfügbar
+                  {% endif %}
                 {% endif %}
               status_master: >
                 {% if master_climate_state not in ['unknown', 'unavailable'] %}
@@ -919,6 +981,7 @@ action:
                 {% else %}
                   Offline ❌
                 {% endif %}
+
           - repeat:
               for_each: "{{ (normal_notify_targets_list | trim).split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
               sequence:
