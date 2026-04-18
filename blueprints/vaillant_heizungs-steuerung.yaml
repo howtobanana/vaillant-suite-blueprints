@@ -3579,8 +3579,13 @@ actions:
                 {%- endfor -%}
                 {%- set msg.out = msg.out ~ n ~ n ~ '🕐 Erkannt: ' ~ now().strftime('%H:%M:%S') -%}
                 {{ msg.out }}
+          # Mobile Push nur auf echte State-Changes, nicht bei 3-min-time_pattern-Polls.
+          # Persistent Notification (oben) wird weiterhin auf jeden Eval aktualisiert — das
+          # ist idempotent über die fixe notification_id. Das Handy-Spam kommt nur durch den
+          # repeat-push, den wir hier throtteln.
           - if:
               - "{{ _alert_notify_configured | bool(false) }}"
+              - "{{ trigger.id | default('') != 'scheduled' }}"
             then:
               - repeat:
                   for_each: "{{ (_notify_targets_list | trim).split(',') if (_notify_targets_list | trim) != '' else [] }}"
@@ -3598,7 +3603,7 @@ actions:
                           {%- endfor -%}
                           {{ msg.out }}
                         data:
-                          tag: vaillant_heizung_alert
+                          tag: vaillant_sensor_alert
                           push:
                             sticky: true
       - conditions:

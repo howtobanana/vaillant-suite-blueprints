@@ -814,11 +814,16 @@ action:
                   {% endif %}
                 {% endfor %}
                 {{ ns.items }}
+          # Mobile Push für TRV/Sensor-Offline NUR bei echten State-Changes, nicht
+          # bei main_loop (30-min-Poll). Die Heizungs-Steuerung hat eigene State-Trigger
+          # und feuert ihren gleichgetaggten Push sobald ein Sensor ausfällt.
+          # Tag vereinheitlicht (`vaillant_sensor_alert`) → iPhone zeigt nur 1 Notification.
           - choose:
               - conditions:
                   - "{{ warning_notifications_allowed }}"
                   - "{{ normal_notify_targets_list | length > 0 }}"
                   - "{{ trv_offline_recent | length > 0 }}"
+                  - "{{ trigger.id | default('') != 'main_loop' }}"
                 sequence:
                   - repeat:
                       for_each: "{{ (normal_notify_targets_list | trim).split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
@@ -828,7 +833,7 @@ action:
                             title: "⚠️ TRV/Sensor offline"
                             message: "Keine Daten: {{ trv_offline_recent | join(', ') }}. Geräte/Funkverbindung prüfen."
                             data:
-                              tag: vaillant_diag_trv_offline
+                              tag: vaillant_sensor_alert
                               push:
                                 sticky: true
                           continue_on_error: true
