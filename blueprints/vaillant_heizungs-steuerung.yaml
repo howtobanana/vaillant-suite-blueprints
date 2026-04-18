@@ -85,6 +85,16 @@ blueprint:
             entity:
               domain: input_boolean
               multiple: true
+        guest_mode_boolean:
+          name: "🏡 Guest-Mode Helper (opt)"
+          description: |
+            Optionaler Gast-Schalter (input_boolean).
+            Wenn aktiv, wird Away-Mode für die Heizung ignoriert —
+            Gäste heizen normal nach Zeitplan/Präsenz.
+          default: ""
+          selector:
+            entity:
+              domain: input_boolean
         hysteresis:
           name: "⚙️ Hysterese (°C)"
           description: |
@@ -993,6 +1003,22 @@ blueprint:
           selector:
             entity:
               domain: sensor
+        summer_mode_sensor:
+          name: "☀️ Summer-Mode Sensor (opt, Tagesmittel)"
+          description: |
+            Optional: separater Sensor NUR für Summer-Mode-Detection (überschreibt Basis-Außensensor
+            an dieser Stelle). Weather-Compensation nutzt weiterhin den Basis-Sensor instantan.
+
+            ⚠️ ACHTUNG: Wenn hier ein Tagesmittel-Sensor (z.B. 24h Statistics-Helper) eingetragen wird,
+            MUSS der "Sommer-Grenzwert" unten auf 15-17°C reduziert werden!
+            Sonst triggert Summer-Mode praktisch nie (Tagesmittel erreicht kaum 22°C).
+
+            • Leer = Basis-Außensensor (instantan) wird genutzt → Threshold 22°C empfohlen.
+            • Gesetzt = z.B. Statistics-Helper 24h mean → Threshold 15-17°C empfohlen (DIN-konform).
+          default: ""
+          selector:
+            entity:
+              domain: sensor
         weather_boost_zone1:
           name: "❄️ Kompensation Zone 1 (unter -10°C)"
           description: |
@@ -1058,19 +1084,25 @@ blueprint:
         summer_threshold:
           name: "☀️ Sommer-Grenzwert (°C)"
           description: |
-            Ab diesem Wert wird Sommerbetrieb aktiv.
-          default: 18
+            Ab dieser Außentemperatur wird Sommerbetrieb aktiv (Heizung aus).
+
+            ⚠️ WICHTIG — je nach konfiguriertem Sensor unterschiedlich setzen:
+            • Basis-Sensor (instantan, Default): 22°C empfohlen
+            • Summer-Mode Sensor aktiv (z.B. 24h Tagesmittel): 15-17°C empfohlen
+            → Wenn Tagesmittel-Sensor gesetzt und Threshold auf 22°C bleibt, triggert
+               Summer-Mode nie!
+          default: 22
           selector:
             number:
               min: 15
-              max: 22
+              max: 26
               step: 0.5
               unit_of_measurement: "°C"
         summer_hysteresis:
           name: "☀️ Sommer-Hysterese (°C)"
           description: |
             Abschaltpunkt liegt bei (Sommer-Grenzwert - Hysterese), um Takten zu vermeiden.
-          default: 1.0
+          default: 2.0
           selector:
             number:
               min: 0.5
@@ -1139,22 +1171,25 @@ blueprint:
           selector:
             boolean:
         window_presence_reminder_enabled:
-          name: "🪟 Fenster + Präsenz Erinnerung"
+          name: "🪟 Fenster-Fallback Erinnerung"
           description: |
-            Wenn ein Fenster offen ist UND jemand im Raum ist (Presence Helper AN),
-            regelmäßig eine freundliche Erinnerung senden (kein Alarm).
+            Fallback-Erinnerung wenn ein Fenster lange offen steht.
+            Feuert unabhängig davon ob jemand zuhause ist oder im Raum.
+            Ergänzt die Lüftungs-Steuerung als Sicherheitsnetz.
           default: false
           selector:
             boolean:
         window_presence_reminder_interval:
-          name: "🪟 Erinnerungs-Intervall (min)"
+          name: "🪟 Fenster-Fallback: Verzögerung (min)"
           description: |
-            Wie oft die Fenster-Erinnerung bei aktiver Präsenz gesendet wird.
-          default: 30
+            Wie lange ein Fenster mindestens offen sein muss,
+            bevor die Fallback-Erinnerung feuert.
+            Wiederholt danach alle 30 min.
+          default: 60
           selector:
             number:
-              min: 5
-              max: 120
+              min: 10
+              max: 180
               step: 5
               unit_of_measurement: "min"
         notify_devices:
@@ -1177,6 +1212,7 @@ trigger_variables:
   tv_room4_presence_sensors: !input room4_presence_sensors
   tv_room5_presence_sensors: !input room5_presence_sensors
   tv_away_mode_boolean: !input away_mode_boolean
+  tv_guest_mode_boolean: !input guest_mode_boolean
   tv_room2_window: !input room2_window
   tv_room3_window: !input room3_window
   tv_room4_window: !input room4_window
@@ -1411,6 +1447,17 @@ triggers:
       {% set off_count = expand(helpers) | selectattr('state', 'eq', 'off') | list | length %}
       {{ (helpers | length > 0) and ((on_count + off_count) == (helpers | length)) and (on_count == 0) }}
     id: away_mode_off
+  - trigger: template
+    value_template: >
+      {% set eid = tv_guest_mode_boolean | default('') | string %}
+      {{ eid not in ['', 'sensor.none', 'none'] and is_state(eid, 'on') }}
+    id: guest_mode_on
+  - trigger: template
+    value_template: >
+      {% set eid = tv_guest_mode_boolean | default('') | string %}
+      {% set valid = eid not in ['', 'sensor.none', 'none'] %}
+      {{ valid and is_state(eid, 'off') }}
+    id: guest_mode_off
 
   # ============================================
   # PRESENCE HELPER TRIGGERS
@@ -1738,10 +1785,20 @@ actions:
                     entity_id: "{{ _helper_id }}"
                   continue_on_error: true
 
+  # ===== STARTUP DELAY: Sensoren nach HA-Restart laden lassen =====
+  # Ohne Delay sind Temp-Sensoren noch unavailable → Fallback-Werte (21°C)
+  # → falsche Setpoints auf TRVs. 120s reichen für Zigbee/Cloud-Sensoren.
+  - if:
+      - "{{ trigger.id | default('manual') == 'ha_start' }}"
+    then:
+      - delay:
+          seconds: 120
+
   - variables:
       # ===== GROUP 1: INPUTS & HELPERS =====
       inputs:
         outdoor_temp_sensor: !input outdoor_temp_sensor
+        summer_mode_sensor: !input summer_mode_sensor
         summer_threshold: !input summer_threshold
         summer_hysteresis: !input summer_hysteresis
         summer_mode_helper: !input summer_mode_helper
@@ -1750,6 +1807,7 @@ actions:
         away_temp_input: !input away_temp_input
         away_temp_fixed: !input away_temp_fixed
         away_mode_boolean: !input away_mode_boolean
+        guest_mode_boolean: !input guest_mode_boolean
         pre_heat_timeout: !input pre_heat_timeout
         room_boost_activation_threshold: !input room_boost_activation_threshold
         min_trv_temp: !input min_trv_temp
@@ -2002,10 +2060,16 @@ actions:
           {{ (states(_ph_eid) | string | lower) in ['on', 'true', '1'] }}
         {% endif %}
       # ===== TARGET CALCULATION PREREQUISITES =====
+      guest_mode_on: >
+        {% set eid = inputs.guest_mode_boolean | default('') | string %}
+        {{ eid not in ['', 'sensor.none', 'none'] and is_state(eid, 'on') }}
       away_mode_helper_set: >
         {{ (inputs.away_mode_boolean | reject('in', ['', 'sensor.none', 'none']) | list | length) > 0 if inputs.away_mode_boolean else false }}
       away_mode_entity_on: >
-        {% if away_mode_helper_set | bool(false) %}
+        {# Guest Mode überschreibt Away — Gäste heizen normal #}
+        {% if guest_mode_on | bool(false) %}
+          {{ false }}
+        {% elif away_mode_helper_set | bool(false) %}
           {% set ns = namespace(active=false) %}
           {% for ent in inputs.away_mode_boolean %}
             {% if ent | string not in ['', 'sensor.none', 'none'] and is_state(ent, 'on') %}
@@ -2092,16 +2156,27 @@ actions:
         {% set raw = outdoor_temp_raw %}
         {{ (outdoor_temp_sensor_configured | bool(false)) and (raw | string not in ['unknown', 'unavailable', 'none', 'None', '']) }}
       summer_mode_should_be: >
-        {% set ns = namespace(helper_on=false) %}
+        {% set ns = namespace(helper_on=false, src_valid=false, src_value=99.0) %}
         {% set helper_id = inputs.summer_mode_helper | string %}
         {% if (helper_id | lower) not in ['', 'sensor.none', 'none'] and (states(helper_id) not in ['unknown', 'unavailable', 'none', '']) %}
           {% set ns.helper_on = (states(helper_id) == 'on') %}
         {% endif %}
-        {% set outdoor_now = outdoor_temp | float(99) %}
-        {% set threshold = inputs.summer_threshold | float(18) %}
-        {% set hysteresis = inputs.summer_hysteresis | float(1.0) %}
+        {# Summer-Mode-Sensor überschreibt Basis-Außensensor NUR für diese Detection.
+           Leer → Fallback auf outdoor_temp (Basis-Sensor, instantan).
+           Gesetzt → z.B. Tagesmittel-Helper (Threshold entsprechend niedrig setzen!). #}
+        {% set sm_id = inputs.summer_mode_sensor | string %}
+        {% if (sm_id | lower) not in ['', 'sensor.none', 'none'] and (states(sm_id) not in ['unknown', 'unavailable', 'none', 'None', '']) %}
+          {% set ns.src_valid = true %}
+          {% set ns.src_value = states(sm_id) | float(99) %}
+        {% elif outdoor_temp_valid | bool(false) %}
+          {% set ns.src_valid = true %}
+          {% set ns.src_value = outdoor_temp | float(99) %}
+        {% endif %}
+        {% set outdoor_now = ns.src_value | float(99) %}
+        {% set threshold = inputs.summer_threshold | float(22) %}
+        {% set hysteresis = inputs.summer_hysteresis | float(2.0) %}
         {% set off_threshold = (threshold - hysteresis) %}
-        {% if not (outdoor_temp_valid | bool(false)) %}
+        {% if not (ns.src_valid | bool(false)) %}
           {{ false }}
         {% elif ns.helper_on | bool(false) %}
           {{ outdoor_now > off_threshold }}
@@ -2230,11 +2305,12 @@ actions:
               {# Falls back to user's configured comfort_fixed, never to a hardcoded value #}
               {% set comfort_target = comfort_fixed | float(20) %}
             {% endif %}
-            {# Away mode is NOT applied to individual rooms — the master
-               thermostat already drops to away_temp, which limits heat
-               delivery for all rooms. Duplicating it here would be
-               redundant and could mask demand tracking. #}
-            {% if active_for_demand | bool(false) %}
+            {# Away mode: rooms also drop to away_temp so TRVs close
+               and don't demand heat while nobody is home.
+               Pre-heat overrides away (mirrors master logic at master_target_temp). #}
+            {% if away_mode_entity_on | bool(false) and not (pre_heat_active | bool(false)) %}
+              {% set base_target = away_temp | float(eco_temp | float(19)) %}
+            {% elif active_for_demand | bool(false) %}
               {% set base_target = comfort_target | float(0) %}
             {% else %}
               {% set base_target = eco_temp | float(19) %}
@@ -2263,16 +2339,19 @@ actions:
           {% endif %}
           {% if window_open_too_long | bool(false) %}
             {% set final_raw = inputs.min_trv_temp | float(12) %}
-          {% elif role == 'isolated' and (summer_mode | bool(false)) and not (active_for_demand | bool(false)) %}
+          {% elif role == 'isolated' and (summer_mode | bool(false)) and not (active_for_demand | bool(false)) and not (away_mode_entity_on | bool(false)) %}
             {% set final_raw = inputs.min_trv_temp | float(12) %}
-          {% elif role == 'follower' and (summer_mode | bool(false)) and not (master_active_for_followers | bool(false)) %}
+          {% elif role == 'follower' and (summer_mode | bool(false)) and not (master_active_for_followers | bool(false)) and not (away_mode_entity_on | bool(false)) %}
             {% set final_raw = inputs.min_trv_temp | float(12) %}
           {% elif window_closed_recently | bool(false) %}
             {# FIX: Don't cap active comfort demand to eco during settling.
                Rooms with active demand (schedule/presence) keep their target;
-               only idle rooms settle at eco to prevent wasteful heating. #}
+               only idle rooms settle at eco to prevent wasteful heating.
+               During away: settle at away_temp, not eco (avoids wasteful heating). #}
             {% if active_for_demand | bool(false) %}
               {% set final_raw = base_target | float(eco_temp | float(19)) %}
+            {% elif away_mode_entity_on | bool(false) %}
+              {% set final_raw = away_temp | float(eco_temp | float(19)) %}
             {% else %}
               {% set final_raw = eco_temp | float(19) %}
             {% endif %}
@@ -2828,6 +2907,7 @@ actions:
                     'eco_temp_input_change',
                     'away_temp_input_change',
                     'away_mode_on', 'away_mode_off',
+                    'guest_mode_on', 'guest_mode_off',
                     'ha_start',
                     'master_window_open_30s', 'master_window_closed',
                     'room2_window_open_30s', 'room2_window_closed',
@@ -3189,6 +3269,17 @@ actions:
       _l_m_target: "{{ master_final_target | default(0) | float(0) }}"
       _l_m_base: "{{ master_base_required_target | default(0) | float(0) }}"
       _l_m_forced: "{{ master_forced_min_active | default(false) | bool(false) }}"
+      _l_m_away_raw: >
+        {% if away_mode_helper_set | default(false) | bool(false) %}
+          {% set ns = namespace(active=false) %}
+          {% for ent in inputs.away_mode_boolean %}
+            {% if ent | string not in ['', 'sensor.none', 'none'] and is_state(ent, 'on') %}{% set ns.active = true %}{% endif %}
+          {% endfor %}
+          {{ ns.active }}
+        {% else %}
+          {{ false }}
+        {% endif %}
+      _l_m_guest: "{{ guest_mode_on | default(false) | bool(false) }}"
       _l_m_away: "{{ away_mode_entity_on | default(false) | bool(false) }}"
       _l_m_boost: "{{ master_boost_active | default(false) | bool(false) }}"
       _l_m_weather: "{{ weather_modifier_sanitized | default(0) | float(0) }}"
@@ -3213,7 +3304,7 @@ actions:
       _l_m_window: "{{ master_window_open_too_long | default(false) | bool(false) }}"
       _l_m_sens_valid: "{{ master_sensors_valid | default(false) | bool(false) }}"
       _l_m_help_valid: "{{ master_helper_valid | default(false) | bool(false) }}"
-      _l_m_mode_modus: "{{ 'Fenster offen' if (_l_m_window | bool(false)) else ('Not-Aus' if (_l_m_forced | bool(false)) else ('Abwesend' if (_l_m_away | bool(false) and not (_l_m_pre_heat | bool(false))) else ('PreHeat' if (_l_m_pre_heat | bool(false)) else 'Heizbetrieb'))) }}"
+      _l_m_mode_modus: "{{ 'Fenster offen' if (_l_m_window | bool(false)) else ('Not-Aus' if (_l_m_forced | bool(false)) else ('Gast-Modus' if (_l_m_guest | bool(false) and _l_m_away_raw | bool(false)) else ('Abwesend' if (_l_m_away | bool(false) and not (_l_m_pre_heat | bool(false))) else ('PreHeat' if (_l_m_pre_heat | bool(false)) else 'Heizbetrieb')))) }}"
 
   # ════════════════════════════════════════════════════════════
   # LEITSTAND NORMAL: Demand-only Dashboard (überschreibt sich selbst)
@@ -3230,7 +3321,7 @@ actions:
           message: >-
             {%- set n = '\n' -%}
             {%- set msg = namespace(out='') -%}
-            {%- set msg.out = msg.out ~ '🚨 Trigger: ' ~ (trigger_id_safe | default('manual')) ~ ' | Boost ' ~ ('AN' if (_l_m_boost | bool(false)) else 'AUS') ~ ' | Wetter ' ~ (_l_m_weather | float(0) | round(1)) ~ '°C | Away ' ~ ('✅' if (_l_m_away | bool(false)) else '⬜') -%}
+            {%- set msg.out = msg.out ~ '🚨 Trigger: ' ~ (trigger_id_safe | default('manual')) ~ ' | Boost ' ~ ('AN' if (_l_m_boost | bool(false)) else 'AUS') ~ ' | Wetter ' ~ (_l_m_weather | float(0) | round(1)) ~ '°C | Away ' ~ ('✅' if (_l_m_away_raw | bool(false)) else '⬜') ~ ' | Gast ' ~ ('✅' if (_l_m_guest | bool(false)) else '⬜') -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🌡️ **Master — ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus ~ '** (' ~ _l_m_reason ~ ')' -%}
             {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Komfort ' ~ (master_comfort_temp | default(0) | float(0) | round(1)) ~ '°C' -%}
             {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren | ' ~ ('🔥' if (_l_m_pre_heat | bool(false)) else '⬜') ~ ' PreHeat' ~ (' 🪟' if (_l_m_window | bool(false)) else '') -%}
@@ -3325,7 +3416,7 @@ actions:
             {%- set n = '\n' -%}
             {%- set msg = namespace(out='') -%}
             {%- set msg.out = msg.out ~ '🚨 Trigger: ' ~ (trigger_id_safe | default('manual')) ~ ' | Boost ' ~ ('AN' if (_l_m_boost | bool(false)) else 'AUS') ~ ' | Wetter ' ~ (_l_m_weather | float(0) | round(1)) ~ '°C | Feucht. ' ~ (_l_m_humidity | float(0) | round(1)) ~ '°C' -%}
-            {%- set msg.out = msg.out ~ n ~ 'Away ' ~ ('✅' if (_l_m_away | bool(false)) else '⬜') ~ ' | Sommer ' ~ ('✅' if (summer_mode | default(false) | bool(false)) else '⬜') ~ ' | Entität: ' ~ (inputs.master_climate | default('n/a')) -%}
+            {%- set msg.out = msg.out ~ n ~ 'Away ' ~ ('✅' if (_l_m_away_raw | bool(false)) else '⬜') ~ ' | Gast ' ~ ('✅' if (_l_m_guest | bool(false)) else '⬜') ~ ' | Sommer ' ~ ('✅' if (summer_mode | default(false) | bool(false)) else '⬜') ~ ' | Entität: ' ~ (inputs.master_climate | default('n/a')) -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🌡️ **Master — ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus ~ '** (' ~ _l_m_reason ~ ')' -%}
             {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Base ' ~ (_l_m_base | float(0) | round(1)) ~ '°C | Eco ' ~ (eco_temp | default(0) | float(0) | round(1)) ~ '°C | Δ=' ~ (_l_m_delta | float(0) | round(1)) -%}
             {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren | ' ~ ('🔥' if (_l_m_pre_heat | bool(false)) else '⬜') ~ ' PreHeat' ~ (' 🪟' if (_l_m_window | bool(false)) else '') -%}
@@ -3378,36 +3469,41 @@ actions:
             {{ msg.out }}
 
   # ════════════════════════════════════════════════════════════
-  # WINDOW + PRESENCE REMINDER: Friendly reminder when someone is in a room with open window
+  # WINDOW FALLBACK REMINDER: Sicherheitsnetz nach langer Fenster-Öffnung
+  # Feuert unabhängig von Präsenz/Home — ergänzt Lüftungs-Steuerung
   # ════════════════════════════════════════════════════════════
   - if:
       - "{{ inputs.window_presence_reminder_enabled | bool(false) }}"
       - "{{ _notify_configured | bool(false) }}"
     then:
       - variables:
-          _window_presence_rooms: >
+          _window_fallback_rooms: >
             {% set ns = namespace(items=[]) %}
             {% set now_ts = as_timestamp(now()) | float(0) %}
-            {% set interval_s = (inputs.window_presence_reminder_interval | float(30)) * 60 %}
+            {% set threshold_s = (inputs.window_presence_reminder_interval | float(60)) * 60 %}
+            {% set repeat_s = 1800 %}
             {% for room in rooms_runtime_list | default([], true) %}
-              {% if room.enabled | default(false) | bool(false) and room.window_open_too_long | default(false) | bool(false) and room.helper_on | default(false) | bool(false) %}
+              {% if room.enabled | default(false) | bool(false) and room.window_open_too_long | default(false) | bool(false) %}
                 {% set w = room.window | default('') | string %}
                 {% if w not in ['', 'sensor.none', 'none'] and states[w] is defined %}
                   {% set open_dur = now_ts - (as_timestamp(states[w].last_changed, now_ts) | float(now_ts)) %}
-                  {% set time_in_interval = open_dur - ((open_dur / interval_s) | int * interval_s) %}
-                  {% if time_in_interval < 200 %}
-                    {% set rl = state_attr(room.climate | default(''), 'friendly_name') | default(room.key | default('?'), true) %}
-                    {% set ns.items = ns.items + [{'key': room.key, 'label': rl, 'minutes': (open_dur / 60) | round(0) | int}] %}
+                  {% if open_dur >= threshold_s %}
+                    {% set past_threshold = open_dur - threshold_s %}
+                    {% set time_in_repeat = past_threshold - ((past_threshold / repeat_s) | int * repeat_s) %}
+                    {% if time_in_repeat < 200 %}
+                      {% set rl = state_attr(room.climate | default(''), 'friendly_name') | default(room.key | default('?'), true) %}
+                      {% set ns.items = ns.items + [{'key': room.key, 'label': rl, 'minutes': (open_dur / 60) | round(0) | int}] %}
+                    {% endif %}
                   {% endif %}
                 {% endif %}
               {% endif %}
             {% endfor %}
             {{ ns.items }}
       - if:
-          - "{{ (_window_presence_rooms | length) > 0 }}"
+          - "{{ (_window_fallback_rooms | length) > 0 }}"
         then:
           - repeat:
-              for_each: "{{ _window_presence_rooms }}"
+              for_each: "{{ _window_fallback_rooms }}"
               sequence:
                 - variables:
                     _wp_room: "{{ repeat.item }}"
@@ -3417,23 +3513,34 @@ actions:
                       - action: "{{ repeat.item | trim }}"
                         continue_on_error: true
                         data:
-                          title: "🪟 Fenster offen — {{ _wp_room.label }}"
-                          message: "Fenster seit {{ _wp_room.minutes }} min offen. Heizung auf Minimum."
+                          title: "🔥 {{ _wp_room.label }} — Heizung pausiert"
+                          message: "Fenster seit {{ _wp_room.minutes }} min offen! Heizung läuft auf Minimum.\n(Heizungs-Steuerung)"
                           data:
-                            tag: "vaillant_heizung_window_{{ _wp_room.key }}"
+                            tag: vaillant_lueftung
                             push:
                               sticky: true
+                            actions:
+                              - action: "VAILLANT_LUEFTUNG_SNOOZE_1H"
+                                title: "⏰ In 1h erinnern"
+                              - action: "VAILLANT_LUEFTUNG_MUTE_TODAY"
+                                title: "🔇 Heute deaktivieren"
+                                destructive: true
 
   # ════════════════════════════════════════════════════════════
   # ALWAYS-ON ALERT: Fires only on critical problems, auto-dismisses
+  # Skip on ha_start — Sensoren sind nach Restart kurz unavailable
   # ════════════════════════════════════════════════════════════
   - variables:
+      _alert_skip_startup: "{{ trigger.id | default('manual') == 'ha_start' }}"
       _alert_problems: >
         {%- set ns = namespace(items=[]) -%}
+        {%- if trigger.id | default('manual') == 'ha_start' -%}
+          {{ ns.items }}
+        {%- else -%}
         {%- if not (master_climate_available | bool(false)) -%}
           {%- set ns.items = ns.items + ['🔴 Master-Thermostat offline!'] -%}
         {%- endif -%}
-        {%- if _l_m_forced | default(false) | bool(false) -%}
+        {%- if _l_m_forced | default(false) | bool(false) and not (_l_m_window | default(false) | bool(false)) -%}
           {%- set ns.items = ns.items + ['🔴 NOT-AUS aktiv — Master auf Minimum (' ~ (inputs.min_trv_temp | float(12)) ~ '°C)'] -%}
         {%- endif -%}
         {%- if (master_write_budget_remaining | default(1) | int(1)) <= 0 -%}
@@ -3453,6 +3560,7 @@ actions:
           {%- endif -%}
         {%- endfor -%}
         {{ ns.items }}
+        {%- endif -%}
   - choose:
       - conditions:
           - "{{ (_alert_problems | length) > 0 }}"

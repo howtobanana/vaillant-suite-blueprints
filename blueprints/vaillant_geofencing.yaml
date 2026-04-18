@@ -55,8 +55,8 @@ blueprint:
           name: "🧭 Fahrtrichtungs-Sensor (optional)"
           description: |
             Optionaler Sensor für die Fahrtrichtung zur Home-Zone.
-            Aktiviert Richtungs-Hysterese: Radius wird verdoppelt wenn du dich
-            auf die Zone zubewegst – verhindert frühzeitiges Deaktivieren.
+            Wird für die Pre-Heat Heimweg-Erkennung genutzt:
+            Vorheizen startet nur wenn Richtung = "towards".
 
             In modernen HA-Versionen: sensor.{name}_nearest_direction_of_travel
                z.B. → sensor.wien_nearest_direction_of_travel
@@ -65,7 +65,7 @@ blueprint:
                z.B. → sensor.wien_fabian_direction_of_travel
 
             Erwartete Werte: towards, away_from, stationary, unknown.
-            Leer lassen → Hysterese deaktiviert (sicherer Fallback).
+            Leer lassen → Pre-Heat reagiert nicht auf Fahrtrichtung.
           default: ""
           selector:
             entity:
@@ -128,25 +128,30 @@ blueprint:
       description: |
         Optionales Vorheizen beim Heimweg. Steuert Pre-Heat Toggles in der Heizungs-Steuerung.
         **OFF:** Kein Vorheizen.
-        **ON:** Automatisch vorheizen wenn auf dem Heimweg.
-        **Dynamisch:** Push-Notification mit Ja/Nein-Buttons bei Heimweg-Erkennung.
+        **CONFIRM (empfohlen):** Push bei Heimweg mit "Vorheizen ✅"-Button — Pre-Heat startet NUR bei Tap.
+        **ON:** Automatisch vorheizen (kein Opt-in).
+        **DYNAMIC:** Automatisch vorheizen, aber mit Abbrechen-Button.
       collapsed: true
       input:
         pre_heat_mode:
           name: "🔥 Pre-Heat Modus"
           description: |
             **off:** Kein Vorheizen.
+            **confirm (empfohlen):** Push bei Heimweg — Pre-Heat startet NUR wenn du auf "Vorheizen ✅" tippst.
+              Kein automatisches Feuern. Ideal wenn du kurze Ausflüge machst und nicht jedes Mal vorgeheizt werden soll.
             **on:** Automatisch alle konfigurierten Räume vorheizen wenn Heimweg erkannt.
-            **dynamic:** Actionable Push-Notification — du entscheidest per Tap ob vorgeheizt wird.
+            **dynamic:** Automatisch vorheizen, Notification mit Abbrechen-Button zum Canceln.
           default: "off"
           selector:
             select:
               options:
                 - label: "Aus"
                   value: "off"
+                - label: "Bestätigen (empfohlen)"
+                  value: "confirm"
                 - label: "Automatisch"
                   value: "on"
-                - label: "Dynamisch (Nachfragen)"
+                - label: "Dynamisch (Auto + Abbrechen)"
                   value: "dynamic"
         pre_heat_helpers:
           name: "🏠 Pre-Heat Helper (Räume)"
@@ -172,6 +177,47 @@ blueprint:
               max: 50
               step: 0.5
               unit_of_measurement: "km"
+        pre_heat_reference_sensor:
+          name: "🌡️ Referenz-Temperatursensor (opt)"
+          description: |
+            Optionaler Temperatursensor zur "Sinnvoll-Prüfung" — typischerweise der
+            Wohnzimmer- oder Master-Sensor.
+
+            Wenn gesetzt: Pre-Heat-Push wird NUR gesendet wenn die Referenz-Temp
+            unter (Komfort-Temp − Hysterese) liegt. Ist es schon warm genug,
+            passiert gar nichts (kein Push, kein Auto-Start).
+
+            Leer lassen = keine Sinnvoll-Prüfung (Push wird immer gesendet).
+          default: ""
+          selector:
+            entity:
+              domain: sensor
+              device_class: temperature
+        pre_heat_comfort_temp:
+          name: "🎯 Komfort-Zieltemperatur (°C)"
+          description: |
+            Zieltemperatur der Wohnung (typisch: Komfort-Wert aus der Heizungs-Steuerung).
+            Wird nur verwendet wenn Referenz-Sensor gesetzt ist.
+          default: 21.0
+          selector:
+            number:
+              min: 15
+              max: 26
+              step: 0.5
+              unit_of_measurement: "°C"
+        pre_heat_hysteresis:
+          name: "↕️ Pre-Heat Hysterese (°C)"
+          description: |
+            Wieviel darf die Referenz-Temp UNTER der Komfort-Temp liegen, damit Pre-Heat
+            noch sinnvoll ist? Bsp: Komfort 21°C, Hysterese 1°C → Pre-Heat nur wenn
+            Referenz-Sensor < 20°C.
+          default: 1.0
+          selector:
+            number:
+              min: 0.0
+              max: 5.0
+              step: 0.5
+              unit_of_measurement: "°C"
     section_notifications:
       name: "🔔 Benachrichtigungen"
       description: |
@@ -237,6 +283,12 @@ trigger:
       action: "VAILLANT_PRE_HEAT_CANCEL"
     id: pre_heat_cancel
 
+  - platform: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: "VAILLANT_PRE_HEAT_CONFIRM"
+    id: pre_heat_confirm
+
 condition: []
 
 action:
@@ -251,6 +303,9 @@ action:
         pre_heat_mode: !input pre_heat_mode
         pre_heat_helpers: !input pre_heat_helpers
         pre_heat_radius: !input pre_heat_radius
+        pre_heat_reference_sensor: !input pre_heat_reference_sensor
+        pre_heat_comfort_temp: !input pre_heat_comfort_temp
+        pre_heat_hysteresis: !input pre_heat_hysteresis
         notifications_enabled: !input notifications_enabled
         notify_info: !input notify_info
         notify_entities: !input notify_entities
@@ -304,24 +359,23 @@ action:
           {{ 0 }}
         {% else %}
           {% set now_ts = as_timestamp(now()) | float(0) %}
-          {% set ns = namespace(earliest=now_ts) %}
+          {% set ns = namespace(latest=0) %}
           {% set p_list = inputs.person_entity if (inputs.person_entity is iterable and inputs.person_entity is not string) else [inputs.person_entity] %}
           {% for p in p_list %}
             {% set p_str = p | string %}
             {% if p_str != '' and states[p_str] is defined %}
               {% set p_state = states(p_str) | string | lower %}
               {% if p_state != 'home' %}
-                {# Use last_changed only for 'not_home' state (first transition after leaving).
-                   For named zones (e.g. 'work'), last_changed resets on each zone entry,
-                   so we take the earliest timestamp to approximate departure time. #}
+                {# Use the LATEST departure timestamp: "how long since ALL persons left?"
+                   is determined by when the last person left home. #}
                 {% set leave_ts = as_timestamp(states[p_str].last_changed, 0) | float(0) %}
-                {% if leave_ts > 0 and leave_ts < ns.earliest %}
-                  {% set ns.earliest = leave_ts %}
+                {% if leave_ts > ns.latest %}
+                  {% set ns.latest = leave_ts %}
                 {% endif %}
               {% endif %}
             {% endif %}
           {% endfor %}
-          {{ ((now_ts - ns.earliest) / 60) | float(0) if ns.earliest < now_ts else 0 }}
+          {{ ((now_ts - ns.latest) / 60) | float(0) if ns.latest > 0 else 0 }}
         {% endif %}
 
       dir_of_travel: >
@@ -359,13 +413,11 @@ action:
           {% if proximity_valid | bool(false) %}
             {% set dist = distance_km | float(0) %}
             {% set base_radius = inputs.preheat_radius | float(5) %}
-            {% set dir = dir_of_travel | string | lower %}
-            {% set effective_radius = (base_radius * 2.0) if dir == 'towards' else base_radius %}
-            {% set hysteresis_km = [effective_radius * 0.1, 0.5] | max %}
+            {% set hysteresis_km = [base_radius * 0.1, 0.5] | max %}
             {% if away_mode_entity_on | bool(false) %}
-              {% set far_away = dist >= (effective_radius - hysteresis_km) %}
+              {% set far_away = dist >= (base_radius - hysteresis_km) %}
             {% else %}
-              {% set far_away = dist >= (effective_radius + hysteresis_km) %}
+              {% set far_away = dist >= (base_radius + hysteresis_km) %}
             {% endif %}
           {% endif %}
           {{ far_away or short_absence_rule }}
@@ -427,6 +479,25 @@ action:
           {{ dir == 'towards' and dist <= ph_radius and dist > 0 }}
         {% endif %}
 
+      # True wenn Pre-Heat Sinn macht (Referenz-Temp unter Komfort-Hysterese-Schwelle).
+      # Wenn kein Referenz-Sensor konfiguriert ODER nicht erreichbar → immer true
+      # (backward-compatible: Verhalten wie vor dem Feature).
+      pre_heat_useful: >
+        {% set ref = inputs.pre_heat_reference_sensor | string %}
+        {% if ref in ['', 'sensor.none', 'none'] %}
+          {{ true }}
+        {% else %}
+          {% set st = states(ref) %}
+          {% if st in ['unknown', 'unavailable', 'none', ''] %}
+            {{ true }}
+          {% else %}
+            {% set current = st | float(99) %}
+            {% set comfort = inputs.pre_heat_comfort_temp | float(21.0) %}
+            {% set hyst = inputs.pre_heat_hysteresis | float(1.0) %}
+            {{ current < (comfort - hyst) }}
+          {% endif %}
+        {% endif %}
+
   # ── Pre-Heat Cancel: User tapped Cancel on notification ──────────────────
   - if:
       - "{{ trigger.id | default('') == 'pre_heat_cancel' }}"
@@ -451,10 +522,59 @@ action:
                   continue_on_error: true
       - stop: "Pre-Heat abgebrochen durch User"
 
+  # ── Pre-Heat Confirm: User tapped "Vorheizen ✅" on notification ──────────
+  # Only fires in mode 'confirm'. User opt-in; helpers only turn on here.
+  # Also: clears the pending Confirm notification on ALL devices and shows
+  # who triggered Pre-Heat in the confirmation message.
+  - if:
+      - "{{ trigger.id | default('') == 'pre_heat_confirm' }}"
+    then:
+      # 1. Helper einschalten → Pre-Heat startet
+      - repeat:
+          for_each: "{{ pre_heat_helpers_list }}"
+          sequence:
+            - action: input_boolean.turn_on
+              target:
+                entity_id: "{{ repeat.item }}"
+              continue_on_error: true
+      # 2. Actionable Notification auf ALLEN Geräten explizit löschen
+      # (das Ersetzungs-Notification unten erledigt das implizit über Tag,
+      # explizites clear ist belt-and-suspenders falls Tag-Replacement versagt).
+      - if: "{{ has_notify_targets }}"
+        then:
+          - repeat:
+              for_each: "{{ notify_services }}"
+              sequence:
+                - action: "{{ repeat.item | trim }}"
+                  data:
+                    message: "clear_notification"
+                    data:
+                      tag: vaillant_pre_heat
+                  continue_on_error: true
+      # 3. Bestätigungs-Push an alle Geräte mit Namen des Bestätigenden
+      - if: "{{ has_notify_targets }}"
+        then:
+          - repeat:
+              for_each: "{{ notify_services }}"
+              sequence:
+                - action: "{{ repeat.item | trim }}"
+                  data:
+                    title: "🔥 Vorheizen gestartet"
+                    message: >
+                      {% set dev_id = trigger.event.data.device_id | default('') %}
+                      {% set who = device_attr(dev_id, 'name_by_user') or device_attr(dev_id, 'name') or 'Jemand' %}
+                      {{ pre_heat_helpers_list | length }} Räume werden vorgeheizt (bestätigt durch {{ who }}).
+                    data:
+                      tag: vaillant_pre_heat
+                      push:
+                        sticky: true
+                  continue_on_error: true
+      - stop: "Pre-Heat durch User bestätigt"
+
   # ── Away aktivieren ────────────────────────────────────────────────────────
   - if: "{{ (should_be_away | bool(false)) and not (away_mode_entity_on | bool(false)) }}"
     then:
-      - service: input_boolean.turn_on
+      - action: input_boolean.turn_on
         target:
           entity_id: !input away_mode_boolean
         continue_on_error: true
@@ -477,7 +597,7 @@ action:
   # ── Away deaktivieren ──────────────────────────────────────────────────────
   - if: "{{ not (should_be_away | bool(false)) and (away_mode_entity_on | bool(false)) }}"
     then:
-      - service: input_boolean.turn_off
+      - action: input_boolean.turn_off
         target:
           entity_id: !input away_mode_boolean
         continue_on_error: true
@@ -498,11 +618,37 @@ action:
                   continue_on_error: true
 
   # ── Pre-Heat: Vorheizen bei Heimweg ──────────────────────────────────────
-  # Triggers only when: heading home detected, pre-heat configured, helpers not already on
+  # Triggers only when: heading home detected, pre-heat configured, helpers not already on,
+  # AND pre-heat is actually useful (reference temp below comfort − hysteresis).
   - if:
-      - "{{ (heading_home | bool(false)) and (pre_heat_configured | bool(false)) and not (pre_heat_any_already_on | bool(false)) }}"
+      - "{{ (heading_home | bool(false)) and (pre_heat_configured | bool(false)) and not (pre_heat_any_already_on | bool(false)) and (pre_heat_useful | bool(false)) }}"
     then:
       - choose:
+          # ── Modus CONFIRM (empfohlen): Nur auf User-Bestätigung vorheizen ──
+          # Keine automatische Aktivierung. Nur Push mit "Vorheizen ✅"-Button.
+          # Helfer werden NUR in der pre_heat_confirm-Branch oben umgelegt.
+          - conditions:
+              - "{{ pre_heat_mode == 'confirm' }}"
+            sequence:
+              - if: "{{ has_notify_targets }}"
+                then:
+                  - repeat:
+                      for_each: "{{ notify_services }}"
+                      sequence:
+                        - action: "{{ repeat.item | trim }}"
+                          data:
+                            title: "🏠 Heimweg erkannt"
+                            message: "{{ distance_km | float(0) | round(1) }} km entfernt. Soll vorgeheizt werden?"
+                            data:
+                              tag: vaillant_pre_heat
+                              push:
+                                sticky: true
+                              actions:
+                                - action: "VAILLANT_PRE_HEAT_CONFIRM"
+                                  title: "Vorheizen ✅"
+                          continue_on_error: true
+              # Nichts weiter tun — Pre-Heat startet nur bei Button-Tap (pre_heat_confirm Trigger).
+
           # ── Modus ON: Automatisch vorheizen ──
           - conditions:
               - "{{ pre_heat_mode == 'on' }}"

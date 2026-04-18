@@ -22,7 +22,7 @@ blueprint:
     **Info:**
     Dieses Modul sendet nur Nachrichten. Das "Core Heating" Modul erkennt die offenen Fenster separat und stoppt die Heizung automatisch.
 
-    **Version:** 2.0 | **Autor:** BananaPower
+    **Version:** 1.0 | **Autor:** BananaPower
 
   domain: automation
   source_url: https://raw.githubusercontent.com/howtobanana/vaillant-suite-blueprints/main/blueprints/vaillant_l%C3%BCftungs-steuerung.yaml
@@ -47,6 +47,15 @@ blueprint:
           name: "🏠 Away-Mode Helper"
           description: |
             Global Away-Helper for safety check (same as Core Heating).
+          selector:
+            entity:
+              domain: input_boolean
+        guest_mode_boolean:
+          name: "🏡 Guest-Mode Helper (opt)"
+          description: |
+            Gleicher Gast-Schalter wie in der Heizungs-Steuerung.
+            Wenn aktiv, werden Away-basierte Unterdrückungen ignoriert.
+          default: ""
           selector:
             entity:
               domain: input_boolean
@@ -121,7 +130,8 @@ blueprint:
           name: "⚠️ Eskalations-Delay (min)"
           description: |
             Wie lange nach dem "Bitte schließen" Reminder bis kritische Alerts starten.
-          default: 5
+            Gesamtzeit bis kritisch = Lüftungsdauer + dieser Wert.
+          default: 20
           selector:
             number:
               min: 1
@@ -441,6 +451,7 @@ action:
       inputs:
         weather_entity: !input weather_entity
         away_mode_boolean: !input away_mode_boolean
+        guest_mode_boolean: !input guest_mode_boolean
         enable_daily_reminder: !input enable_daily_reminder
         reminder_time: !input reminder_time
         co2_sensor: !input co2_sensor
@@ -489,7 +500,12 @@ action:
         - room5_window_change
 
       away_mode_active: >
-        {% if inputs.away_mode_boolean != '' %}
+        {# Guest Mode überschreibt Away — Gäste bekommen Lüftungs-Reminder #}
+        {% set guest_eid = inputs.guest_mode_boolean | default('') | string %}
+        {% set guest_on = guest_eid not in ['', 'sensor.none', 'none'] and is_state(guest_eid, 'on') %}
+        {% if guest_on %}
+          {{ false }}
+        {% elif inputs.away_mode_boolean != '' %}
           {{ is_state(inputs.away_mode_boolean, 'on') }}
         {% else %}
           {{ false }}
@@ -665,6 +681,7 @@ action:
         {{
           (cooling_enabled | bool(false))
           and (cooling_sensors_valid | bool(false))
+          and ((cooling_indoor_temp | float(0)) >= (inputs.cooling_indoor_threshold | float(25)))
           and ((cooling_outdoor_temp | float(0)) > (cooling_indoor_temp | float(0)))
         }}
 
@@ -706,10 +723,10 @@ action:
               sequence:
                 - action: "{{ repeat.item | trim }}"
                   data:
-                    title: "🪟 Lüften empfohlen"
-                    message: "Stoßlüften — {{ reminder_reason if (reminder_reason | trim) != '' else 'Trigger' }}. {{ rain_hint }} Fenster: {{ open_windows_text }}."
+                    title: "🌬️ Lüften!"
+                    message: "{{ reminder_reason if (reminder_reason | trim) != '' else 'Stoßlüften' }}. {{ rain_hint }} Fenster: {{ open_windows_text }}.\n(Lüftungs-Steuerung)"
                     data:
-                      tag: vaillant_lueftung_reminder
+                      tag: vaillant_lueftung
                       push:
                         sticky: true
                   continue_on_error: true
@@ -752,7 +769,7 @@ action:
                   {% set outdoor_t = states(outdoor_s) | float(0) if (outdoor_s not in ['', 'none', 'None'] and has_value(outdoor_s)) else (state_attr(inputs.weather_entity, 'temperature') | float(0)) %}
                   {% set sched_s = inputs.cooling_schedule | default('') | string | trim %}
                   {% set sched_ok = is_state(sched_s, 'on') if sched_s not in ['', 'none', 'None'] else true %}
-                  {{ indoor_t >= (inputs.cooling_indoor_threshold | float(25)) and outdoor_t <= (indoor_t - (inputs.cooling_hysteresis | float(2.0))) and sched_ok and not (states(inputs.weather_entity) in rain_states) and not (is_state(inputs.away_mode_boolean, 'on')) }}
+                  {{ indoor_t >= (inputs.cooling_indoor_threshold | float(25)) and outdoor_t <= (indoor_t - (inputs.cooling_hysteresis | float(2.0))) and sched_ok and not (states(inputs.weather_entity) in rain_states) and not (away_mode_active | bool(false)) }}
                 {% else %}
                   {{ false }}
                 {% endif %}
@@ -769,10 +786,10 @@ action:
                       sequence:
                         - action: "{{ repeat.item | trim }}"
                           data:
-                            title: "🪟 Fenster schließen"
-                            message: "Lüftungszeit erreicht ({{ inputs.airing_duration | int }} min). Noch offen: {{ open_windows_now_text }}."
+                            title: "🌬️ Fenster zu!"
+                            message: "{{ inputs.airing_duration | int }} min Lüftungszeit um. Noch offen: {{ open_windows_now_text }}.\n(Lüftungs-Steuerung)"
                             data:
-                              tag: vaillant_lueftung_close
+                              tag: vaillant_lueftung
                               push:
                                 sticky: true
                           continue_on_error: true
@@ -840,10 +857,10 @@ action:
                             sequence:
                               - action: "{{ repeat.item | trim }}"
                                 data:
-                                  title: "🚨 Fenster sofort schließen!"
-                                  message: "{{ escalation_open_text }} noch offen!"
+                                  title: "🚨 Fenster zu!"
+                                  message: "{{ escalation_open_text }} noch offen!\n(Lüftungs-Steuerung)"
                                   data:
-                                    tag: vaillant_lueftung_critical
+                                    tag: vaillant_lueftung
                                     push:
                                       interruption-level: critical
                                       sound:
@@ -888,7 +905,7 @@ action:
                                           title: "⏰ Alerts pausiert"
                                           message: "Fenster-Erinnerung in 1 Stunde."
                                           data:
-                                            tag: vaillant_lueftung_critical
+                                            tag: vaillant_lueftung
                                             push:
                                               sticky: true
                                         continue_on_error: true
@@ -915,7 +932,7 @@ action:
                                           title: "🔇 Alerts deaktiviert"
                                           message: "Keine Fenster-Alerts bis Mitternacht."
                                           data:
-                                            tag: vaillant_lueftung_critical
+                                            tag: vaillant_lueftung
                                             push:
                                               sticky: true
                                         continue_on_error: true
@@ -969,10 +986,10 @@ action:
                       sequence:
                         - action: "{{ repeat.item | trim }}"
                           data:
-                            title: "⚠️ Fenster offen — Achtung!"
-                            message: "{{ safety_reason }}. Offene Fenster: {{ open_windows_now_text }}."
+                            title: "⚠️ Fenster offen!"
+                            message: "{{ safety_reason }}. Offene Fenster: {{ open_windows_now_text }}.\n(Lüftungs-Steuerung)"
                             data:
-                              tag: vaillant_lueftung_safety
+                              tag: vaillant_lueftung
                               push:
                                 interruption-level: critical
                                 sound:
@@ -1005,10 +1022,10 @@ action:
                       sequence:
                         - action: "{{ repeat.item | trim }}"
                           data:
-                            title: "❄️ Kühlen durch Lüften"
-                            message: "Innen {{ cooling_indoor_temp | float(0) | round(1) }}°C, Außen {{ cooling_outdoor_temp | float(0) | round(1) }}°C — Fenster öffnen zum Kühlen!"
+                            title: "❄️ Fenster auf — kühlen!"
+                            message: "Innen {{ cooling_indoor_temp | float(0) | round(1) }}°C, außen {{ cooling_outdoor_temp | float(0) | round(1) }}°C.\n(Lüftungs-Steuerung)"
                             data:
-                              tag: vaillant_lueftung_cooling
+                              tag: vaillant_lueftung
                               push:
                                 sticky: true
                           continue_on_error: true
@@ -1024,10 +1041,10 @@ action:
                       sequence:
                         - action: "{{ repeat.item | trim }}"
                           data:
-                            title: "🌡️ Fenster schließen — Kühlung beenden"
-                            message: "Außen ({{ cooling_outdoor_temp | float(0) | round(1) }}°C) jetzt wärmer als Innen ({{ cooling_indoor_temp | float(0) | round(1) }}°C). {{ open_windows_text }}."
+                            title: "🌡️ Fenster zu — zu warm draußen"
+                            message: "Außen {{ cooling_outdoor_temp | float(0) | round(1) }}°C, innen {{ cooling_indoor_temp | float(0) | round(1) }}°C. {{ open_windows_text }}.\n(Lüftungs-Steuerung)"
                             data:
-                              tag: vaillant_lueftung_cooling
+                              tag: vaillant_lueftung
                               push:
                                 sticky: true
                           continue_on_error: true
@@ -1047,10 +1064,10 @@ action:
               sequence:
                 - action: "{{ repeat.item | trim }}"
                   data:
-                    title: "🌡️ Fenster schließen — Kühlung beenden"
-                    message: "Außen ({{ cooling_outdoor_temp | float(0) | round(1) }}°C) wärmer als Innen ({{ cooling_indoor_temp | float(0) | round(1) }}°C). Fenster schließen!"
+                    title: "🌡️ Fenster zu — zu warm draußen"
+                    message: "Außen {{ cooling_outdoor_temp | float(0) | round(1) }}°C, innen {{ cooling_indoor_temp | float(0) | round(1) }}°C.\n(Lüftungs-Steuerung)"
                     data:
-                      tag: vaillant_lueftung_cooling
+                      tag: vaillant_lueftung
                       push:
                         sticky: true
                         interruption-level: time-sensitive
