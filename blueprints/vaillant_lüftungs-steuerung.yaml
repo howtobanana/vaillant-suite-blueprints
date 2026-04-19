@@ -142,7 +142,7 @@ blueprint:
     section_master:
       name: "🏠 Master-Raum"
       description: |
-        Fensterkontakt für den Master-Bereich.
+        Fensterkontakt, Raum-Label und optionaler Präsenz-Sensor für den Master-Bereich.
       collapsed: false
       input:
         master_window:
@@ -154,11 +154,32 @@ blueprint:
             entity:
               domain: binary_sensor
               device_class: window
+        master_label:
+          name: "🏷️ Master Raum-Name"
+          description: |
+            Wird in Notifications angezeigt (z.B. "Wohnzimmer").
+            Leer lassen → friendly_name des Fenster-Sensors wird verwendet.
+          default: ""
+          selector:
+            text:
+        master_presence:
+          name: "🧍 Master Präsenz-Sensor (opt)"
+          description: |
+            Binary sensor oder input_boolean. Wenn 'on' (anwesend) →
+            KEINE Fenster-Notifications für diesen Raum.
+            Beim Verlassen ('on' → 'off') wird re-geprüft und ggf. Close-Reminder gesendet.
+            Leer lassen = Notifications immer senden.
+          default: ""
+          selector:
+            entity:
+              domain:
+                - binary_sensor
+                - input_boolean
 
     section_room2:
       name: "🛏️ Raum 2"
       description: |
-        Fensterkontakt für Raum 2.
+        Fensterkontakt, Raum-Label und optionaler Präsenz-Sensor für Raum 2.
       collapsed: true
       input:
         room2_window:
@@ -170,11 +191,29 @@ blueprint:
             entity:
               domain: binary_sensor
               device_class: window
+        room2_label:
+          name: "🏷️ Raum 2 Name"
+          description: |
+            Wird in Notifications angezeigt. Leer → friendly_name des Fensters.
+          default: ""
+          selector:
+            text:
+        room2_presence:
+          name: "🧍 Raum 2 Präsenz-Sensor (opt)"
+          description: |
+            Wenn 'on' → KEINE Fenster-Notifications für diesen Raum.
+            Re-Check bei Verlassen (Übergang 'on' → 'off').
+          default: ""
+          selector:
+            entity:
+              domain:
+                - binary_sensor
+                - input_boolean
 
     section_room3:
       name: "💻 Raum 3"
       description: |
-        Fensterkontakt für Raum 3.
+        Fensterkontakt, Raum-Label und optionaler Präsenz-Sensor für Raum 3.
       collapsed: true
       input:
         room3_window:
@@ -186,11 +225,29 @@ blueprint:
             entity:
               domain: binary_sensor
               device_class: window
+        room3_label:
+          name: "🏷️ Raum 3 Name"
+          description: |
+            Wird in Notifications angezeigt. Leer → friendly_name des Fensters.
+          default: ""
+          selector:
+            text:
+        room3_presence:
+          name: "🧍 Raum 3 Präsenz-Sensor (opt)"
+          description: |
+            Wenn 'on' → KEINE Fenster-Notifications für diesen Raum.
+            Re-Check bei Verlassen (Übergang 'on' → 'off').
+          default: ""
+          selector:
+            entity:
+              domain:
+                - binary_sensor
+                - input_boolean
 
     section_room4:
       name: "🛁 Raum 4"
       description: |
-        Fensterkontakt für Raum 4.
+        Fensterkontakt, Raum-Label und optionaler Präsenz-Sensor für Raum 4.
       collapsed: true
       input:
         room4_window:
@@ -202,11 +259,29 @@ blueprint:
             entity:
               domain: binary_sensor
               device_class: window
+        room4_label:
+          name: "🏷️ Raum 4 Name"
+          description: |
+            Wird in Notifications angezeigt. Leer → friendly_name des Fensters.
+          default: ""
+          selector:
+            text:
+        room4_presence:
+          name: "🧍 Raum 4 Präsenz-Sensor (opt)"
+          description: |
+            Wenn 'on' → KEINE Fenster-Notifications für diesen Raum.
+            Re-Check bei Verlassen (Übergang 'on' → 'off').
+          default: ""
+          selector:
+            entity:
+              domain:
+                - binary_sensor
+                - input_boolean
 
     section_room5:
       name: "🍳 Raum 5"
       description: |
-        Fensterkontakt für Raum 5.
+        Fensterkontakt, Raum-Label und optionaler Präsenz-Sensor für Raum 5.
       collapsed: true
       input:
         room5_window:
@@ -218,6 +293,24 @@ blueprint:
             entity:
               domain: binary_sensor
               device_class: window
+        room5_label:
+          name: "🏷️ Raum 5 Name"
+          description: |
+            Wird in Notifications angezeigt. Leer → friendly_name des Fensters.
+          default: ""
+          selector:
+            text:
+        room5_presence:
+          name: "🧍 Raum 5 Präsenz-Sensor (opt)"
+          description: |
+            Wenn 'on' → KEINE Fenster-Notifications für diesen Raum.
+            Re-Check bei Verlassen (Übergang 'on' → 'off').
+          default: ""
+          selector:
+            entity:
+              domain:
+                - binary_sensor
+                - input_boolean
 
     section_cooling:
       name: "❄️ Sommer-Kühlung"
@@ -399,6 +492,37 @@ trigger:
       entity_id: !input room5_window
     id: room5_window_change
 
+  # Presence changes (per room) — trigger re-check when user leaves a room with open window
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input master_presence
+    id: master_presence_change
+
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input room2_presence
+    id: room2_presence_change
+
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input room3_presence
+    id: room3_presence_change
+
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input room4_presence
+    id: room4_presence_change
+
+  - trigger: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input room5_presence
+    id: room5_presence_change
+
   # Safety: Rain detected
   - trigger: state
     entity_id: !input weather_entity
@@ -465,10 +589,20 @@ action:
         quiet_schedule: !input quiet_schedule
         mute_alerts_boolean: !input mute_alerts_boolean
         master_window: !input master_window
+        master_label: !input master_label
+        master_presence: !input master_presence
         room2_window: !input room2_window
+        room2_label: !input room2_label
+        room2_presence: !input room2_presence
         room3_window: !input room3_window
+        room3_label: !input room3_label
+        room3_presence: !input room3_presence
         room4_window: !input room4_window
+        room4_label: !input room4_label
+        room4_presence: !input room4_presence
         room5_window: !input room5_window
+        room5_label: !input room5_label
+        room5_presence: !input room5_presence
         enable_cooling: !input enable_cooling
         cooling_indoor_temp_sensor: !input cooling_indoor_temp_sensor
         cooling_outdoor_temp_source: !input cooling_outdoor_temp_source
@@ -484,6 +618,30 @@ action:
           {% endif %}
         {% endfor %}
         {{ ns.items }}
+
+      # Per-Raum-Runtime-Config (nur Räume mit konfiguriertem Fenster)
+      rooms_runtime: >
+        {% set rooms = [
+          {'key':'master', 'label': (inputs.master_label | default('') | string), 'window': (inputs.master_window | default('') | string), 'presence': (inputs.master_presence | default('') | string)},
+          {'key':'room2',  'label': (inputs.room2_label  | default('') | string), 'window': (inputs.room2_window  | default('') | string), 'presence': (inputs.room2_presence  | default('') | string)},
+          {'key':'room3',  'label': (inputs.room3_label  | default('') | string), 'window': (inputs.room3_window  | default('') | string), 'presence': (inputs.room3_presence  | default('') | string)},
+          {'key':'room4',  'label': (inputs.room4_label  | default('') | string), 'window': (inputs.room4_window  | default('') | string), 'presence': (inputs.room4_presence  | default('') | string)},
+          {'key':'room5',  'label': (inputs.room5_label  | default('') | string), 'window': (inputs.room5_window  | default('') | string), 'presence': (inputs.room5_presence  | default('') | string)}
+        ] %}
+        {% set ns = namespace(items=[]) %}
+        {% for r in rooms %}
+          {% if (r.window | trim) != '' %}
+            {% set ns.items = ns.items + [r] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
+
+      presence_trigger_ids:
+        - master_presence_change
+        - room2_presence_change
+        - room3_presence_change
+        - room4_presence_change
+        - room5_presence_change
 
       rain_states:
         - rainy
@@ -586,6 +744,28 @@ action:
           {% endif %}
         {% endfor %}
         {{ ns.open | bool(false) }}
+
+      # Räume mit offenem Fenster UND ohne aktive Präsenz — diese werden benachrichtigt.
+      # Label-Fallback: master_label (wenn gesetzt) → friendly_name des Fensters → entity_id.
+      rooms_to_notify_labels: >
+        {% set ns = namespace(items=[]) %}
+        {% for r in rooms_runtime %}
+          {% set w = r.window %}
+          {% if states[w] is defined and is_state(w, 'on') %}
+            {% set p = r.presence %}
+            {% set presence_active = (p not in ['', 'none', 'None']) and (states[p] is defined) and is_state(p, 'on') %}
+            {% if not presence_active %}
+              {% set lbl_raw = r.label | trim %}
+              {% set fn = state_attr(w, 'friendly_name') %}
+              {% set lbl = lbl_raw if lbl_raw != '' else (fn if fn is not none else w) %}
+              {% set ns.items = ns.items + [lbl] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
+
+      any_room_to_notify: "{{ (rooms_to_notify_labels | length) > 0 }}"
+      rooms_to_notify_text: "{{ rooms_to_notify_labels | join(', ') if (rooms_to_notify_labels | length) > 0 else 'Fenster' }}"
 
       window_opened_trigger: >
         {% if trigger.id in window_trigger_ids and trigger.event is defined and trigger.event.data is defined and trigger.event.data.new_state is defined and trigger.event.data.new_state is not none and trigger.event.data.new_state.state is defined %}
@@ -702,6 +882,100 @@ action:
           - stop: "Midnight reset done"
 
   # ════════════════════════════════════════════════════════════
+  # FLOW 0: PRESENCE-OFF RE-CHECK
+  # User verlässt Raum während Fenster offen → Re-Check ob Close-Reminder
+  # oder Eskalation fällig ist (basierend auf Fenster-Offen-Dauer).
+  # ════════════════════════════════════════════════════════════
+  - choose:
+      - conditions:
+          - "{{ (trigger.id | default('')) in presence_trigger_ids }}"
+          - "{{ trigger.event is defined and trigger.event.data is defined }}"
+          - "{{ trigger.event.data.new_state is not none and trigger.event.data.new_state.state == 'off' }}"
+          - "{{ trigger.event.data.old_state is not none and trigger.event.data.old_state.state != 'off' }}"
+          - "{{ not (mute_alerts_active | bool(false)) }}"
+          - "{{ not (quiet_active | bool(false)) }}"
+        sequence:
+          - variables:
+              # Find rooms that: window open ≥ airing_duration AND no active presence.
+              # Classify each: critical if open ≥ airing + escalation_delay.
+              presence_recheck_rooms: >
+                {% set ns = namespace(items=[]) %}
+                {% set now_ts = as_timestamp(now()) | float(0) %}
+                {% set thresh_s = (inputs.airing_duration | float(10)) * 60 %}
+                {% set esc_s = thresh_s + (inputs.escalation_delay | float(20)) * 60 %}
+                {% for r in rooms_runtime %}
+                  {% set w = r.window %}
+                  {% if states[w] is defined and is_state(w, 'on') %}
+                    {% set p = r.presence %}
+                    {% set presence_active = (p not in ['', 'none', 'None']) and (states[p] is defined) and is_state(p, 'on') %}
+                    {% if not presence_active %}
+                      {% set open_since = as_timestamp(states[w].last_changed, now_ts) | float(now_ts) %}
+                      {% set open_dur = now_ts - open_since %}
+                      {% if open_dur >= thresh_s %}
+                        {% set lbl_raw = r.label | trim %}
+                        {% set fn = state_attr(w, 'friendly_name') %}
+                        {% set lbl = lbl_raw if lbl_raw != '' else (fn if fn is not none else w) %}
+                        {% set is_critical = open_dur >= esc_s %}
+                        {% set ns.items = ns.items + [{'label': lbl, 'critical': is_critical}] %}
+                      {% endif %}
+                    {% endif %}
+                  {% endif %}
+                {% endfor %}
+                {{ ns.items }}
+              presence_recheck_normal_labels: "{{ presence_recheck_rooms | rejectattr('critical') | map(attribute='label') | list }}"
+              presence_recheck_critical_labels: "{{ presence_recheck_rooms | selectattr('critical') | map(attribute='label') | list }}"
+
+          # Critical re-check (any room past escalation threshold)
+          - if:
+              - "{{ (presence_recheck_critical_labels | length) > 0 }}"
+              - "{{ (critical_targets_list | trim) != '' }}"
+            then:
+              - repeat:
+                  for_each: "{{ (critical_targets_list | trim).split(',') if (critical_targets_list | trim) != '' else [] }}"
+                  sequence:
+                    - action: "{{ repeat.item | trim }}"
+                      data:
+                        title: "🚨 Fenster zu!"
+                        message: "{{ presence_recheck_critical_labels | join(', ') }} noch offen!\n(Lüftungs-Steuerung)"
+                        data:
+                          tag: vaillant_lueftung
+                          push:
+                            interruption-level: critical
+                            sound:
+                              name: alarm.caf
+                              critical: 1
+                              volume: 1.0
+                          ttl: 0
+                          priority: high
+                          actions:
+                            - action: "VAILLANT_LUEFTUNG_SNOOZE_1H"
+                              title: "⏰ In 1h erinnern"
+                            - action: "VAILLANT_LUEFTUNG_MUTE_TODAY"
+                              title: "🔇 Heute deaktivieren"
+                              destructive: true
+                      continue_on_error: true
+
+          # Normal close-reminder re-check (rooms past airing_duration but not yet escalation)
+          - if:
+              - "{{ (presence_recheck_normal_labels | length) > 0 }}"
+              - "{{ (presence_recheck_critical_labels | length) == 0 }}"
+              - "{{ (notify_targets_list | trim) != '' }}"
+            then:
+              - repeat:
+                  for_each: "{{ (notify_targets_list | trim).split(',') if (notify_targets_list | trim) != '' else [] }}"
+                  sequence:
+                    - action: "{{ repeat.item | trim }}"
+                      data:
+                        title: "🌬️ Fenster zu!"
+                        message: "{{ inputs.airing_duration | int }} min Lüftungszeit um. Noch offen: {{ presence_recheck_normal_labels | join(', ') }}.\n(Lüftungs-Steuerung)"
+                        data:
+                          tag: vaillant_lueftung
+                          push:
+                            sticky: true
+                      continue_on_error: true
+          - stop: "Presence re-check done"
+
+  # ════════════════════════════════════════════════════════════
   # FLOW 1: NEED FRESH AIR
   # ════════════════════════════════════════════════════════════
   - choose:
@@ -741,6 +1015,23 @@ action:
               minutes: "{{ inputs.airing_duration }}"
 
           - variables:
+              # Re-compute presence-aware room list AFTER the delay
+              rooms_to_notify_after_delay: >
+                {% set ns = namespace(items=[]) %}
+                {% for r in rooms_runtime %}
+                  {% set w = r.window %}
+                  {% if states[w] is defined and is_state(w, 'on') %}
+                    {% set p = r.presence %}
+                    {% set presence_active = (p not in ['', 'none', 'None']) and (states[p] is defined) and is_state(p, 'on') %}
+                    {% if not presence_active %}
+                      {% set lbl_raw = r.label | trim %}
+                      {% set fn = state_attr(w, 'friendly_name') %}
+                      {% set lbl = lbl_raw if lbl_raw != '' else (fn if fn is not none else w) %}
+                      {% set ns.items = ns.items + [lbl] %}
+                    {% endif %}
+                  {% endif %}
+                {% endfor %}
+                {{ ns.items }}
               any_window_open_now: >
                 {% set ns = namespace(open=false) %}
                 {% for w in window_entities %}
@@ -749,15 +1040,8 @@ action:
                   {% endif %}
                 {% endfor %}
                 {{ ns.open | bool(false) }}
-              open_windows_now_text: >
-                {% set ns = namespace(items=[]) %}
-                {% for w in window_entities %}
-                  {% if w != '' and states[w] is defined and is_state(w, 'on') %}
-                    {% set label = state_attr(w, 'friendly_name') if state_attr(w, 'friendly_name') is not none else w %}
-                    {% set ns.items = ns.items + [label] %}
-                  {% endif %}
-                {% endfor %}
-                {{ ns.items | join(', ') if ns.items | length > 0 else 'Fenster' }}
+              any_room_to_notify_now: "{{ (rooms_to_notify_after_delay | length) > 0 }}"
+              open_rooms_now_text: "{{ rooms_to_notify_after_delay | join(', ') if (rooms_to_notify_after_delay | length) > 0 else 'Fenster' }}"
               # Recompute cooling_beneficial after airing_duration delay
               cooling_beneficial_now: >
                 {% set indoor_s = inputs.cooling_indoor_temp_sensor | default('') | string | trim %}
@@ -774,10 +1058,10 @@ action:
                   {{ false }}
                 {% endif %}
 
-          # Close reminder (suppressed when cooling is beneficial)
+          # Close reminder (suppressed when cooling is beneficial OR user present in all open rooms)
           - choose:
               - conditions:
-                  - "{{ any_window_open_now | bool(false) }}"
+                  - "{{ any_room_to_notify_now | bool(false) }}"
                   - "{{ not (cooling_beneficial_now | bool(false)) }}"
                   - "{{ (notify_targets_list | trim) != '' }}"
                 sequence:
@@ -787,7 +1071,7 @@ action:
                         - action: "{{ repeat.item | trim }}"
                           data:
                             title: "🌬️ Fenster zu!"
-                            message: "{{ inputs.airing_duration | int }} min Lüftungszeit um. Noch offen: {{ open_windows_now_text }}.\n(Lüftungs-Steuerung)"
+                            message: "{{ inputs.airing_duration | int }} min Lüftungszeit um. Noch offen: {{ open_rooms_now_text }}.\n(Lüftungs-Steuerung)"
                             data:
                               tag: vaillant_lueftung
                               push:
@@ -813,10 +1097,16 @@ action:
                       while:
                         - condition: template
                           value_template: >
-                            {% set ns = namespace(open=false) %}
-                            {% for w in window_entities %}
-                              {% if w != '' and states[w] is defined and is_state(w, 'on') %}
-                                {% set ns.open = true %}
+                            {# Presence-aware: only continue loop if at least one open window is in a room without active presence #}
+                            {% set ns = namespace(eligible=false) %}
+                            {% for r in rooms_runtime %}
+                              {% set w = r.window %}
+                              {% if states[w] is defined and is_state(w, 'on') %}
+                                {% set p = r.presence %}
+                                {% set presence_active = (p not in ['', 'none', 'None']) and (states[p] is defined) and is_state(p, 'on') %}
+                                {% if not presence_active %}
+                                  {% set ns.eligible = true %}
+                                {% endif %}
                               {% endif %}
                             {% endfor %}
                             {% set muted = false %}
@@ -838,15 +1128,22 @@ action:
                               {% set sched_ok = is_state(sched_s, 'on') if sched_s not in ['', 'none', 'None'] else true %}
                               {% set cool_ok = indoor_t >= (inputs.cooling_indoor_threshold | float(25)) and outdoor_t <= (indoor_t - (inputs.cooling_hysteresis | float(2.0))) and sched_ok %}
                             {% endif %}
-                            {{ ns.open and not muted and not cool_ok and repeat.index <= 60 }}
+                            {{ ns.eligible and not muted and not cool_ok and repeat.index <= 60 }}
                       sequence:
                         - variables:
                             escalation_open_text: >
                               {% set ns = namespace(items=[]) %}
-                              {% for w in window_entities %}
-                                {% if w != '' and states[w] is defined and is_state(w, 'on') %}
-                                  {% set label = state_attr(w, 'friendly_name') if state_attr(w, 'friendly_name') is not none else w %}
-                                  {% set ns.items = ns.items + [label] %}
+                              {% for r in rooms_runtime %}
+                                {% set w = r.window %}
+                                {% if states[w] is defined and is_state(w, 'on') %}
+                                  {% set p = r.presence %}
+                                  {% set presence_active = (p not in ['', 'none', 'None']) and (states[p] is defined) and is_state(p, 'on') %}
+                                  {% if not presence_active %}
+                                    {% set lbl_raw = r.label | trim %}
+                                    {% set fn = state_attr(w, 'friendly_name') %}
+                                    {% set lbl = lbl_raw if lbl_raw != '' else (fn if fn is not none else w) %}
+                                    {% set ns.items = ns.items + [lbl] %}
+                                  {% endif %}
                                 {% endif %}
                               {% endfor %}
                               {{ ns.items | join(', ') if ns.items | length > 0 else 'Fenster' }}
@@ -942,6 +1239,7 @@ action:
 
       # ════════════════════════════════════════════════════════
       # FLOW 3: SAFETY (RAIN / AWAY MODE)
+      # Präsenz-aware: Räume mit aktiver Präsenz werden aus Liste gefiltert.
       # ════════════════════════════════════════════════════════
       - conditions:
           - "{{ (trigger.id in ['safety_rain', 'safety_away_mode']) | bool(false) }}"
@@ -949,24 +1247,26 @@ action:
           - variables:
               safety_due_to_rain: "{{ (trigger.id == 'safety_rain') | bool(false) }}"
               safety_due_to_away_mode: "{{ ((trigger.id == 'safety_away_mode') and (away_mode_active | bool(false))) | bool(false) }}"
-              any_window_open_now: >
-                {% set ns = namespace(open=false) %}
-                {% for w in window_entities %}
-                  {% if w != '' and states[w] is defined and is_state(w, 'on') %}
-                    {% set ns.open = true %}
-                  {% endif %}
-                {% endfor %}
-                {{ ns.open | bool(false) }}
-              open_windows_now_text: >
+              # Bei Away-Mode: Präsenz-Filter ignorieren (niemand daheim → alle Räume melden)
+              safety_ignore_presence: "{{ safety_due_to_away_mode | bool(false) }}"
+              safety_rooms_to_notify: >
                 {% set ns = namespace(items=[]) %}
-                {% for w in window_entities %}
-                  {% if w != '' and states[w] is defined and is_state(w, 'on') %}
-                    {% set label = state_attr(w, 'friendly_name') if state_attr(w, 'friendly_name') is not none else w %}
-                    {% set ns.items = ns.items + [label] %}
+                {% for r in rooms_runtime %}
+                  {% set w = r.window %}
+                  {% if states[w] is defined and is_state(w, 'on') %}
+                    {% set p = r.presence %}
+                    {% set presence_active = (p not in ['', 'none', 'None']) and (states[p] is defined) and is_state(p, 'on') %}
+                    {% if safety_ignore_presence or not presence_active %}
+                      {% set lbl_raw = r.label | trim %}
+                      {% set fn = state_attr(w, 'friendly_name') %}
+                      {% set lbl = lbl_raw if lbl_raw != '' else (fn if fn is not none else w) %}
+                      {% set ns.items = ns.items + [lbl] %}
+                    {% endif %}
                   {% endif %}
                 {% endfor %}
-                {{ ns.items | join(', ') if ns.items | length > 0 else 'Fenster' }}
-              safety_should_alert: "{{ ((any_window_open_now | bool(false)) and ((safety_due_to_rain | bool(false)) or (safety_due_to_away_mode | bool(false)))) | bool(false) }}"
+                {{ ns.items }}
+              safety_rooms_text: "{{ safety_rooms_to_notify | join(', ') if (safety_rooms_to_notify | length) > 0 else 'Fenster' }}"
+              safety_should_alert: "{{ ((safety_rooms_to_notify | length) > 0) and ((safety_due_to_rain | bool(false)) or (safety_due_to_away_mode | bool(false))) }}"
               safety_reason: >
                 {% if safety_due_to_rain | bool(false) %}
                   🌧️ Regen erkannt
@@ -987,7 +1287,7 @@ action:
                         - action: "{{ repeat.item | trim }}"
                           data:
                             title: "⚠️ Fenster offen!"
-                            message: "{{ safety_reason }}. Offene Fenster: {{ open_windows_now_text }}.\n(Lüftungs-Steuerung)"
+                            message: "{{ safety_reason }}. Offene Fenster: {{ safety_rooms_text }}.\n(Lüftungs-Steuerung)"
                             data:
                               tag: vaillant_lueftung
                               push:
