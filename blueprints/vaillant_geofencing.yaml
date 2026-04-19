@@ -130,7 +130,6 @@ blueprint:
         **OFF:** Kein Vorheizen.
         **CONFIRM (empfohlen):** Push bei Heimweg mit "Vorheizen ✅"-Button — Pre-Heat startet NUR bei Tap.
         **ON:** Automatisch vorheizen (kein Opt-in).
-        **DYNAMIC:** Automatisch vorheizen, aber mit Abbrechen-Button.
       collapsed: true
       input:
         pre_heat_mode:
@@ -140,7 +139,6 @@ blueprint:
             **confirm (empfohlen):** Push bei Heimweg — Pre-Heat startet NUR wenn du auf "Vorheizen ✅" tippst.
               Kein automatisches Feuern. Ideal wenn du kurze Ausflüge machst und nicht jedes Mal vorgeheizt werden soll.
             **on:** Automatisch alle konfigurierten Räume vorheizen wenn Heimweg erkannt.
-            **dynamic:** Automatisch vorheizen, Notification mit Abbrechen-Button zum Canceln.
           default: "off"
           selector:
             select:
@@ -151,8 +149,6 @@ blueprint:
                   value: "confirm"
                 - label: "Automatisch"
                   value: "on"
-                - label: "Dynamisch (Auto + Abbrechen)"
-                  value: "dynamic"
         pre_heat_helpers:
           name: "🏠 Pre-Heat Helper (Räume)"
           description: |
@@ -276,12 +272,6 @@ trigger:
 
   - platform: time_pattern
     minutes: "/5"
-
-  - platform: event
-    event_type: mobile_app_notification_action
-    event_data:
-      action: "VAILLANT_PRE_HEAT_CANCEL"
-    id: pre_heat_cancel
 
   - platform: event
     event_type: mobile_app_notification_action
@@ -498,30 +488,6 @@ action:
           {% endif %}
         {% endif %}
 
-  # ── Pre-Heat Cancel: User tapped Cancel on notification ──────────────────
-  - if:
-      - "{{ trigger.id | default('') == 'pre_heat_cancel' }}"
-    then:
-      - action: input_boolean.turn_off
-        target:
-          entity_id: "{{ pre_heat_helpers_list }}"
-        continue_on_error: true
-      - if: "{{ has_notify_targets }}"
-        then:
-          - repeat:
-              for_each: "{{ notify_services }}"
-              sequence:
-                - action: "{{ repeat.item | trim }}"
-                  data:
-                    title: "❌ Vorheizen abgebrochen"
-                    message: "Pre-Heat deaktiviert."
-                    data:
-                      tag: vaillant_pre_heat
-                      push:
-                        sticky: true
-                  continue_on_error: true
-      - stop: "Pre-Heat abgebrochen durch User"
-
   # ── Pre-Heat Confirm: User tapped "Vorheizen ✅" on notification ──────────
   # Only fires in mode 'confirm'. User opt-in; helpers only turn on here.
   # Also: clears the pending Confirm notification on ALL devices and shows
@@ -675,41 +641,3 @@ action:
                                 sticky: true
                           continue_on_error: true
 
-          # ── Modus DYNAMIC: Optimistisch vorheizen + Abbrechen-Option ──
-          # Note: mode:restart would cancel a wait_for_trigger on the next proximity update.
-          # Solution: Start pre-heating immediately (optimistic), send notification with Cancel button.
-          # If user taps Cancel → helpers turn off. If no response → pre-heat continues normally
-          # and auto-off in heating blueprint handles timeout/presence/schedule.
-          - conditions:
-              - "{{ pre_heat_mode == 'dynamic' }}"
-            sequence:
-              # Optimistisch: sofort vorheizen
-              - repeat:
-                  for_each: "{{ pre_heat_helpers_list }}"
-                  sequence:
-                    - action: input_boolean.turn_on
-                      target:
-                        entity_id: "{{ repeat.item }}"
-                      continue_on_error: true
-              # Push mit Abbrechen-Button (nur wenn Notify-Targets konfiguriert)
-              - if: "{{ has_notify_targets }}"
-                then:
-                  - repeat:
-                      for_each: "{{ notify_services }}"
-                      sequence:
-                        - action: "{{ repeat.item | trim }}"
-                          data:
-                            title: "🔥 Vorheizen gestartet"
-                            message: "Heimweg erkannt ({{ distance_km | float(0) | round(1) }} km) — {{ pre_heat_helpers_list | length }} Räume werden vorgeheizt."
-                            data:
-                              tag: vaillant_pre_heat
-                              push:
-                                sticky: true
-                              actions:
-                                - action: "VAILLANT_PRE_HEAT_CANCEL"
-                                  title: "Abbrechen ❌"
-                                  destructive: true
-                          continue_on_error: true
-              # Cancel is handled via top-level trigger (pre_heat_cancel).
-              # mode:restart would kill a wait_for_trigger here, so we rely on the
-              # event trigger at the automation level instead.
