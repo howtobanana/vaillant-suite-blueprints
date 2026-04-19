@@ -407,6 +407,16 @@ blueprint:
           selector:
             entity:
               domain: input_boolean
+        notify_on_presence:
+          name: "🔔 Auch bei Anwesenheit benachrichtigen"
+          description: |
+            AUS (Default): Räume mit konfiguriertem Präsenz-Sensor (on)
+            bekommen KEINE Fenster-Notification — Präsenz unterdrückt.
+            AN: Präsenz wird ignoriert, Push wird immer gesendet.
+            Räume ohne Präsenz-Sensor werden immer benachrichtigt.
+          default: false
+          selector:
+            boolean:
         notify_device:
           name: "📩 Notify Gerät (Normal)"
           description: |
@@ -588,6 +598,7 @@ action:
         critical_notify_device: !input critical_notify_device
         quiet_schedule: !input quiet_schedule
         mute_alerts_boolean: !input mute_alerts_boolean
+        notify_on_presence: !input notify_on_presence
         master_window: !input master_window
         master_label: !input master_label
         master_presence: !input master_presence
@@ -745,16 +756,20 @@ action:
         {% endfor %}
         {{ ns.open | bool(false) }}
 
-      # Räume mit offenem Fenster UND ohne aktive Präsenz — diese werden benachrichtigt.
+      # Räume mit offenem Fenster — gefiltert nach Präsenz.
+      # notify_on_presence=true: Präsenz wird ignoriert (immer benachrichtigen).
+      # notify_on_presence=false: Räume mit aktiver Präsenz werden unterdrückt.
+      # Räume ohne Präsenz-Sensor immer benachrichtigen.
       # Label-Fallback: master_label (wenn gesetzt) → friendly_name des Fensters → entity_id.
       rooms_to_notify_labels: >
         {% set ns = namespace(items=[]) %}
+        {% set force_notify = inputs.notify_on_presence | bool(false) %}
         {% for r in rooms_runtime %}
           {% set w = r.window %}
           {% if states[w] is defined and is_state(w, 'on') %}
             {% set p = r.presence %}
             {% set presence_active = (p not in ['', 'none', 'None']) and (states[p] is defined) and is_state(p, 'on') %}
-            {% if not presence_active %}
+            {% if force_notify or not presence_active %}
               {% set lbl_raw = r.label | trim %}
               {% set fn = state_attr(w, 'friendly_name') %}
               {% set lbl = lbl_raw if lbl_raw != '' else (fn if fn is not none else w) %}
@@ -894,6 +909,8 @@ action:
           - "{{ trigger.event.data.old_state is not none and trigger.event.data.old_state.state != 'off' }}"
           - "{{ not (mute_alerts_active | bool(false)) }}"
           - "{{ not (quiet_active | bool(false)) }}"
+          # Re-Check nur nötig wenn Präsenz tatsächlich unterdrückt — sonst wurde bereits normal benachrichtigt.
+          - "{{ not (inputs.notify_on_presence | bool(false)) }}"
         sequence:
           - variables:
               # Find rooms that: window open ≥ airing_duration AND no active presence.
@@ -1018,12 +1035,13 @@ action:
               # Re-compute presence-aware room list AFTER the delay
               rooms_to_notify_after_delay: >
                 {% set ns = namespace(items=[]) %}
+                {% set force_notify = inputs.notify_on_presence | bool(false) %}
                 {% for r in rooms_runtime %}
                   {% set w = r.window %}
                   {% if states[w] is defined and is_state(w, 'on') %}
                     {% set p = r.presence %}
                     {% set presence_active = (p not in ['', 'none', 'None']) and (states[p] is defined) and is_state(p, 'on') %}
-                    {% if not presence_active %}
+                    {% if force_notify or not presence_active %}
                       {% set lbl_raw = r.label | trim %}
                       {% set fn = state_attr(w, 'friendly_name') %}
                       {% set lbl = lbl_raw if lbl_raw != '' else (fn if fn is not none else w) %}
@@ -1097,14 +1115,15 @@ action:
                       while:
                         - condition: template
                           value_template: >
-                            {# Presence-aware: only continue loop if at least one open window is in a room without active presence #}
+                            {# Presence-aware: continue loop if at least one open window is eligible (respects notify_on_presence toggle) #}
                             {% set ns = namespace(eligible=false) %}
+                            {% set force_notify = inputs.notify_on_presence | bool(false) %}
                             {% for r in rooms_runtime %}
                               {% set w = r.window %}
                               {% if states[w] is defined and is_state(w, 'on') %}
                                 {% set p = r.presence %}
                                 {% set presence_active = (p not in ['', 'none', 'None']) and (states[p] is defined) and is_state(p, 'on') %}
-                                {% if not presence_active %}
+                                {% if force_notify or not presence_active %}
                                   {% set ns.eligible = true %}
                                 {% endif %}
                               {% endif %}
@@ -1133,12 +1152,13 @@ action:
                         - variables:
                             escalation_open_text: >
                               {% set ns = namespace(items=[]) %}
+                              {% set force_notify = inputs.notify_on_presence | bool(false) %}
                               {% for r in rooms_runtime %}
                                 {% set w = r.window %}
                                 {% if states[w] is defined and is_state(w, 'on') %}
                                   {% set p = r.presence %}
                                   {% set presence_active = (p not in ['', 'none', 'None']) and (states[p] is defined) and is_state(p, 'on') %}
-                                  {% if not presence_active %}
+                                  {% if force_notify or not presence_active %}
                                     {% set lbl_raw = r.label | trim %}
                                     {% set fn = state_attr(w, 'friendly_name') %}
                                     {% set lbl = lbl_raw if lbl_raw != '' else (fn if fn is not none else w) %}
@@ -1247,8 +1267,8 @@ action:
           - variables:
               safety_due_to_rain: "{{ (trigger.id == 'safety_rain') | bool(false) }}"
               safety_due_to_away_mode: "{{ ((trigger.id == 'safety_away_mode') and (away_mode_active | bool(false))) | bool(false) }}"
-              # Bei Away-Mode: Präsenz-Filter ignorieren (niemand daheim → alle Räume melden)
-              safety_ignore_presence: "{{ safety_due_to_away_mode | bool(false) }}"
+              # Präsenz-Filter ignorieren bei Away-Mode ODER globalem Toggle
+              safety_ignore_presence: "{{ (safety_due_to_away_mode | bool(false)) or (inputs.notify_on_presence | bool(false)) }}"
               safety_rooms_to_notify: >
                 {% set ns = namespace(items=[]) %}
                 {% for r in rooms_runtime %}
