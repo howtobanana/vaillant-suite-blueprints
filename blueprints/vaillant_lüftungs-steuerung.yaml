@@ -395,18 +395,6 @@ blueprint:
           selector:
             entity:
               domain: schedule
-        mute_alerts_boolean:
-          name: "🔇 Fenster-Alerts Stummschaltung (opt)"
-          description: |
-            Optionaler input_boolean Helfer für Push-Button-Stummschaltung.
-            Wird per Push-Button aktiviert ("Für heute deaktivieren")
-            und um Mitternacht automatisch zurückgesetzt.
-            Erstellen: Einstellungen → Helfer → Umschalter.
-            Leer lassen = Stummschaltung nicht verfügbar.
-          default: ""
-          selector:
-            entity:
-              domain: input_boolean
         notify_on_presence:
           name: "🔔 Auch bei Anwesenheit benachrichtigen"
           description: |
@@ -575,11 +563,6 @@ trigger:
     for: "00:05:00"
     id: cooling_outdoor_warmer
 
-  # Midnight: Reset mute boolean
-  - trigger: time
-    at: "00:00:00"
-    id: midnight_reset
-
 action:
   - variables:
       inputs:
@@ -597,7 +580,6 @@ action:
         notify_device: !input notify_device
         critical_notify_device: !input critical_notify_device
         quiet_schedule: !input quiet_schedule
-        mute_alerts_boolean: !input mute_alerts_boolean
         notify_on_presence: !input notify_on_presence
         master_window: !input master_window
         master_label: !input master_label
@@ -683,15 +665,6 @@ action:
       quiet_active: >
         {% if inputs.quiet_schedule | default('') | string | trim not in ['', 'none', 'None'] %}
           {{ is_state(inputs.quiet_schedule, 'on') }}
-        {% else %}
-          {{ false }}
-        {% endif %}
-
-      mute_alerts_entity: "{{ inputs.mute_alerts_boolean | default('') | string | trim }}"
-      mute_alerts_configured: "{{ mute_alerts_entity not in ['', 'none', 'None'] }}"
-      mute_alerts_active: >
-        {% if mute_alerts_configured %}
-          {{ is_state(mute_alerts_entity, 'on') }}
         {% else %}
           {{ false }}
         {% endif %}
@@ -881,22 +854,6 @@ action:
         }}
 
   # ════════════════════════════════════════════════════════════
-  # MIDNIGHT RESET: Auto-reset mute boolean
-  # ════════════════════════════════════════════════════════════
-  - choose:
-      - conditions:
-          - "{{ trigger.id == 'midnight_reset' }}"
-        sequence:
-          - if:
-              - "{{ mute_alerts_configured and (mute_alerts_active | bool(false)) }}"
-            then:
-              - action: input_boolean.turn_off
-                target:
-                  entity_id: "{{ mute_alerts_entity }}"
-                continue_on_error: true
-          - stop: "Midnight reset done"
-
-  # ════════════════════════════════════════════════════════════
   # FLOW 0: PRESENCE-OFF RE-CHECK
   # User verlässt Raum während Fenster offen → Re-Check ob Close-Reminder
   # oder Eskalation fällig ist (basierend auf Fenster-Offen-Dauer).
@@ -907,7 +864,6 @@ action:
           - "{{ trigger.event is defined and trigger.event.data is defined }}"
           - "{{ trigger.event.data.new_state is not none and trigger.event.data.new_state.state == 'off' }}"
           - "{{ trigger.event.data.old_state is not none and trigger.event.data.old_state.state != 'off' }}"
-          - "{{ not (mute_alerts_active | bool(false)) }}"
           - "{{ not (quiet_active | bool(false)) }}"
           # Re-Check nur nötig wenn Präsenz tatsächlich unterdrückt — sonst wurde bereits normal benachrichtigt.
           - "{{ not (inputs.notify_on_presence | bool(false)) }}"
@@ -967,9 +923,6 @@ action:
                           actions:
                             - action: "VAILLANT_LUEFTUNG_SNOOZE_1H"
                               title: "⏰ In 1h erinnern"
-                            - action: "VAILLANT_LUEFTUNG_MUTE_TODAY"
-                              title: "🔇 Heute deaktivieren"
-                              destructive: true
                       continue_on_error: true
 
           # Normal close-reminder re-check (rooms past airing_duration but not yet escalation)
@@ -1106,7 +1059,7 @@ action:
           - delay:
               minutes: "{{ inputs.escalation_delay }}"
 
-          # Escalation loop with wait_for_trigger for snooze/mute
+          # Escalation loop with wait_for_trigger for snooze
           - choose:
               - conditions:
                   - "{{ (critical_targets_list | trim) != '' }}"
@@ -1128,10 +1081,6 @@ action:
                                 {% endif %}
                               {% endif %}
                             {% endfor %}
-                            {% set muted = false %}
-                            {% if mute_alerts_entity not in ['', 'none', 'None'] %}
-                              {% set muted = is_state(mute_alerts_entity, 'on') %}
-                            {% endif %}
                             {% set indoor_s = inputs.cooling_indoor_temp_sensor | default('') | string | trim %}
                             {% set outdoor_s = inputs.cooling_outdoor_temp_source | default('') | string | trim %}
                             {% set cool_ok = false %}
@@ -1147,7 +1096,7 @@ action:
                               {% set sched_ok = is_state(sched_s, 'on') if sched_s not in ['', 'none', 'None'] else true %}
                               {% set cool_ok = indoor_t >= (inputs.cooling_indoor_threshold | float(25)) and outdoor_t <= (indoor_t - (inputs.cooling_hysteresis | float(2.0))) and sched_ok %}
                             {% endif %}
-                            {{ ns.eligible and not muted and not cool_ok and repeat.index <= 60 }}
+                            {{ ns.eligible and not cool_ok and repeat.index <= 60 }}
                       sequence:
                         - variables:
                             escalation_open_text: >
@@ -1189,26 +1138,19 @@ action:
                                     actions:
                                       - action: "VAILLANT_LUEFTUNG_SNOOZE_1H"
                                         title: "⏰ In 1h erinnern"
-                                      - action: "VAILLANT_LUEFTUNG_MUTE_TODAY"
-                                        title: "🔇 Heute deaktivieren"
-                                        destructive: true
                                 continue_on_error: true
 
-                        # Wait for user action OR 1 minute timeout
+                        # Wait for snooze action OR 1 minute timeout
                         - wait_for_trigger:
                             - trigger: event
                               event_type: mobile_app_notification_action
                               event_data:
                                 action: "VAILLANT_LUEFTUNG_SNOOZE_1H"
-                            - trigger: event
-                              event_type: mobile_app_notification_action
-                              event_data:
-                                action: "VAILLANT_LUEFTUNG_MUTE_TODAY"
                           timeout:
                             minutes: 1
                           continue_on_timeout: true
 
-                        # Handle button responses
+                        # Handle snooze button response
                         - choose:
                             # ── Snooze 1h ──
                             - conditions:
@@ -1229,31 +1171,6 @@ action:
                                 - delay:
                                     hours: 1
                                 # Loop continues after delay → re-checks while condition
-
-                            # ── Mute today ──
-                            - conditions:
-                                - "{{ wait.trigger is defined and wait.trigger.event.data.action == 'VAILLANT_LUEFTUNG_MUTE_TODAY' }}"
-                              sequence:
-                                - if:
-                                    - "{{ mute_alerts_configured }}"
-                                  then:
-                                    - action: input_boolean.turn_on
-                                      target:
-                                        entity_id: "{{ mute_alerts_entity }}"
-                                      continue_on_error: true
-                                - repeat:
-                                    for_each: "{{ (critical_targets_list | trim).split(',') if (critical_targets_list | trim) != '' else [] }}"
-                                    sequence:
-                                      - action: "{{ repeat.item | trim }}"
-                                        data:
-                                          title: "🔇 Alerts deaktiviert"
-                                          message: "Keine Fenster-Alerts bis Mitternacht."
-                                          data:
-                                            tag: vaillant_lueftung
-                                            push:
-                                              sticky: true
-                                        continue_on_error: true
-                                - stop: "Muted for today — while-loop exits"
 
                           # Default: timeout → loop continues (next alert in ~1 min)
 

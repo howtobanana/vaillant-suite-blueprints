@@ -3522,9 +3522,6 @@ actions:
                             actions:
                               - action: "VAILLANT_LUEFTUNG_SNOOZE_1H"
                                 title: "⏰ In 1h erinnern"
-                              - action: "VAILLANT_LUEFTUNG_MUTE_TODAY"
-                                title: "🔇 Heute deaktivieren"
-                                destructive: true
 
   # ════════════════════════════════════════════════════════════
   # ALWAYS-ON ALERT: Fires only on critical problems, auto-dismisses
