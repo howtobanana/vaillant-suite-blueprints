@@ -43,13 +43,23 @@ blueprint:
           selector:
             entity:
               domain: weather
-        away_mode_boolean:
-          name: "🏠 Away-Mode Helper"
+        people_home_entity:
+          name: "🏠 People Home Entity"
           description: |
-            Global Away-Helper for safety check (same as Core Heating).
+            Person-, Zone-, Gruppen- oder Binary-Sensor-Entity die anzeigt
+            ob jemand zuhause ist. Beispiele:
+              - zone.home (Count: '0' = niemand daheim)
+              - person.fabian ('not_home' = unterwegs)
+              - group.alle_personen ('not_home' = niemand daheim)
+              - binary_sensor.someone_home ('off' = niemand daheim)
+            Wenn 'niemand daheim' erkannt wird → KEINE Lüftungs-Notifications.
           selector:
             entity:
-              domain: input_boolean
+              domain:
+                - person
+                - zone
+                - group
+                - binary_sensor
         guest_mode_boolean:
           name: "🏡 Guest-Mode Helper (opt)"
           description: |
@@ -533,9 +543,13 @@ trigger:
     id: safety_rain
 
   # Safety: Away Mode activated
+  # Safety: Trigger wenn Anwesenheit auf "niemand daheim" wechselt
   - trigger: state
-    entity_id: !input away_mode_boolean
-    to: "on"
+    entity_id: !input people_home_entity
+    to:
+      - "not_home"
+      - "off"
+      - "0"
     id: safety_away_mode
 
   # Cooling: Periodic check (every 10 min)
@@ -567,7 +581,7 @@ action:
   - variables:
       inputs:
         weather_entity: !input weather_entity
-        away_mode_boolean: !input away_mode_boolean
+        people_home_entity: !input people_home_entity
         guest_mode_boolean: !input guest_mode_boolean
         enable_daily_reminder: !input enable_daily_reminder
         reminder_time: !input reminder_time
@@ -654,10 +668,12 @@ action:
         {# Guest Mode überschreibt Away — Gäste bekommen Lüftungs-Reminder #}
         {% set guest_eid = inputs.guest_mode_boolean | default('') | string %}
         {% set guest_on = guest_eid not in ['', 'sensor.none', 'none'] and is_state(guest_eid, 'on') %}
+        {% set ph = inputs.people_home_entity | default('') | string | trim %}
         {% if guest_on %}
           {{ false }}
-        {% elif inputs.away_mode_boolean != '' %}
-          {{ is_state(inputs.away_mode_boolean, 'on') }}
+        {% elif ph not in ['', 'none', 'None'] and states[ph] is defined %}
+          {% set s = states(ph) %}
+          {{ s in ['not_home', 'off', '0'] }}
         {% else %}
           {{ false }}
         {% endif %}
@@ -697,18 +713,20 @@ action:
           or (trigger.id in ['need_fresh_air_co2', 'need_fresh_air_humidity'])
         }}
 
+      # Kompakter Reason-String für Notification-Title in Klammern
+      # z.B. "15:00", "CO₂ 1300 ppm", "Luftfeuchte 65%", "15:00 · CO₂ 1300 ppm"
       reminder_reason: >
         {% set reasons = [] %}
         {% if trigger.id == 'need_fresh_air_time' and (inputs.enable_daily_reminder | bool(false)) %}
-          {% set reasons = reasons + ['Tageszeit erreicht (' ~ (inputs.reminder_time[:5] if inputs.reminder_time is string else 'Reminder') ~ ')'] %}
+          {% set reasons = reasons + [(inputs.reminder_time[:5] if inputs.reminder_time is string else 'Reminder')] %}
         {% endif %}
         {% if co2_high | bool(false) %}
-          {% set reasons = reasons + ['CO2 hoch: ' ~ (co2_value | round(0)) ~ ' ppm'] %}
+          {% set reasons = reasons + ['CO₂ ' ~ (co2_value | round(0) | int) ~ ' ppm'] %}
         {% endif %}
         {% if humidity_high | bool(false) %}
-          {% set reasons = reasons + ['Luftfeuchte hoch: ' ~ (humidity_value | round(1)) ~ '%'] %}
+          {% set reasons = reasons + ['Luftfeuchte ' ~ (humidity_value | round(0) | int) ~ '%'] %}
         {% endif %}
-        {{ reasons | join(' | ') }}
+        {{ reasons | join(' · ') }}
 
       open_windows_text: >
         {% set ns = namespace(items=[]) %}
@@ -955,20 +973,62 @@ action:
           - "{{ not (quiet_active | bool(false)) }}"
           - "{{ (notify_targets_list | trim) != '' }}"
         sequence:
+          # Stündliche Wetter-Vorhersage abrufen (für "bis X Uhr" / "ab X Uhr trocken")
+          - action: weather.get_forecasts
+            target:
+              entity_id: !input weather_entity
+            data:
+              type: hourly
+            response_variable: weather_forecast
+            continue_on_error: true
           - variables:
-              rain_hint: >
-                {%- if rain_now | bool(false) -%}
-                  ⛈️ Aktuell Regen – kurz und gezielt lüften!
+              forecast_list: >
+                {%- set we = inputs.weather_entity | default('') | string -%}
+                {%- if weather_forecast is defined and we in (weather_forecast | default({})) -%}
+                  {{ weather_forecast[we].forecast | default([], true) }}
                 {%- else -%}
-                  ☀️ Kein Regen – perfekt zum Lüften.
+                  {{ [] }}
+                {%- endif -%}
+              # Slot bis zum Abend (heute 21:00) — danach gilt "am Abend"
+              evening_ts: "{{ as_timestamp(today_at('21:00')) | float(0) }}"
+              # Such-Zeitfenster: 12h voraus
+              rain_hint: >
+                {%- set rain_conds = ['rainy','pouring','snowy','snowy-rainy','lightning','lightning-rainy','hail'] -%}
+                {%- set fc = forecast_list | default([], true) -%}
+                {%- if rain_now | bool(false) -%}
+                  {# Aktuell Regen → nächste trockene Stunde finden #}
+                  {%- set ns = namespace(dry_at=none) -%}
+                  {%- for f in fc[:12] -%}
+                    {%- if ns.dry_at is none and (f.condition | default('') not in rain_conds) -%}
+                      {%- set ns.dry_at = f.datetime -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                  {%- if ns.dry_at -%}
+                    ⛈️ Regen – ab {{ as_timestamp(ns.dry_at) | timestamp_custom('%H:%M', true) }} trocken
+                  {%- else -%}
+                    ⛈️ Regen – kurz und gezielt lüften!
+                  {%- endif -%}
+                {%- else -%}
+                  {# Aktuell trocken → nächsten Regen suchen #}
+                  {%- set ns = namespace(rain_at=none) -%}
+                  {%- for f in fc[:12] -%}
+                    {%- if ns.rain_at is none and (f.condition | default('') in rain_conds) -%}
+                      {%- set ns.rain_at = f.datetime -%}
+                    {%- endif -%}
+                  {%- endfor -%}
+                  {%- if ns.rain_at and (as_timestamp(ns.rain_at) | float(0)) < (evening_ts | float(0)) -%}
+                    ☀️ Kein Regen – bis {{ as_timestamp(ns.rain_at) | timestamp_custom('%H:%M', true) }}
+                  {%- else -%}
+                    ☀️ Kein Regen – bis am Abend
+                  {%- endif -%}
                 {%- endif -%}
           - repeat:
               for_each: "{{ (notify_targets_list | trim).split(',') }}"
               sequence:
                 - action: "{{ repeat.item | trim }}"
                   data:
-                    title: "🌬️ Lüften!"
-                    message: "{{ reminder_reason if (reminder_reason | trim) != '' else 'Stoßlüften' }}. {{ rain_hint }} Fenster: {{ open_windows_text }}.\n(Lüftungs-Steuerung)"
+                    title: "🌬️ Zeit zum Lüften!{% if (reminder_reason | trim) != '' %} ({{ reminder_reason | trim }}){% endif %}"
+                    message: "{{ rain_hint }}{% if any_window_open | bool(false) %}\nBereits offen: {{ open_windows_text }}.{% endif %}"
                     data:
                       tag: vaillant_lueftung
                       push:
