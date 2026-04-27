@@ -800,18 +800,43 @@ action:
           {{ ns.active }}
         {%- endif -%}
 
+      # Sommer-Schutz: Außen ist deutlich wärmer als Innen → Lüften würde Wärme reinbringen.
+      # 1°C Buffer gegen Mess-Rauschen. Ohne konfigurierte Sensoren → keine Suppression.
+      outdoor_warmer_than_indoor: >
+        {%- set indoor_s = inputs.cooling_indoor_temp_sensor | default('') | string | trim -%}
+        {%- set indoor_ok = indoor_s not in ['', 'none', 'None'] and has_value(indoor_s) -%}
+        {%- if not indoor_ok -%}
+          {{ false }}
+        {%- else -%}
+          {%- set indoor = states(indoor_s) | float(0) -%}
+          {%- set outdoor_s = inputs.cooling_outdoor_temp_source | default('') | string | trim -%}
+          {%- set ns = namespace(outdoor=none) -%}
+          {%- if outdoor_s not in ['', 'none', 'None'] and has_value(outdoor_s) -%}
+            {%- set ns.outdoor = states(outdoor_s) | float(0) -%}
+          {%- elif inputs.weather_entity | default('') | string | trim != '' and state_attr(inputs.weather_entity, 'temperature') is not none -%}
+            {%- set ns.outdoor = state_attr(inputs.weather_entity, 'temperature') | float(0) -%}
+          {%- endif -%}
+          {%- if ns.outdoor is none -%}
+            {{ false }}
+          {%- else -%}
+            {{ ns.outdoor > (indoor + 1) }}
+          {%- endif -%}
+        {%- endif -%}
+
       # Daily-Reminder feuert nur wenn:
       #  - Trigger ist Window-Open ODER Person-Arrived
       #  - Erinnerung aktiviert
       #  - Aktuell im Zeitfenster
       #  - Heizung NICHT aktiv
-      # CO2/Luftfeuchte-Trigger feuern unabhängig von Zeitfenster/Heizung.
+      #  - Außen NICHT wärmer als Innen (Sommer-Schutz)
+      # CO2/Luftfeuchte-Trigger feuern unabhängig von Zeitfenster/Heizung/Sommer.
       reminder_triggered: >
         {{
           ((trigger.id in ['need_fresh_air_window_open', 'need_fresh_air_arrived'])
            and (inputs.enable_daily_reminder | bool(false))
            and (in_reminder_window | bool(false))
-           and not (heating_active | bool(false)))
+           and not (heating_active | bool(false))
+           and not (outdoor_warmer_than_indoor | bool(false)))
           or (trigger.id in ['need_fresh_air_co2', 'need_fresh_air_humidity'])
         }}
 
