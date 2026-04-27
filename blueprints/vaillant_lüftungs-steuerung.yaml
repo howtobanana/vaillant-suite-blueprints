@@ -441,6 +441,11 @@ trigger_variables:
   tv_enable_cooling: !input enable_cooling
   tv_cooling_indoor_threshold: !input cooling_indoor_threshold
   tv_cooling_hysteresis: !input cooling_hysteresis
+  tv_master_window: !input master_window
+  tv_room2_window: !input room2_window
+  tv_room3_window: !input room3_window
+  tv_room4_window: !input room4_window
+  tv_room5_window: !input room5_window
 
 trigger:
   # Need Fresh Air
@@ -540,12 +545,8 @@ trigger:
     to: "0"
     id: safety_away_mode
 
-  # Cooling: Periodic check (every 10 min)
-  - trigger: time_pattern
-    minutes: "/10"
-    id: cooling_check
-
-  # Cooling: Outdoor temp rose above indoor (close windows)
+  # Cooling: Lüften lohnt sich JETZT (Innen warm, Außen kühler, alle Fenster zu)
+  # State-Transition-Trigger statt Polling → kein Spam
   - trigger: template
     value_template: >
       {% set indoor_s = tv_cooling_indoor_temp_sensor | default('') | string | trim %}
@@ -558,7 +559,43 @@ trigger:
         {% elif tv_weather_entity | default('') | string | trim != '' %}
           {% set outdoor = state_attr(tv_weather_entity, 'temperature') | float(0) %}
         {% endif %}
-        {{ outdoor > indoor }}
+        {% set ns = namespace(any_open=false) %}
+        {% for w in [tv_master_window, tv_room2_window, tv_room3_window, tv_room4_window, tv_room5_window] %}
+          {% if w not in ['', 'none', 'None'] and states[w] is defined and is_state(w, 'on') %}
+            {% set ns.any_open = true %}
+          {% endif %}
+        {% endfor %}
+        {{ indoor >= (tv_cooling_indoor_threshold | float(25))
+           and outdoor <= (indoor - (tv_cooling_hysteresis | float(2.0)))
+           and not ns.any_open }}
+      {% else %}
+        {{ false }}
+      {% endif %}
+    for: "00:05:00"
+    id: cooling_open_recommended
+
+  # Cooling: Außen-Temp gestiegen → Fenster zu (mit Hysterese, 1°C Dead-Zone)
+  - trigger: template
+    value_template: >
+      {% set indoor_s = tv_cooling_indoor_temp_sensor | default('') | string | trim %}
+      {% set outdoor_s = tv_cooling_outdoor_temp_source | default('') | string | trim %}
+      {% if (tv_enable_cooling | default(false) | bool(false)) and indoor_s not in ['', 'none'] and has_value(indoor_s) %}
+        {% set indoor = states(indoor_s) | float(0) %}
+        {% set outdoor = 0 %}
+        {% if outdoor_s not in ['', 'none'] and has_value(outdoor_s) %}
+          {% set outdoor = states(outdoor_s) | float(0) %}
+        {% elif tv_weather_entity | default('') | string | trim != '' %}
+          {% set outdoor = state_attr(tv_weather_entity, 'temperature') | float(0) %}
+        {% endif %}
+        {% set ns = namespace(any_open=false) %}
+        {% for w in [tv_master_window, tv_room2_window, tv_room3_window, tv_room4_window, tv_room5_window] %}
+          {% if w not in ['', 'none', 'None'] and states[w] is defined and is_state(w, 'on') %}
+            {% set ns.any_open = true %}
+          {% endif %}
+        {% endfor %}
+        {{ indoor >= (tv_cooling_indoor_threshold | float(25))
+           and outdoor >= (indoor - ((tv_cooling_hysteresis | float(2.0)) / 2))
+           and ns.any_open }}
       {% else %}
         {{ false }}
       {% endif %}
@@ -839,25 +876,6 @@ action:
           {{ true }}
         {% endif %}
 
-      cooling_beneficial: >
-        {{
-          (cooling_enabled | bool(false))
-          and (cooling_sensors_valid | bool(false))
-          and ((cooling_indoor_temp | float(0)) >= (inputs.cooling_indoor_threshold | float(25)))
-          and ((cooling_outdoor_temp | float(0)) <= ((cooling_indoor_temp | float(0)) - (inputs.cooling_hysteresis | float(2.0))))
-          and (cooling_schedule_active | bool(false))
-          and not (rain_now | bool(false))
-          and not (away_mode_active | bool(false))
-        }}
-
-      cooling_no_longer_beneficial: >
-        {{
-          (cooling_enabled | bool(false))
-          and (cooling_sensors_valid | bool(false))
-          and ((cooling_indoor_temp | float(0)) >= (inputs.cooling_indoor_threshold | float(25)))
-          and ((cooling_outdoor_temp | float(0)) > (cooling_indoor_temp | float(0)))
-        }}
-
   # ════════════════════════════════════════════════════════════
   # FLOW 0: PRESENCE-OFF RE-CHECK
   # User verlässt Raum während Fenster offen → Re-Check ob Close-Reminder
@@ -1060,7 +1078,7 @@ action:
                 {{ ns.open | bool(false) }}
               any_room_to_notify_now: "{{ (rooms_to_notify_after_delay | length) > 0 }}"
               open_rooms_now_text: "{{ rooms_to_notify_after_delay | join(', ') if (rooms_to_notify_after_delay | length) > 0 else 'Fenster' }}"
-              # Recompute cooling_beneficial after airing_duration delay
+              # Recompute cooling_beneficial_now after airing_duration delay
               cooling_beneficial_now: >
                 {% set indoor_s = inputs.cooling_indoor_temp_sensor | default('') | string | trim %}
                 {% set outdoor_s = inputs.cooling_outdoor_temp_source | default('') | string | trim %}
@@ -1285,62 +1303,74 @@ action:
                           continue_on_error: true
 
       # ════════════════════════════════════════════════════════
-      # FLOW 4: SUMMER COOLING
+      # FLOW 4: SUMMER COOLING — Lüften lohnt sich (Fenster auf)
+      # State-Transition-Trigger → kein Spam (nur einmal beim Übergang)
       # ════════════════════════════════════════════════════════
       - conditions:
-          - "{{ trigger.id == 'cooling_check' }}"
-          - "{{ cooling_enabled | bool(false) }}"
-          - "{{ cooling_sensors_valid | bool(false) }}"
+          - "{{ trigger.id == 'cooling_open_recommended' }}"
+          - "{{ cooling_schedule_active | bool(false) }}"
+          - "{{ not (rain_now | bool(false)) }}"
           - "{{ not (quiet_active | bool(false)) }}"
           - "{{ not (away_mode_active | bool(false)) }}"
+          - "{{ (notify_targets_list | trim) != '' }}"
         sequence:
-          - choose:
-              # Cooling beneficial + no windows open → suggest opening
-              - conditions:
-                  - "{{ cooling_beneficial | bool(false) }}"
-                  - "{{ not (any_window_open | bool(false)) }}"
-                  - "{{ (notify_targets_list | trim) != '' }}"
-                sequence:
-                  - repeat:
-                      for_each: "{{ (notify_targets_list | trim).split(',') if (notify_targets_list | trim) != '' else [] }}"
-                      sequence:
-                        - action: "{{ repeat.item | trim }}"
-                          data:
-                            title: "❄️ Fenster auf — kühlen!"
-                            message: "Innen {{ cooling_indoor_temp | float(0) | round(1) }}°C, außen {{ cooling_outdoor_temp | float(0) | round(1) }}°C.\n(Lüftungs-Steuerung)"
-                            data:
-                              tag: vaillant_lueftung
-                              push:
-                                sticky: true
-                          continue_on_error: true
-
-              # Windows open but outdoor now warmer → suggest closing
-              - conditions:
-                  - "{{ cooling_no_longer_beneficial | bool(false) }}"
-                  - "{{ any_window_open | bool(false) }}"
-                  - "{{ (notify_targets_list | trim) != '' }}"
-                sequence:
-                  - repeat:
-                      for_each: "{{ (notify_targets_list | trim).split(',') if (notify_targets_list | trim) != '' else [] }}"
-                      sequence:
-                        - action: "{{ repeat.item | trim }}"
-                          data:
-                            title: "🌡️ Fenster zu — zu warm draußen"
-                            message: "Außen {{ cooling_outdoor_temp | float(0) | round(1) }}°C, innen {{ cooling_indoor_temp | float(0) | round(1) }}°C. {{ open_windows_text }}.\n(Lüftungs-Steuerung)"
-                            data:
-                              tag: vaillant_lueftung
-                              push:
-                                sticky: true
-                          continue_on_error: true
+          # Hourly Forecast für "Lüften lohnt bis HH:MM"
+          - action: weather.get_forecasts
+            target:
+              entity_id: !input weather_entity
+            data:
+              type: hourly
+            response_variable: weather_forecast
+            continue_on_error: true
+          - variables:
+              forecast_list: >
+                {%- set we = inputs.weather_entity | default('') | string -%}
+                {%- if weather_forecast is defined and we in (weather_forecast | default({})) -%}
+                  {{ weather_forecast[we].forecast | default([], true) }}
+                {%- else -%}
+                  {{ [] }}
+                {%- endif -%}
+              # Erste Stunde wo Außen wieder ≥ (Innen − Hysterese) → Lüften lohnt nicht mehr
+              cooling_until: >
+                {%- set fc = forecast_list | default([], true) -%}
+                {%- set indoor = cooling_indoor_temp | float(0) -%}
+                {%- set hyst = inputs.cooling_hysteresis | float(2.0) -%}
+                {%- set cutoff = indoor - hyst -%}
+                {%- set ns = namespace(end_at=none) -%}
+                {%- for f in fc[:12] -%}
+                  {%- if ns.end_at is none and (f.temperature | float(99) > cutoff) -%}
+                    {%- set ns.end_at = f.datetime -%}
+                  {%- endif -%}
+                {%- endfor -%}
+                {%- if ns.end_at -%}
+                  {{ as_timestamp(ns.end_at) | timestamp_custom('%H:%M', true) }}
+                {%- endif -%}
+              cooling_hint: >
+                {%- if (cooling_until | trim) != '' -%}
+                  Lüften lohnt bis {{ cooling_until }}.
+                {%- else -%}
+                  Lüften lohnt sich jetzt.
+                {%- endif -%}
+          - repeat:
+              for_each: "{{ (notify_targets_list | trim).split(',') if (notify_targets_list | trim) != '' else [] }}"
+              sequence:
+                - action: "{{ repeat.item | trim }}"
+                  data:
+                    title: "❄️ Fenster auf — kühlen!"
+                    message: "Innen {{ cooling_indoor_temp | float(0) | round(1) }}°C, außen {{ cooling_outdoor_temp | float(0) | round(1) }}°C.\n{{ cooling_hint }}"
+                    data:
+                      tag: vaillant_lueftung
+                      push:
+                        sticky: true
+                  continue_on_error: true
 
       # ════════════════════════════════════════════════════════
-      # FLOW 4b: COOLING — Outdoor temp rose above indoor (event)
+      # FLOW 4b: COOLING — Außen wärmer (Fenster zu)
       # ════════════════════════════════════════════════════════
       - conditions:
           - "{{ trigger.id == 'cooling_outdoor_warmer' }}"
-          - "{{ cooling_enabled | bool(false) }}"
-          - "{{ any_window_open | bool(false) }}"
           - "{{ not (quiet_active | bool(false)) }}"
+          - "{{ not (away_mode_active | bool(false)) }}"
           - "{{ (notify_targets_list | trim) != '' }}"
         sequence:
           - repeat:
@@ -1349,7 +1379,7 @@ action:
                 - action: "{{ repeat.item | trim }}"
                   data:
                     title: "🌡️ Fenster zu — zu warm draußen"
-                    message: "Außen {{ cooling_outdoor_temp | float(0) | round(1) }}°C, innen {{ cooling_indoor_temp | float(0) | round(1) }}°C.\n(Lüftungs-Steuerung)"
+                    message: "Außen {{ cooling_outdoor_temp | float(0) | round(1) }}°C, innen {{ cooling_indoor_temp | float(0) | round(1) }}°C. Offen: {{ open_windows_text }}."
                     data:
                       tag: vaillant_lueftung
                       push:
