@@ -64,17 +64,39 @@ blueprint:
         enable_daily_reminder:
           name: "🔘 Tägliche Erinnerung aktiv"
           description: |
-            Schalter: Täglichen Reminder zur Reminder-Zeit senden.
+            Schalter: Erinnerung im Zeitfenster senden, wenn passend.
+            Bedingungen: im Zeitfenster + jemand daheim + Heizung nicht aktiv + kein Regen.
           default: true
           selector:
             boolean:
-        reminder_time:
-          name: "🕐 Reminder-Zeit"
+        reminder_time_start:
+          name: "🕐 Lüftungs-Zeitfenster: Start"
           description: |
-            Beispiel: 13:00 Uhr.
-          default: "13:00:00"
+            Beginn des Zeitfensters für die tägliche Erinnerung.
+            Beispiel: 14:00 Uhr.
+          default: "14:00:00"
           selector:
             time:
+        reminder_time_end:
+          name: "🕓 Lüftungs-Zeitfenster: Ende"
+          description: |
+            Ende des Zeitfensters. Erinnerung feuert nur dazwischen.
+            Beispiel: 16:00 Uhr.
+          default: "16:00:00"
+          selector:
+            time:
+        heating_climate_entities:
+          name: "🔥 Heizungs-Climate-Entities (opt)"
+          description: |
+            Optional: Climate-Entities zur Heizungs-Aktivitätsprüfung.
+            Wenn eine davon aktuell heizt (hvac_action: heating/preheating)
+            → KEINE Lüftungs-Erinnerung (Energie-Verschwendung vermeiden).
+            Mehrere möglich. Leer lassen = keine Heizungs-Prüfung.
+          default: []
+          selector:
+            entity:
+              domain: climate
+              multiple: true
         co2_sensor:
           name: "🫧 CO2 Sensor (opt)"
           description: |
@@ -446,12 +468,27 @@ trigger_variables:
   tv_room3_window: !input room3_window
   tv_room4_window: !input room4_window
   tv_room5_window: !input room5_window
+  tv_people_home_entity: !input people_home_entity
 
 trigger:
-  # Need Fresh Air
+  # Need Fresh Air: Zeitfenster startet
   - trigger: time
-    at: !input reminder_time
-    id: need_fresh_air_time
+    at: !input reminder_time_start
+    id: need_fresh_air_window_open
+
+  # Need Fresh Air: Person kommt heim (Zone von 0 → ≥1)
+  # for: 30s als Debounce gegen HA-Startup wenn zone state aus unavailable→1 restored
+  - trigger: template
+    value_template: >
+      {% set ph = tv_people_home_entity | default('') | string | trim %}
+      {% if ph not in ['', 'none', 'None'] and states[ph] is defined %}
+        {% set s = states(ph) %}
+        {{ s not in ['0', 'unavailable', 'unknown'] }}
+      {% else %}
+        {{ false }}
+      {% endif %}
+    for: "00:00:30"
+    id: need_fresh_air_arrived
 
   - trigger: template
     value_template: >
@@ -609,7 +646,9 @@ action:
         people_home_entity: !input people_home_entity
         guest_mode_boolean: !input guest_mode_boolean
         enable_daily_reminder: !input enable_daily_reminder
-        reminder_time: !input reminder_time
+        reminder_time_start: !input reminder_time_start
+        reminder_time_end: !input reminder_time_end
+        heating_climate_entities: !input heating_climate_entities
         co2_sensor: !input co2_sensor
         co2_threshold: !input co2_threshold
         humidity_sensor: !input humidity_sensor
@@ -731,19 +770,55 @@ action:
       co2_high: "{{ co2_sensor_entity != '' and (co2_value | float(0)) > (inputs.co2_threshold | float(1200)) }}"
       humidity_high: "{{ humidity_sensor_entity != '' and (humidity_value | float(0)) > (inputs.humidity_threshold | float(60)) }}"
 
+      # Aktuelle Zeit liegt im Lüftungs-Zeitfenster (Start–Ende)
+      # Unterstützt auch Zeitfenster über Mitternacht (z.B. 22:00–06:00)
+      in_reminder_window: >
+        {%- set now_t = now().time() -%}
+        {%- set s = inputs.reminder_time_start | default('14:00:00') | string -%}
+        {%- set e = inputs.reminder_time_end | default('16:00:00') | string -%}
+        {%- set start_t = strptime(s, '%H:%M:%S').time() -%}
+        {%- set end_t = strptime(e, '%H:%M:%S').time() -%}
+        {%- if start_t <= end_t -%}
+          {{ start_t <= now_t <= end_t }}
+        {%- else -%}
+          {{ now_t >= start_t or now_t <= end_t }}
+        {%- endif -%}
+
+      # Heizung läuft aktuell in mind. einem konfigurierten Climate
+      heating_active: >
+        {%- set cs = inputs.heating_climate_entities | default([]) -%}
+        {%- if cs is string -%}{%- set cs = [cs] if cs not in ['', 'none', 'None'] else [] -%}{%- endif -%}
+        {%- if cs | length == 0 -%}
+          {{ false }}
+        {%- else -%}
+          {%- set ns = namespace(active=false) -%}
+          {%- for c in cs -%}
+            {%- if state_attr(c, 'hvac_action') in ['heating', 'preheating'] -%}
+              {%- set ns.active = true -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ ns.active }}
+        {%- endif -%}
+
+      # Daily-Reminder feuert nur wenn:
+      #  - Trigger ist Window-Open ODER Person-Arrived
+      #  - Erinnerung aktiviert
+      #  - Aktuell im Zeitfenster
+      #  - Heizung NICHT aktiv
+      # CO2/Luftfeuchte-Trigger feuern unabhängig von Zeitfenster/Heizung.
       reminder_triggered: >
         {{
-          (trigger.id == 'need_fresh_air_time' and (inputs.enable_daily_reminder | bool(false)))
+          ((trigger.id in ['need_fresh_air_window_open', 'need_fresh_air_arrived'])
+           and (inputs.enable_daily_reminder | bool(false))
+           and (in_reminder_window | bool(false))
+           and not (heating_active | bool(false)))
           or (trigger.id in ['need_fresh_air_co2', 'need_fresh_air_humidity'])
         }}
 
       # Kompakter Reason-String für Notification-Title in Klammern
-      # z.B. "15:00", "CO₂ 1300 ppm", "Luftfeuchte 65%", "15:00 · CO₂ 1300 ppm"
+      # Nur CO₂/Luftfeuchte werden angezeigt — Daily-Trigger bleibt ohne Bracket.
       reminder_reason: >
         {% set reasons = [] %}
-        {% if trigger.id == 'need_fresh_air_time' and (inputs.enable_daily_reminder | bool(false)) %}
-          {% set reasons = reasons + [(inputs.reminder_time[:5] if inputs.reminder_time is string else 'Reminder')] %}
-        {% endif %}
         {% if co2_high | bool(false) %}
           {% set reasons = reasons + ['CO₂ ' ~ (co2_value | round(0) | int) ~ ' ppm'] %}
         {% endif %}
