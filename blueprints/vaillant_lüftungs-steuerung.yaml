@@ -9,7 +9,7 @@ blueprint:
     - 🌬️ Erinnerung zum Lüften (Zeit, CO2 oder Feuchte).
     - ⏱️ Close-Timer: Erinnert ans Schließen nach X Minuten.
     - 🚨 Eskalation: Nerviger Alarm, wenn Fenster offen bleiben.
-    - 🔇 Snooze/Mute: Eskalation per Push-Button pausieren oder deaktivieren.
+    - ⏰ Snooze: Eskalation per Push-Button um 1h pausieren.
     - 🌧️ Sicherheits-Warnung bei Regen oder Verlassen des Hauses.
     - ❄️ Sommer-Kühlung: Benachrichtigung wenn Lüften die Wohnung kühlen kann.
 
