@@ -44,22 +44,13 @@ blueprint:
             entity:
               domain: weather
         people_home_entity:
-          name: "🏠 People Home Entity"
+          name: "🏠 Anwesenheits-Zone"
           description: |
-            Person-, Zone-, Gruppen- oder Binary-Sensor-Entity die anzeigt
-            ob jemand zuhause ist. Beispiele:
-              - zone.home (Count: '0' = niemand daheim)
-              - person.fabian ('not_home' = unterwegs)
-              - group.alle_personen ('not_home' = niemand daheim)
-              - binary_sensor.someone_home ('off' = niemand daheim)
-            Wenn 'niemand daheim' erkannt wird → KEINE Lüftungs-Notifications.
+            Zone-Entity die anzeigt wie viele Personen daheim sind (z.B. zone.home).
+            Wenn der State '0' ist (niemand in der Zone) → KEINE Lüftungs-Notifications.
           selector:
             entity:
-              domain:
-                - person
-                - zone
-                - group
-                - binary_sensor
+              domain: zone
         guest_mode_boolean:
           name: "🏡 Guest-Mode Helper (opt)"
           description: |
@@ -543,13 +534,10 @@ trigger:
     id: safety_rain
 
   # Safety: Away Mode activated
-  # Safety: Trigger wenn Anwesenheit auf "niemand daheim" wechselt
+  # Safety: Trigger wenn Zone leer wird (niemand daheim)
   - trigger: state
     entity_id: !input people_home_entity
-    to:
-      - "not_home"
-      - "off"
-      - "0"
+    to: "0"
     id: safety_away_mode
 
   # Cooling: Periodic check (every 10 min)
@@ -672,8 +660,7 @@ action:
         {% if guest_on %}
           {{ false }}
         {% elif ph not in ['', 'none', 'None'] and states[ph] is defined %}
-          {% set s = states(ph) %}
-          {{ s in ['not_home', 'off', '0'] }}
+          {{ is_state(ph, '0') }}
         {% else %}
           {{ false }}
         {% endif %}
