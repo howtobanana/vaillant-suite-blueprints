@@ -603,11 +603,18 @@ trigger:
       - "snowy-rainy"
     id: safety_rain
 
-  # Safety: Away Mode activated
-  # Safety: Trigger wenn Zone leer wird (niemand daheim)
-  - trigger: state
-    entity_id: !input people_home_entity
-    to: "0"
+  # Safety: Niemand daheim (zone="0", person="not_home", group="not_home"/"off",
+  # binary_sensor="off" — Template-Trigger deckt alle Selector-Typen ab)
+  # for: 30s Debounce gegen HA-Startup state-restore Spam
+  - trigger: template
+    value_template: >
+      {% set ph = tv_people_home_entity | default('') | string | trim %}
+      {% if ph not in ['', 'none', 'None'] and states[ph] is defined %}
+        {{ states(ph) in ['not_home', 'off', '0'] }}
+      {% else %}
+        {{ false }}
+      {% endif %}
+    for: "00:00:30"
     id: safety_away_mode
 
   # Cooling: Lüften lohnt sich JETZT (Innen warm, Außen kühler, alle Fenster zu)
