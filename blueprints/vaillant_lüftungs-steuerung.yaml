@@ -1603,7 +1603,7 @@ action:
               sequence:
                 - action: "{{ repeat.item | trim }}"
                   data:
-                    title: "🌬️ Lüftung beendet — Fenster zu"
+                    title: "🌬️ Fenster schließen!"
                     message: "Kühlungs-Zeitfenster ist vorbei. Offen: {{ open_windows_text }}."
                     data:
                       tag: vaillant_lueftung
