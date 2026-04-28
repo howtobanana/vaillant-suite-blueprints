@@ -496,6 +496,7 @@ trigger_variables:
   tv_room4_window: !input room4_window
   tv_room5_window: !input room5_window
   tv_people_home_entity: !input people_home_entity
+  tv_cooling_schedule: !input cooling_schedule
 
 trigger:
   # Need Fresh Air: Zeitfenster startet
@@ -650,9 +651,18 @@ trigger:
     id: cooling_window_end
 
   # Cooling: Zeitfenster endet (Schedule-Variante) — gleicher Zweck
-  - trigger: state
-    entity_id: !input cooling_schedule
-    to: "off"
+  # Template-Trigger statt State-Trigger, damit leerer cooling_schedule-Input
+  # nicht als "Entity neither valid entity ID nor UUID" gemeldet wird.
+  # for: 5s Debounce gegen HA-Startup wenn schedule state aus unavailable→off restored
+  - trigger: template
+    value_template: >
+      {% set sched = tv_cooling_schedule | default('') | string | trim %}
+      {% if sched not in ['', 'none', 'None'] and states[sched] is defined %}
+        {{ is_state(sched, 'off') }}
+      {% else %}
+        {{ false }}
+      {% endif %}
+    for: "00:00:05"
     id: cooling_schedule_end
 
   # Cooling: Außen-Temp gestiegen → Fenster zu (mit Hysterese, 1°C Dead-Zone)
