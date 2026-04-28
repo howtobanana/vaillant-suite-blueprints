@@ -2251,7 +2251,7 @@ actions:
               {% set window_closed_recently = ((now_ts - close_ts) < settle_s) %}
             {% endif %}
           {% endif %}
-          {# current_temp wird vor final_raw benötigt (Comfort-Hysterese-Check) #}
+          {# current_temp und current_setpoint werden vor final_raw benötigt (Deadband-Hysterese) #}
           {% if temp_sensor not in ['', 'sensor.none', 'none'] and states(temp_sensor) not in ['unknown', 'unavailable', 'none', ''] %}
             {% if climate_ok %}
               {% set current_temp = states(temp_sensor) | float(state_attr(climate, 'current_temperature') | float(21)) %}
@@ -2263,14 +2263,34 @@ actions:
           {% else %}
             {% set current_temp = 21 %}
           {% endif %}
+          {% if climate_ok %}
+            {% set current_setpoint = state_attr(climate, 'temperature') | float(0) %}
+          {% else %}
+            {% set current_setpoint = 0 %}
+          {% endif %}
+          {# Deadband-State: war der letzte Write comfort oder eco?
+             Erkennung via current_setpoint vs. base_target. #}
+          {% set room_was_writing_comfort = (current_setpoint | float(0)) >= ((base_target | float(0)) - 0.5) %}
           {% if window_open_too_long | bool(false) %}
             {% set final_raw = inputs.min_trv_temp | float(12) %}
-          {% elif (active_for_demand | bool(false)) and ((base_target | float(0)) > (eco_temp | float(19))) and ((current_temp | float(0)) >= ((base_target | float(0)) - (inputs.hysteresis | float(0.6)))) %}
-            {# Comfort-Hysterese: Raum bereits warm genug → eco statt comfort schreiben.
-               Verhindert TRV-Ventilöffnung, solange Raum innerhalb Hysterese-Band ist.
-               Greift nur bei aktiver Demand und wenn base_target wirklich über eco liegt
-               (forced-min/away-Pfade bleiben unberührt). #}
-            {% set final_raw = eco_temp | float(19) %}
+          {% elif (active_for_demand | bool(false)) and ((base_target | float(0)) > (eco_temp | float(19))) %}
+            {# Bang-Bang mit Deadband:
+               HIGH = base_target           → bei Erreichen wechsel zu eco (Heizen aus)
+               LOW  = base_target − hyst    → bei Unterschreiten wechsel zu comfort (Heizen ein)
+               Zwischen LOW und HIGH: aktuellen Zustand halten (sticky → kein Oszillieren). #}
+            {% if room_was_writing_comfort | bool(false) %}
+              {% if (current_temp | float(0)) >= (base_target | float(0)) %}
+                {% set final_raw = eco_temp | float(19) %}
+              {% else %}
+                {% set final_raw = base_target | float(0) %}
+              {% endif %}
+            {% else %}
+              {% if (current_temp | float(0)) < ((base_target | float(0)) - (inputs.hysteresis | float(0.6))) %}
+                {% set final_raw = base_target | float(0) %}
+              {% else %}
+                {% set final_raw = eco_temp | float(19) %}
+              {% endif %}
+            {% endif %}
           {% elif window_closed_recently | bool(false) %}
             {# FIX: Don't cap active comfort demand to eco during settling.
                Rooms with active demand (schedule/presence) keep their target;
@@ -2287,11 +2307,6 @@ actions:
             {% set final_raw = base_target | float(0) %}
           {% endif %}
           {% set final_target = [inputs.min_trv_temp | float(12), final_raw | float(0)] | max %}
-          {% if climate_ok %}
-            {% set current_setpoint = state_attr(climate, 'temperature') | float(0) %}
-          {% else %}
-            {% set current_setpoint = 0 %}
-          {% endif %}
           {% set needs_heat = (active_for_demand | bool(false)) and ((final_target | float(0)) > ((current_temp | float(0)) + (inputs.hysteresis | float(0.6)))) %}
           {% if role == 'isolated' %}
             {% set boost_delta = (comfort_target | float(0)) - (current_temp | float(0)) %}
@@ -2674,10 +2689,12 @@ actions:
                   {{ inputs.min_trv_temp | float(12) }}
                 {% else %}
                   {% set base_raw = [((master_base_required_target | float(0)) + (master_humidity_drop | float(0))), (master_safety_floor | float(12))] | max %}
-                  {# Comfort-Hysterese: Master-Raum bereits ≥ (target − hysteresis) → eco statt comfort.
-                     Verhindert Brenner-Start, solange Master-Raum innerhalb Hysterese-Band ist.
-                     Greift nur, wenn base_raw wirklich über eco liegt
-                     (forced-min/away/safety-floor-Pfade bleiben unberührt). #}
+                  {# Bang-Bang-Hysterese mit Deadband:
+                     HIGH = base_raw           → bei Erreichen wechsel zu eco (Brenner aus)
+                     LOW  = base_raw − hyst    → bei Unterschreiten wechsel zu comfort (Brenner ein)
+                     Zwischen LOW und HIGH: aktuellen Zustand halten (sticky → kein Oszillieren).
+                     Aktueller Zustand wird via master_set_now (= bereits geschriebener Setpoint) erkannt.
+                     Greift nur, wenn base_raw wirklich über eco liegt — forced-min/away/safety-floor unberührt. #}
                   {% if inputs.master_temp_sensor | string not in ['', 'sensor.none', 'none'] %}
                     {% set m_current = states(inputs.master_temp_sensor) | float(state_attr(inputs.master_climate, 'current_temperature') | float(21)) %}
                   {% elif inputs.master_climate | string not in ['', 'sensor.none', 'none'] %}
@@ -2686,10 +2703,24 @@ actions:
                     {% set m_current = 21 %}
                   {% endif %}
                   {% set eco_floor = eco_temp | float(inputs.eco_temp_fixed | float(19)) %}
-                  {% if (base_raw | float(0)) > (eco_floor | float(0)) and (m_current | float(0)) >= ((base_raw | float(0)) - (inputs.hysteresis | float(0.6))) %}
-                    {{ [eco_floor, master_safety_floor | float(12)] | max }}
-                  {% else %}
+                  {% set eco_result = [eco_floor, master_safety_floor | float(12)] | max %}
+                  {% if (base_raw | float(0)) <= (eco_floor | float(0)) %}
                     {{ base_raw }}
+                  {% else %}
+                    {% set was_writing_comfort = (master_set_now | float(0)) >= ((base_raw | float(0)) - 0.5) %}
+                    {% if was_writing_comfort %}
+                      {% if (m_current | float(0)) >= (base_raw | float(0)) %}
+                        {{ eco_result }}
+                      {% else %}
+                        {{ base_raw }}
+                      {% endif %}
+                    {% else %}
+                      {% if (m_current | float(0)) < ((base_raw | float(0)) - (inputs.hysteresis | float(0.6))) %}
+                        {{ base_raw }}
+                      {% else %}
+                        {{ eco_result }}
+                      {% endif %}
+                    {% endif %}
                   {% endif %}
                 {% endif %}
 
