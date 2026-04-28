@@ -644,6 +644,17 @@ trigger:
     at: !input cooling_time_start
     id: cooling_window_open
 
+  # Cooling: Zeitfenster endet (Manuell-Zeit) — Friendly Reminder zum Schließen
+  - trigger: time
+    at: !input cooling_time_end
+    id: cooling_window_end
+
+  # Cooling: Zeitfenster endet (Schedule-Variante) — gleicher Zweck
+  - trigger: state
+    entity_id: !input cooling_schedule
+    to: "off"
+    id: cooling_schedule_end
+
   # Cooling: Außen-Temp gestiegen → Fenster zu (mit Hysterese, 1°C Dead-Zone)
   - trigger: template
     value_template: >
@@ -1549,9 +1560,13 @@ action:
 
       # ════════════════════════════════════════════════════════
       # FLOW 4b: COOLING — Außen wärmer (Fenster zu)
+      # WICHTIG: Suppressed WÄHREND des Cooling-Zeitfensters — User soll
+      # über Nacht durchlüften können ohne Spam. Am Ende des Fensters
+      # kommt eine einmalige freundliche Erinnerung (FLOW 4c).
       # ════════════════════════════════════════════════════════
       - conditions:
           - "{{ trigger.id == 'cooling_outdoor_warmer' }}"
+          - "{{ not (in_cooling_window | bool(false)) }}"
           - "{{ not (quiet_active | bool(false)) }}"
           - "{{ not (away_mode_active | bool(false)) }}"
           - "{{ (notify_targets_list | trim) != '' }}"
@@ -1568,4 +1583,30 @@ action:
                       push:
                         sticky: true
                         interruption-level: time-sensitive
+                  continue_on_error: true
+
+      # ════════════════════════════════════════════════════════
+      # FLOW 4c: COOLING — Zeitfenster endet (Morgen-Reminder)
+      # Einmalige freundliche Erinnerung am Ende des Cooling-Fensters,
+      # falls noch ein Fenster offen ist. Keine Eskalation, kein Critical.
+      # ════════════════════════════════════════════════════════
+      - conditions:
+          - "{{ trigger.id in ['cooling_window_end', 'cooling_schedule_end'] }}"
+          - "{{ cooling_enabled | bool(false) }}"
+          - "{{ any_window_open | bool(false) }}"
+          - "{{ not (quiet_active | bool(false)) }}"
+          - "{{ not (away_mode_active | bool(false)) }}"
+          - "{{ (notify_targets_list | trim) != '' }}"
+        sequence:
+          - repeat:
+              for_each: "{{ (notify_targets_list | trim).split(',') if (notify_targets_list | trim) != '' else [] }}"
+              sequence:
+                - action: "{{ repeat.item | trim }}"
+                  data:
+                    title: "🌬️ Lüftung beendet — Fenster zu"
+                    message: "Kühlungs-Zeitfenster ist vorbei. Offen: {{ open_windows_text }}."
+                    data:
+                      tag: vaillant_lueftung
+                      push:
+                        sticky: true
                   continue_on_error: true
