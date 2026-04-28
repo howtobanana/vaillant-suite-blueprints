@@ -871,6 +871,7 @@ action:
       #  - Aktuell im Zeitfenster
       #  - Heizung NICHT aktiv
       #  - Außen NICHT wärmer als Innen (Sommer-Schutz)
+      #  - Sommer-Cooling würde NICHT gerade feuern (Kühlen hat Vorrang)
       # CO2/Luftfeuchte-Trigger feuern unabhängig von Zeitfenster/Heizung/Sommer.
       reminder_triggered: >
         {{
@@ -878,7 +879,8 @@ action:
            and (inputs.enable_daily_reminder | bool(false))
            and (in_reminder_window | bool(false))
            and not (heating_active | bool(false))
-           and not (outdoor_warmer_than_indoor | bool(false)))
+           and not (outdoor_warmer_than_indoor | bool(false))
+           and not ((cooling_currently_recommended | bool(false)) and (in_cooling_window | bool(false))))
           or (trigger.id in ['need_fresh_air_co2', 'need_fresh_air_humidity'])
         }}
 
