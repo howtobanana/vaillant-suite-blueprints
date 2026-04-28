@@ -85,6 +85,16 @@ blueprint:
           default: "16:00:00"
           selector:
             time:
+        reminder_schedule:
+          name: "🗓️ Lüftungs-Zeitplan (opt, überschreibt Start/Ende)"
+          description: |
+            Optionaler Schedule-Helfer für komplexere Zeitfenster.
+            Wenn gesetzt → ÜBERSCHREIBT die manuellen Start/Ende-Zeiten.
+            State 'on' = Erinnerung erlaubt.
+          default: ""
+          selector:
+            entity:
+              domain: schedule
         heating_climate_entities:
           name: "🔥 Heizungs-Climate-Entities (opt)"
           description: |
@@ -380,11 +390,28 @@ blueprint:
               max: 35
               step: 0.5
               unit_of_measurement: "°C"
-        cooling_schedule:
-          name: "🕐 Kühlungs-Zeitplan (opt)"
+        cooling_time_start:
+          name: "🕐 Kühlungs-Zeitfenster: Start"
           description: |
-            Wann Kühlungs-Notifications erlaubt sind (z.B. 14:00–22:00).
-            Leer lassen = immer erlaubt wenn Kühlung aktiv.
+            Beginn des Zeitfensters für Kühlungs-Notifications.
+            Default 20:00 — Sommer-Lüftung typischerweise abends bis morgens.
+            Über Mitternacht hinweg möglich (z.B. 20:00–08:00).
+          default: "20:00:00"
+          selector:
+            time:
+        cooling_time_end:
+          name: "🕓 Kühlungs-Zeitfenster: Ende"
+          description: |
+            Ende des Zeitfensters. Default 08:00 (morgens).
+          default: "08:00:00"
+          selector:
+            time:
+        cooling_schedule:
+          name: "🗓️ Kühlungs-Zeitplan (opt, überschreibt Start/Ende)"
+          description: |
+            Optionaler Schedule-Helfer für komplexere Zeitfenster.
+            Wenn gesetzt → ÜBERSCHREIBT die manuellen Start/Ende-Zeiten oben.
+            State 'on' = Kühlungs-Notifications erlaubt.
           default: ""
           selector:
             entity:
@@ -611,6 +638,12 @@ trigger:
     for: "00:05:00"
     id: cooling_open_recommended
 
+  # Cooling: Zeitfenster startet — Re-Check ob Bedingungen bereits erfüllt sind
+  # (z.B. Innen warm + Außen kühler bevor das Window aufging)
+  - trigger: time
+    at: !input cooling_time_start
+    id: cooling_window_open
+
   # Cooling: Außen-Temp gestiegen → Fenster zu (mit Hysterese, 1°C Dead-Zone)
   - trigger: template
     value_template: >
@@ -648,6 +681,7 @@ action:
         enable_daily_reminder: !input enable_daily_reminder
         reminder_time_start: !input reminder_time_start
         reminder_time_end: !input reminder_time_end
+        reminder_schedule: !input reminder_schedule
         heating_climate_entities: !input heating_climate_entities
         co2_sensor: !input co2_sensor
         co2_threshold: !input co2_threshold
@@ -678,6 +712,8 @@ action:
         cooling_indoor_temp_sensor: !input cooling_indoor_temp_sensor
         cooling_outdoor_temp_source: !input cooling_outdoor_temp_source
         cooling_indoor_threshold: !input cooling_indoor_threshold
+        cooling_time_start: !input cooling_time_start
+        cooling_time_end: !input cooling_time_end
         cooling_schedule: !input cooling_schedule
         cooling_hysteresis: !input cooling_hysteresis
 
@@ -770,18 +806,24 @@ action:
       co2_high: "{{ co2_sensor_entity != '' and (co2_value | float(0)) > (inputs.co2_threshold | float(1200)) }}"
       humidity_high: "{{ humidity_sensor_entity != '' and (humidity_value | float(0)) > (inputs.humidity_threshold | float(60)) }}"
 
-      # Aktuelle Zeit liegt im Lüftungs-Zeitfenster (Start–Ende)
-      # Unterstützt auch Zeitfenster über Mitternacht (z.B. 22:00–06:00)
+      # Aktuelle Zeit liegt im Lüftungs-Zeitfenster.
+      # Schedule (wenn konfiguriert) überschreibt manuelle Start/Ende-Zeiten.
+      # Manuelle Zeiten unterstützen Über-Mitternacht-Bereiche (z.B. 22:00–06:00).
       in_reminder_window: >
-        {%- set now_t = now().time() -%}
-        {%- set s = inputs.reminder_time_start | default('14:00:00') | string -%}
-        {%- set e = inputs.reminder_time_end | default('16:00:00') | string -%}
-        {%- set start_t = strptime(s, '%H:%M:%S').time() -%}
-        {%- set end_t = strptime(e, '%H:%M:%S').time() -%}
-        {%- if start_t <= end_t -%}
-          {{ start_t <= now_t <= end_t }}
+        {%- set sched = inputs.reminder_schedule | default('') | string | trim -%}
+        {%- if sched not in ['', 'none', 'None'] -%}
+          {{ is_state(sched, 'on') }}
         {%- else -%}
-          {{ now_t >= start_t or now_t <= end_t }}
+          {%- set now_t = now().time() -%}
+          {%- set s = inputs.reminder_time_start | default('14:00:00') | string -%}
+          {%- set e = inputs.reminder_time_end | default('16:00:00') | string -%}
+          {%- set start_t = strptime(s, '%H:%M:%S').time() -%}
+          {%- set end_t = strptime(e, '%H:%M:%S').time() -%}
+          {%- if start_t <= end_t -%}
+            {{ start_t <= now_t <= end_t }}
+          {%- else -%}
+            {{ now_t >= start_t or now_t <= end_t }}
+          {%- endif -%}
         {%- endif -%}
 
       # Heizung läuft aktuell in mind. einem konfigurierten Climate
@@ -968,13 +1010,55 @@ action:
         {% set outdoor_ok = (outdoor_s not in ['', 'none', 'None'] and has_value(outdoor_s)) or (inputs.weather_entity | default('') | string | trim != '' and state_attr(inputs.weather_entity, 'temperature') is not none) %}
         {{ indoor_ok and outdoor_ok }}
 
-      cooling_schedule_active: >
-        {% set s = inputs.cooling_schedule | default('') | string | trim %}
-        {% if s not in ['', 'none', 'None'] %}
-          {{ is_state(s, 'on') }}
-        {% else %}
-          {{ true }}
-        {% endif %}
+      # Aktuelle Zeit liegt im Kühlungs-Zeitfenster.
+      # Schedule (wenn konfiguriert) überschreibt manuelle Start/Ende-Zeiten.
+      # Default 20:00–08:00 für typische Sommer-Nachtkühlung (über Mitternacht).
+      in_cooling_window: >
+        {%- set sched = inputs.cooling_schedule | default('') | string | trim -%}
+        {%- if sched not in ['', 'none', 'None'] -%}
+          {{ is_state(sched, 'on') }}
+        {%- else -%}
+          {%- set now_t = now().time() -%}
+          {%- set s = inputs.cooling_time_start | default('20:00:00') | string -%}
+          {%- set e = inputs.cooling_time_end | default('08:00:00') | string -%}
+          {%- set start_t = strptime(s, '%H:%M:%S').time() -%}
+          {%- set end_t = strptime(e, '%H:%M:%S').time() -%}
+          {%- if start_t <= end_t -%}
+            {{ start_t <= now_t <= end_t }}
+          {%- else -%}
+            {{ now_t >= start_t or now_t <= end_t }}
+          {%- endif -%}
+        {%- endif -%}
+
+      # Cooling state aktuell empfehlenswert? (Mirror der trigger-Logik)
+      # Wird benötigt damit der zusätzliche Time-Trigger den State prüfen kann.
+      cooling_currently_recommended: >
+        {%- set indoor_s = inputs.cooling_indoor_temp_sensor | default('') | string | trim -%}
+        {%- if (cooling_enabled | bool(false)) and indoor_s not in ['', 'none', 'None'] and has_value(indoor_s) -%}
+          {%- set indoor = states(indoor_s) | float(0) -%}
+          {%- set outdoor_s = inputs.cooling_outdoor_temp_source | default('') | string | trim -%}
+          {%- set ns = namespace(outdoor=none) -%}
+          {%- if outdoor_s not in ['', 'none', 'None'] and has_value(outdoor_s) -%}
+            {%- set ns.outdoor = states(outdoor_s) | float(0) -%}
+          {%- elif inputs.weather_entity | default('') | string | trim != '' and state_attr(inputs.weather_entity, 'temperature') is not none -%}
+            {%- set ns.outdoor = state_attr(inputs.weather_entity, 'temperature') | float(0) -%}
+          {%- endif -%}
+          {%- if ns.outdoor is none -%}
+            {{ false }}
+          {%- else -%}
+            {%- set ns2 = namespace(any_open=false) -%}
+            {%- for w in window_entities -%}
+              {%- if states[w] is defined and is_state(w, 'on') -%}
+                {%- set ns2.any_open = true -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{ indoor >= (inputs.cooling_indoor_threshold | float(25))
+               and ns.outdoor <= (indoor - (inputs.cooling_hysteresis | float(2.0)))
+               and not ns2.any_open }}
+          {%- endif -%}
+        {%- else -%}
+          {{ false }}
+        {%- endif -%}
 
   # ════════════════════════════════════════════════════════════
   # FLOW 0: PRESENCE-OFF RE-CHECK
@@ -1187,9 +1271,7 @@ action:
                 {% if (inputs.enable_cooling | bool(false)) and indoor_ok and outdoor_ok %}
                   {% set indoor_t = states(indoor_s) | float(0) %}
                   {% set outdoor_t = states(outdoor_s) | float(0) if (outdoor_s not in ['', 'none', 'None'] and has_value(outdoor_s)) else (state_attr(inputs.weather_entity, 'temperature') | float(0)) %}
-                  {% set sched_s = inputs.cooling_schedule | default('') | string | trim %}
-                  {% set sched_ok = is_state(sched_s, 'on') if sched_s not in ['', 'none', 'None'] else true %}
-                  {{ indoor_t >= (inputs.cooling_indoor_threshold | float(25)) and outdoor_t <= (indoor_t - (inputs.cooling_hysteresis | float(2.0))) and sched_ok and not (states(inputs.weather_entity) in rain_states) and not (away_mode_active | bool(false)) }}
+                  {{ indoor_t >= (inputs.cooling_indoor_threshold | float(25)) and outdoor_t <= (indoor_t - (inputs.cooling_hysteresis | float(2.0))) and (in_cooling_window | bool(false)) and not (states(inputs.weather_entity) in rain_states) and not (away_mode_active | bool(false)) }}
                 {% else %}
                   {{ false }}
                 {% endif %}
@@ -1257,9 +1339,7 @@ action:
                               {% elif inputs.weather_entity | default('') | string | trim != '' %}
                                 {% set outdoor_t = state_attr(inputs.weather_entity, 'temperature') | float(0) %}
                               {% endif %}
-                              {% set sched_s = inputs.cooling_schedule | default('') | string | trim %}
-                              {% set sched_ok = is_state(sched_s, 'on') if sched_s not in ['', 'none', 'None'] else true %}
-                              {% set cool_ok = indoor_t >= (inputs.cooling_indoor_threshold | float(25)) and outdoor_t <= (indoor_t - (inputs.cooling_hysteresis | float(2.0))) and sched_ok %}
+                              {% set cool_ok = indoor_t >= (inputs.cooling_indoor_threshold | float(25)) and outdoor_t <= (indoor_t - (inputs.cooling_hysteresis | float(2.0))) and (in_cooling_window | bool(false)) %}
                             {% endif %}
                             {{ ns.eligible and not cool_ok and repeat.index <= 60 }}
                       sequence:
@@ -1404,11 +1484,12 @@ action:
 
       # ════════════════════════════════════════════════════════
       # FLOW 4: SUMMER COOLING — Lüften lohnt sich (Fenster auf)
-      # State-Transition-Trigger → kein Spam (nur einmal beim Übergang)
+      # Trigger: State-Transition (cooling_open_recommended) ODER Time-Window-Open
       # ════════════════════════════════════════════════════════
       - conditions:
-          - "{{ trigger.id == 'cooling_open_recommended' }}"
-          - "{{ cooling_schedule_active | bool(false) }}"
+          - "{{ trigger.id in ['cooling_open_recommended', 'cooling_window_open'] }}"
+          - "{{ in_cooling_window | bool(false) }}"
+          - "{{ cooling_currently_recommended | bool(false) }}"
           - "{{ not (rain_now | bool(false)) }}"
           - "{{ not (quiet_active | bool(false)) }}"
           - "{{ not (away_mode_active | bool(false)) }}"
