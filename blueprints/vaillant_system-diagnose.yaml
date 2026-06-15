@@ -11,6 +11,7 @@ blueprint:
     - 💧 Wasserdruck-Überwachung (Schutz vor Trockenlauf).
     - 📉 Effizienz-Check (COP/JAZ Warnungen).
     - ⚠️ Master-Thermostat Offline Alarm.
+    - ❄️ Sommermodus-aware: Das tägliche Briefing pausiert bei aktivem Sommermodus (keine Heizung = wenig Aussagekraft). Echte Fehler/Warnungen werden weiterhin gemeldet.
 
     **Das Ökosystem:**
     Entwickelt für den Betrieb im Verbund mit:
@@ -408,6 +409,18 @@ blueprint:
           default: "18:00:00"
           selector:
             time:
+        summer_mode_boolean:
+          name: "❄️ Sommermodus-Schalter (opt)"
+          description: |
+            Gemeinsamer Saison-Schalter (input_boolean), gesetzt von der
+            Heizungs-Steuerung. Wenn AN: das tägliche Briefing wird unterdrückt
+            (ohne Heizbetrieb wenig aussagekräftig). Echte Fehler-/Warn-Alerts
+            (TRV/Druck/Effizienz/Offline) bleiben unberührt.
+            Leer = keine Sommermodus-Berücksichtigung.
+          default: ""
+          selector:
+            entity:
+              domain: input_boolean
 
     section_notify_devices:
       name: "📨 Empfänger"
@@ -528,6 +541,11 @@ action:
         notify_warning_entities: !input notify_warning_entities
         notify_critical_entities: !input notify_critical_entities
         quiet_schedule: !input quiet_schedule
+        summer_mode_boolean: !input summer_mode_boolean
+      # Sommermodus: zentraler Saison-Schalter (von der Heizungs-Steuerung gesetzt).
+      summer_mode_active: >
+        {% set b = inputs.summer_mode_boolean | default('') | string | trim %}
+        {{ (b not in ['', 'sensor.none', 'none', 'None']) and is_state(b, 'on') }}
       master_label: >
         {% if inputs.master_name != "" %}
           {{ inputs.master_name }}
@@ -943,6 +961,7 @@ action:
           - "{{ trigger.id == 'daily_briefing' }}"
           - "{{ notifications_enabled | bool(false) }}"
           - "{{ normal_notify_targets_list | length > 0 }}"
+          - "{{ not (summer_mode_active | bool(false)) }}"
         sequence:
           - variables:
               press_raw: "{{ states(inputs.water_pressure_sensor) if water_pressure_sensor_configured | bool(false) else '' }}"

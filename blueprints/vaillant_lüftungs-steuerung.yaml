@@ -12,6 +12,8 @@ blueprint:
     - ⏰ Snooze: Eskalation per Push-Button um 1h pausieren.
     - 🌧️ Sicherheits-Warnung bei Regen oder Verlassen des Hauses.
     - ❄️ Sommer-Kühlung: Benachrichtigung wenn Lüften die Wohnung kühlen kann.
+    - ☀️ Sommermodus-aware: bei aktivem Sommermodus keine kritische Eskalation — nur normale Meldungen (Präsenz im Raum bleibt still). Kritisch wird es einzig bei einem über 24 h offenen Fenster (mit „Stumm bis geschlossen"-Button). Regen, Sturm und Away lösen im Sommer nur eine normale Warnung aus.
+    - 🌬️ Sturm-Erkennung (Wetter-Status windy/exceptional) als zusätzliche Sicherheits-Warnung neben Regen.
 
     **Das Ökosystem:**
     Entwickelt für den Betrieb im Verbund mit:
@@ -51,6 +53,18 @@ blueprint:
           selector:
             entity:
               domain: zone
+        summer_mode_boolean:
+          name: "❄️ Sommermodus-Schalter (opt)"
+          description: |
+            Gemeinsamer Saison-Schalter (input_boolean), gesetzt von der
+            Heizungs-Steuerung. Wenn AN und jemand daheim: keine Heizverlust-
+            Schließ-Reminder/Eskalation (im Sommer gibt es keinen Heizverlust).
+            Regen-/Away-Sicherheitswarnungen bleiben unberührt.
+            Leer = keine Sommermodus-Berücksichtigung.
+          default: ""
+          selector:
+            entity:
+              domain: input_boolean
         guest_mode_boolean:
           name: "🏡 Guest-Mode Helper (opt)"
           description: |
@@ -688,6 +702,15 @@ trigger:
     for: "00:00:30"
     id: safety_away_mode
 
+  # Safety: Sturm/Wind erkannt (Wetter-Status). Wie Regen eine Sicherheits-Warnung.
+  - trigger: state
+    entity_id: !input weather_entity
+    to:
+      - "windy"
+      - "windy-variant"
+      - "exceptional"
+    id: safety_storm
+
   # Cooling: Lüften lohnt sich JETZT (Innen warm, Außen kühler, alle Fenster zu)
   # State-Transition-Trigger statt Polling → kein Spam
   - trigger: template
@@ -787,6 +810,7 @@ action:
       inputs:
         weather_entity: !input weather_entity
         people_home_entity: !input people_home_entity
+        summer_mode_boolean: !input summer_mode_boolean
         guest_mode_boolean: !input guest_mode_boolean
         enable_daily_reminder: !input enable_daily_reminder
         reminder_time_start: !input reminder_time_start
@@ -891,6 +915,11 @@ action:
         {% else %}
           {{ false }}
         {% endif %}
+
+      # Sommermodus: zentraler Saison-Schalter (von der Heizungs-Steuerung gesetzt).
+      summer_mode_active: >
+        {% set b = inputs.summer_mode_boolean | default('') | string | trim %}
+        {{ (b not in ['', 'sensor.none', 'none', 'None']) and is_state(b, 'on') }}
 
       quiet_active: >
         {% if inputs.quiet_schedule | default('') | string | trim not in ['', 'none', 'None'] %}
@@ -1187,6 +1216,9 @@ action:
       #  - Heizung NICHT aktiv
       #  - Außen NICHT wärmer als Innen (Sommer-Schutz)
       #  - Sommer-Cooling würde NICHT gerade feuern (Kühlen hat Vorrang)
+      #  - Sommermodus NICHT aktiv — im Sommer übernimmt die Kühl-Logik (FLOW 4)
+      #    die abendliche Lüftungsaufforderung; die fixe-Zeit/Heimkehr-Aufforderung
+      #    entfällt daher. CO₂/Feuchte-Prompts bleiben (saisonunabhängig).
       #  - Kein Fenster ist bereits offen (sonst "lüften!"-Notification während
       #    schon gelüftet wird — nonsensical).
       # CO2/Luftfeuchte-Trigger feuern unabhängig von Zeitfenster/Heizung/Sommer,
@@ -1203,6 +1235,7 @@ action:
            and not (heating_active | bool(false))
            and not (outdoor_warmer_than_indoor | bool(false))
            and not ((cooling_currently_recommended | bool(false)) and (in_cooling_window | bool(false)))
+           and not (summer_mode_active | bool(false))
            and not (any_window_open | bool(false)))
           or ((trigger.id in ['need_fresh_air_co2', 'need_fresh_air_humidity'])
               and not (any_window_open | bool(false)))
@@ -1270,6 +1303,8 @@ action:
               - "{{ (presence_recheck_critical_labels | length) > 0 }}"
               - "{{ (critical_targets_list | trim) != '' }}"
               - "{{ not (warm_alert_suppress | bool(false)) }}"
+              # Im Sommer keine kritische Re-Check-Eskalation (nur 24h-Pfad in FLOW 2).
+              - "{{ not (summer_mode_active | bool(false)) }}"
             then:
               - repeat:
                   for_each: "{{ (critical_targets_list | trim).split(',') if (critical_targets_list | trim) != '' else [] }}"
@@ -1465,7 +1500,9 @@ action:
               - conditions:
                   - "{{ any_room_to_notify_now | bool(false) }}"
                   - "{{ not (cooling_beneficial_now | bool(false)) }}"
-                  - "{{ not (warm_alert_suppress_now | bool(false)) }}"
+                  # Im Sommer trotz warmer Temperatur eine (einmalige) normale Meldung
+                  # fuer vergessene Fenster; im Winter bleibt der Warm-Suppress.
+                  - "{{ (not (warm_alert_suppress_now | bool(false))) or (summer_mode_active | bool(false)) }}"
                   - "{{ (notify_targets_list | trim) != '' }}"
                 sequence:
                   - repeat:
@@ -1480,6 +1517,99 @@ action:
                               push:
                                 sticky: true
                           continue_on_error: true
+
+          # ───── SOMMER: keine Minuten-Eskalation. Die eine normale Meldung kam
+          #       oben; danach erst bei > 24 h offenem Fenster kritisch (mutebar). ─────
+          - if:
+              - "{{ summer_mode_active | bool(false) }}"
+            then:
+              # Warten bis alle Fenster zu sind — max. 24h.
+              - wait_for_trigger:
+                  - trigger: template
+                    value_template: >
+                      {% set o = namespace(v=false) %}
+                      {% for w in window_entities %}
+                        {% if states[w] is defined and is_state(w, 'on') %}{% set o.v = true %}{% endif %}
+                      {% endfor %}
+                      {{ not o.v }}
+                timeout:
+                  hours: 24
+                continue_on_timeout: true
+              # Timeout = nach 24h noch offen -> kritische, mutebare Eskalation.
+              - if:
+                  - "{{ not (wait.completed | bool(false)) }}"
+                  - "{{ (critical_targets_list | trim) != '' }}"
+                then:
+                  - repeat:
+                      while:
+                        - condition: template
+                          value_template: >
+                            {% set o = namespace(v=false) %}
+                            {% for w in window_entities %}
+                              {% if states[w] is defined and is_state(w, 'on') %}{% set o.v = true %}{% endif %}
+                            {% endfor %}
+                            {{ o.v and (repeat.index <= 24) }}
+                      sequence:
+                        - repeat:
+                            for_each: "{{ (critical_targets_list | trim).split(',') if (critical_targets_list | trim) != '' else [] }}"
+                            sequence:
+                              - action: "{{ repeat.item | trim }}"
+                                data:
+                                  title: "🚨 Fenster seit über 24 h offen!"
+                                  message: "Ein Fenster ist seit mehr als 24 h offen.\n(Lüftungs-Steuerung)"
+                                  data:
+                                    tag: vaillant_lueftung
+                                    push:
+                                      interruption-level: critical
+                                      sound:
+                                        name: alarm.caf
+                                        critical: 1
+                                        volume: 1.0
+                                    ttl: 0
+                                    priority: high
+                                    actions:
+                                      - action: "VAILLANT_LUEFTUNG_MUTE_UNTIL_CLOSED"
+                                        title: "🔇 Stumm bis geschlossen"
+                                      - action: "VAILLANT_LUEFTUNG_SNOOZE_1H"
+                                        title: "⏰ In 1h erinnern"
+                                continue_on_error: true
+                        # Auf Mute/Snooze-Tap ODER Fenster-zu warten; sonst nach 1h erneut.
+                        - wait_for_trigger:
+                            - trigger: event
+                              event_type: mobile_app_notification_action
+                              event_data:
+                                action: "VAILLANT_LUEFTUNG_MUTE_UNTIL_CLOSED"
+                              id: mute
+                            - trigger: event
+                              event_type: mobile_app_notification_action
+                              event_data:
+                                action: "VAILLANT_LUEFTUNG_SNOOZE_1H"
+                              id: snooze
+                            - trigger: template
+                              value_template: >
+                                {% set o = namespace(v=false) %}
+                                {% for w in window_entities %}
+                                  {% if states[w] is defined and is_state(w, 'on') %}{% set o.v = true %}{% endif %}
+                                {% endfor %}
+                                {{ not o.v }}
+                              id: closed
+                          timeout:
+                            hours: 1
+                          continue_on_timeout: true
+                        - choose:
+                            # Stumm bis geschlossen -> Lauf beenden (kein Alert mehr bis Fenster zu).
+                            - conditions:
+                                - "{{ wait.trigger is defined and wait.trigger.id == 'mute' }}"
+                              sequence:
+                                - stop: "Sommer: 24h-Alert gemutet bis Fenster geschlossen"
+                            # Snooze 1h -> Pause, dann Schleife erneut.
+                            - conditions:
+                                - "{{ wait.trigger is defined and wait.trigger.id == 'snooze' }}"
+                              sequence:
+                                - delay:
+                                    hours: 1
+                            # sonst: 1h-Timeout (erneut) oder Fenster zu (while bricht ab)
+              - stop: "Sommer: FLOW 2 erledigt (keine Minuten-Eskalation)"
 
           - condition: template
             value_template: "{{ any_window_open_now | bool(false) }}"
@@ -1617,14 +1747,15 @@ action:
                           # Default: timeout → loop continues (next alert in ~1 min)
 
       # ════════════════════════════════════════════════════════
-      # FLOW 3: SAFETY (RAIN / AWAY MODE)
+      # FLOW 3: SAFETY (RAIN / STORM / AWAY MODE)
       # Präsenz-aware: Räume mit aktiver Präsenz werden aus Liste gefiltert.
       # ════════════════════════════════════════════════════════
       - conditions:
-          - "{{ (trigger.id in ['safety_rain', 'safety_away_mode']) | bool(false) }}"
+          - "{{ (trigger.id in ['safety_rain', 'safety_storm', 'safety_away_mode']) | bool(false) }}"
         sequence:
           - variables:
               safety_due_to_rain: "{{ (trigger.id == 'safety_rain') | bool(false) }}"
+              safety_due_to_storm: "{{ (trigger.id == 'safety_storm') | bool(false) }}"
               safety_due_to_away_mode: "{{ ((trigger.id == 'safety_away_mode') and (away_mode_active | bool(false))) | bool(false) }}"
               # Präsenz-Filter ignorieren bei Away-Mode ODER globalem Toggle
               safety_ignore_presence: "{{ (safety_due_to_away_mode | bool(false)) or (inputs.notify_on_presence | bool(false)) }}"
@@ -1645,10 +1776,12 @@ action:
                 {% endfor %}
                 {{ ns.items }}
               safety_rooms_text: "{{ safety_rooms_to_notify | join(', ') if (safety_rooms_to_notify | length) > 0 else 'Fenster' }}"
-              safety_should_alert: "{{ ((safety_rooms_to_notify | length) > 0) and ((safety_due_to_rain | bool(false)) or (safety_due_to_away_mode | bool(false))) }}"
+              safety_should_alert: "{{ ((safety_rooms_to_notify | length) > 0) and ((safety_due_to_rain | bool(false)) or (safety_due_to_storm | bool(false)) or (safety_due_to_away_mode | bool(false))) }}"
               safety_reason: >
                 {% if safety_due_to_rain | bool(false) %}
                   🌧️ Regen erkannt
+                {% elif safety_due_to_storm | bool(false) %}
+                  🌬️ Sturm erkannt
                 {% elif safety_due_to_away_mode | bool(false) %}
                   🏠 Away Mode aktiviert
                 {% else %}
@@ -1656,8 +1789,30 @@ action:
                 {% endif %}
 
           - choose:
+              # SOMMER: normale (nicht-kritische) Meldung, keine Eskalation.
+              # Auch Niesel/Regen/Sturm -> du kannst meist problemlos weiterlüften.
               - conditions:
                   - "{{ safety_should_alert | bool(false) }}"
+                  - "{{ summer_mode_active | bool(false) }}"
+                  - "{{ (notify_targets_list | trim) != '' }}"
+                sequence:
+                  - repeat:
+                      for_each: "{{ (notify_targets_list | trim).split(',') if (notify_targets_list | trim) != '' else [] }}"
+                      sequence:
+                        - action: "{{ repeat.item | trim }}"
+                          data:
+                            title: "⚠️ Fenster offen!"
+                            message: "{{ safety_reason }}. Offene Fenster: {{ safety_rooms_text }}.\n(Lüftungs-Steuerung)"
+                            data:
+                              tag: vaillant_lueftung
+                              push:
+                                interruption-level: time-sensitive
+                                sticky: true
+                          continue_on_error: true
+              # WINTER: kritische Meldung (bisheriges Verhalten).
+              - conditions:
+                  - "{{ safety_should_alert | bool(false) }}"
+                  - "{{ not (summer_mode_active | bool(false)) }}"
                   - "{{ (critical_targets_list | trim) != '' }}"
                 sequence:
                   - repeat:

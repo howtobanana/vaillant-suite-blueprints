@@ -11,6 +11,7 @@ blueprint:
     - 👥 Person-basierter Home-Abgleich – Away nur wenn ALLE Personen weg sind.
     - ⏱️ Kurzabwesenheits-Filter (Timeout).
     - 🎚️ Steuert den zentralen "Away-Mode Helper" für Modul 1.
+    - ❄️ Sommermodus-aware: keine Away-/Pre-Heat-Pushs, wenn der zentrale Sommermodus-Schalter aktiv ist (Heizung würde ohnehin nicht reagieren). Der Away-Helper wird weiterhin gesetzt.
 
     **Das Ökosystem:**
     Entwickelt für den Betrieb im Verbund mit:
@@ -260,6 +261,18 @@ blueprint:
               multiple: true
               integration: mobile_app
 
+        summer_mode_boolean:
+          name: "❄️ Sommermodus-Schalter (opt)"
+          description: |
+            Gemeinsamer Saison-Schalter (input_boolean), gesetzt von der
+            Heizungs-Steuerung. Wenn AN: keine Away-/Pre-Heat-Benachrichtigungen
+            und kein Vorheizen (wäre wirkungslos). Der Away-Helper wird weiterhin
+            normal gesetzt. Leer = keine Sommermodus-Berücksichtigung.
+          default: ""
+          selector:
+            entity:
+              domain: input_boolean
+
 mode: restart
 max_exceeded: silent
 
@@ -300,8 +313,14 @@ action:
         notify_info: !input notify_info
         notify_entities: !input notify_entities
         quiet_schedule: !input quiet_schedule
+        summer_mode_boolean: !input summer_mode_boolean
 
       away_mode_helper_set: "{{ (inputs.away_mode_boolean | list | length) > 0 }}"
+
+      # Sommermodus: zentraler Saison-Schalter (von der Heizungs-Steuerung gesetzt).
+      summer_mode_active: >
+        {% set b = inputs.summer_mode_boolean | default('') | string | trim %}
+        {{ (b not in ['', 'sensor.none', 'none', 'None']) and is_state(b, 'on') }}
 
       proximity_valid: >
         {{ inputs.proximity_entity != '' and
@@ -420,7 +439,7 @@ action:
           {{ false }}
         {% endif %}
 
-      info_notifications_allowed: "{{ inputs.notifications_enabled | bool(false) and inputs.notify_info | bool(false) and not (quiet_active | bool(false)) }}"
+      info_notifications_allowed: "{{ inputs.notifications_enabled | bool(false) and inputs.notify_info | bool(false) and not (quiet_active | bool(false)) and not (summer_mode_active | bool(false)) }}"
 
       notify_services: >
         {% set ns = namespace(items=[]) %}
@@ -587,7 +606,7 @@ action:
   # Triggers only when: heading home detected, pre-heat configured, helpers not already on,
   # AND pre-heat is actually useful (reference temp below comfort − hysteresis).
   - if:
-      - "{{ (heading_home | bool(false)) and (pre_heat_configured | bool(false)) and not (pre_heat_any_already_on | bool(false)) and (pre_heat_useful | bool(false)) }}"
+      - "{{ (heading_home | bool(false)) and (pre_heat_configured | bool(false)) and not (pre_heat_any_already_on | bool(false)) and (pre_heat_useful | bool(false)) and not (summer_mode_active | bool(false)) }}"
     then:
       - choose:
           # ── Modus CONFIRM (empfohlen): Nur auf User-Bestätigung vorheizen ──
