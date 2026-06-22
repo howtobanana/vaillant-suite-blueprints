@@ -14,6 +14,7 @@ blueprint:
     - ❄️ Sommer-Kühlung: Benachrichtigung wenn Lüften die Wohnung kühlen kann.
     - ☀️ Sommermodus-aware: bei aktivem Sommermodus keine kritische Eskalation — nur normale Meldungen (Präsenz im Raum bleibt still). Kritisch wird es einzig bei einem über 24 h offenen Fenster (mit „Stumm bis geschlossen"-Button). Regen, Sturm und Away lösen im Sommer nur eine normale Warnung aus.
     - 🌬️ Sturm-Erkennung (Wetter-Status windy/exceptional) als zusätzliche Sicherheits-Warnung neben Regen.
+    - 🔌 Mobile Klimaanlage: erkennt das Abluftfenster (kein Fehlalarm bei ≤1 offenem Klima-Raum-Fenster), meldet mehrere offene Fenster trotz Klima und schaltet bei freier Kühlung die Klima optional aus.
 
     **Das Ökosystem:**
     Entwickelt für den Betrieb im Verbund mit:
@@ -499,6 +500,65 @@ blueprint:
           selector:
             boolean:
 
+    section_ac:
+      name: "❄️ Mobile Klimaanlage"
+      description: |
+        Mobiles Klimagerät (z. B. Dreo) braucht ein Fenster für die Abluft.
+        Solange die Klima läuft, gilt EIN offenes Fenster eines Klima-Raums als
+        legitim (keine Fenster-Warnung). Sind MEHRERE Klima-Raum-Fenster offen,
+        wurde wahrscheinlich eines vergessen → Hinweis. Wird außen kühler als
+        innen, kommt eine Lüften-Empfehlung und die Klima kann automatisch aus.
+      collapsed: true
+      input:
+        ac_climate_entity:
+          name: "❄️ Klima-Entity (climate)"
+          description: |
+            Das mobile Klimagerät als climate-Entity. "läuft" = Status ≠ off.
+            Leer = Klima-Logik komplett deaktiviert.
+          default: ""
+          selector:
+            entity:
+              domain: climate
+        ac_enable_auto_off:
+          name: "🔌 Klima automatisch ausschalten (freie Kühlung)"
+          description: |
+            AN: Wird außen kühler als innen (− Hysterese) im Kühl-Zeitfenster,
+            schaltet die Automation die Klima per climate.turn_off aus (nur Aus,
+            nie automatisch An). AUS: nur Benachrichtigung, kein Steuerbefehl.
+          default: false
+          selector:
+            boolean:
+        ac_room_master:
+          name: "🏠 Master-Raum ist Klima-Raum"
+          description: "Kann die Klima hier stehen? Nur Fenster markierter Räume zählen für die ≤1/≥2-Logik."
+          default: false
+          selector:
+            boolean:
+        ac_room_2:
+          name: "🛏️ Raum 2 ist Klima-Raum"
+          description: "Kann die Klima hier stehen?"
+          default: false
+          selector:
+            boolean:
+        ac_room_3:
+          name: "💻 Raum 3 ist Klima-Raum"
+          description: "Kann die Klima hier stehen?"
+          default: false
+          selector:
+            boolean:
+        ac_room_4:
+          name: "🛁 Raum 4 ist Klima-Raum"
+          description: "Kann die Klima hier stehen?"
+          default: false
+          selector:
+            boolean:
+        ac_room_5:
+          name: "🍳 Raum 5 ist Klima-Raum"
+          description: "Kann die Klima hier stehen?"
+          default: false
+          selector:
+            boolean:
+
     section_notifications:
       name: "📩 Benachrichtigungen"
       description: |
@@ -582,6 +642,7 @@ trigger_variables:
   tv_room5_window: !input room5_window
   tv_people_home_entity: !input people_home_entity
   tv_cooling_schedule: !input cooling_schedule
+  tv_ac_climate_entity: !input ac_climate_entity
 
 trigger:
   # Need Fresh Air: Zeitfenster startet
@@ -805,6 +866,29 @@ trigger:
     minutes: 0
     id: cooling_hourly_recheck
 
+  # Klima: Außen kühler als innen (Hysterese) -> freie Kühlung statt Klima.
+  # Feuert unabhängig vom Fensterstatus (bei laufender Klima ist ein Fenster offen).
+  - trigger: template
+    value_template: >
+      {% set e = tv_ac_climate_entity | default('') | string | trim %}
+      {% set indoor_s = tv_cooling_indoor_temp_sensor | default('') | string | trim %}
+      {% set outdoor_s = tv_cooling_outdoor_temp_source | default('') | string | trim %}
+      {% if (e not in ['', 'none', 'None']) and (states(e) not in ['off', 'unavailable', 'unknown', '', 'none'])
+            and indoor_s not in ['', 'none'] and has_value(indoor_s) %}
+        {% set indoor = states(indoor_s) | float(0) %}
+        {% set outdoor = 0 %}
+        {% if outdoor_s not in ['', 'none'] and has_value(outdoor_s) %}
+          {% set outdoor = states(outdoor_s) | float(0) %}
+        {% elif tv_weather_entity | default('') | string | trim != '' %}
+          {% set outdoor = state_attr(tv_weather_entity, 'temperature') | float(0) %}
+        {% endif %}
+        {{ outdoor <= (indoor - (tv_cooling_hysteresis | float(2.0))) }}
+      {% else %}
+        {{ false }}
+      {% endif %}
+    for: "00:05:00"
+    id: ac_free_cooling
+
 action:
   - variables:
       inputs:
@@ -855,6 +939,13 @@ action:
         notify_only_when_home: !input notify_only_when_home
         warm_suppress_indoor_threshold: !input warm_suppress_indoor_threshold
         warm_suppress_outdoor_threshold: !input warm_suppress_outdoor_threshold
+        ac_climate_entity: !input ac_climate_entity
+        ac_enable_auto_off: !input ac_enable_auto_off
+        ac_room_master: !input ac_room_master
+        ac_room_2: !input ac_room_2
+        ac_room_3: !input ac_room_3
+        ac_room_4: !input ac_room_4
+        ac_room_5: !input ac_room_5
 
       window_entities: >
         {% set ns = namespace(items=[]) %}
@@ -868,16 +959,48 @@ action:
       # Per-Raum-Runtime-Config (nur Räume mit konfiguriertem Fenster)
       rooms_runtime: >
         {% set rooms = [
-          {'key':'master', 'label': (inputs.master_label | default('') | string), 'window': (inputs.master_window | default('') | string), 'presence': (inputs.master_presence | default('') | string)},
-          {'key':'room2',  'label': (inputs.room2_label  | default('') | string), 'window': (inputs.room2_window  | default('') | string), 'presence': (inputs.room2_presence  | default('') | string)},
-          {'key':'room3',  'label': (inputs.room3_label  | default('') | string), 'window': (inputs.room3_window  | default('') | string), 'presence': (inputs.room3_presence  | default('') | string)},
-          {'key':'room4',  'label': (inputs.room4_label  | default('') | string), 'window': (inputs.room4_window  | default('') | string), 'presence': (inputs.room4_presence  | default('') | string)},
-          {'key':'room5',  'label': (inputs.room5_label  | default('') | string), 'window': (inputs.room5_window  | default('') | string), 'presence': (inputs.room5_presence  | default('') | string)}
+          {'key':'master', 'label': (inputs.master_label | default('') | string), 'window': (inputs.master_window | default('') | string), 'presence': (inputs.master_presence | default('') | string), 'is_ac_room': (inputs.ac_room_master | bool(false))},
+          {'key':'room2',  'label': (inputs.room2_label  | default('') | string), 'window': (inputs.room2_window  | default('') | string), 'presence': (inputs.room2_presence  | default('') | string), 'is_ac_room': (inputs.ac_room_2 | bool(false))},
+          {'key':'room3',  'label': (inputs.room3_label  | default('') | string), 'window': (inputs.room3_window  | default('') | string), 'presence': (inputs.room3_presence  | default('') | string), 'is_ac_room': (inputs.ac_room_3 | bool(false))},
+          {'key':'room4',  'label': (inputs.room4_label  | default('') | string), 'window': (inputs.room4_window  | default('') | string), 'presence': (inputs.room4_presence  | default('') | string), 'is_ac_room': (inputs.ac_room_4 | bool(false))},
+          {'key':'room5',  'label': (inputs.room5_label  | default('') | string), 'window': (inputs.room5_window  | default('') | string), 'presence': (inputs.room5_presence  | default('') | string), 'is_ac_room': (inputs.ac_room_5 | bool(false))}
         ] %}
         {% set ns = namespace(items=[]) %}
         {% for r in rooms %}
           {% if (r.window | trim) != '' %}
             {% set ns.items = ns.items + [r] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
+
+      # ── Mobile Klimaanlage ──
+      ac_running: >
+        {% set e = inputs.ac_climate_entity | default('') | string | trim %}
+        {{ (e not in ['', 'none', 'None']) and (states(e) not in ['off', 'unavailable', 'unknown', '', 'none']) }}
+      # Abluftfenster: Fenster der als Klima-Raum markierten Räume.
+      ac_window_entities: >
+        {% set ns = namespace(items=[]) %}
+        {% for r in rooms_runtime %}
+          {% if (r.is_ac_room | bool(false)) and (r.window | trim) != '' %}
+            {% set ns.items = ns.items + [r.window] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
+      # Räume/Fenster für Heizverlust-Nags: Klima-Raum-Fenster sind ausgenommen,
+      # solange die Klima läuft (das offene Fenster ist die Abluft).
+      nag_rooms: >
+        {% set ns = namespace(items=[]) %}
+        {% for r in rooms_runtime %}
+          {% if not ((ac_running | bool(false)) and (r.is_ac_room | bool(false))) %}
+            {% set ns.items = ns.items + [r] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
+      nag_window_entities: >
+        {% set ns = namespace(items=[]) %}
+        {% for r in nag_rooms %}
+          {% if (r.window | trim) != '' %}
+            {% set ns.items = ns.items + [r.window] %}
           {% endif %}
         {% endfor %}
         {{ ns.items }}
@@ -1046,6 +1169,24 @@ action:
 
       open_windows_text: "{{ open_windows_list | join(', ') if (open_windows_list | length) > 0 else 'Fenster' }}"
       any_window_open: "{{ (open_windows_list | length) > 0 }}"
+
+      # Offene Klima-Raum-Fenster (für die ≤1/≥2-Logik der mobilen Klima).
+      ac_open_count: >
+        {% set ns = namespace(n=0) %}
+        {% for w in ac_window_entities %}
+          {% if states[w] is defined and is_state(w, 'on') %}{% set ns.n = ns.n + 1 %}{% endif %}
+        {% endfor %}
+        {{ ns.n }}
+      ac_open_windows_text: >
+        {% set ns = namespace(items=[]) %}
+        {% for w in ac_window_entities %}
+          {% if states[w] is defined and is_state(w, 'on') %}
+            {% set fn = state_attr(w, 'friendly_name') %}
+            {% set ns.items = ns.items + [fn if (fn is not none and (fn | string | trim) != '') else w] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items | join(', ') if ns.items | length > 0 else 'Fenster' }}
+      ac_multi: "{{ (ac_running | bool(false)) and ((ac_open_count | int(0)) >= 2) }}"
 
       window_opened_trigger: >
         {% if trigger.id in window_trigger_ids and trigger.event is defined and trigger.event.data is defined and trigger.event.data.new_state is defined and trigger.event.data.new_state is not none and trigger.event.data.new_state.state is defined %}
@@ -1276,7 +1417,7 @@ action:
                 {% set now_ts = as_timestamp(now()) | float(0) %}
                 {% set thresh_s = (inputs.airing_duration | float(10)) * 60 %}
                 {% set esc_s = thresh_s + (inputs.escalation_delay | float(20)) * 60 %}
-                {% for r in rooms_runtime %}
+                {% for r in nag_rooms %}
                   {% set w = r.window %}
                   {% if states[w] is defined and is_state(w, 'on') %}
                     {% set p = r.presence %}
@@ -1437,7 +1578,7 @@ action:
               rooms_to_notify_after_delay: >
                 {% set ns = namespace(items=[]) %}
                 {% set force_notify = inputs.notify_on_presence | bool(false) %}
-                {% for r in rooms_runtime %}
+                {% for r in nag_rooms %}
                   {% set w = r.window %}
                   {% if states[w] is defined and is_state(w, 'on') %}
                     {% set p = r.presence %}
@@ -1461,6 +1602,24 @@ action:
                 {{ ns.open | bool(false) }}
               any_room_to_notify_now: "{{ (rooms_to_notify_after_delay | length) > 0 }}"
               open_rooms_now_text: "{{ rooms_to_notify_after_delay | join(', ') if (rooms_to_notify_after_delay | length) > 0 else 'Fenster' }}"
+              # Recompute Klima-Status nach airing_duration delay (≥2 Klima-Raum-Fenster offen?).
+              ac_multi_now: >
+                {% set e = inputs.ac_climate_entity | default('') | string | trim %}
+                {% set running = (e not in ['', 'none', 'None']) and (states(e) not in ['off', 'unavailable', 'unknown', '', 'none']) %}
+                {% set ns = namespace(n=0) %}
+                {% for w in ac_window_entities %}
+                  {% if states[w] is defined and is_state(w, 'on') %}{% set ns.n = ns.n + 1 %}{% endif %}
+                {% endfor %}
+                {{ running and (ns.n >= 2) }}
+              ac_open_text_now: >
+                {% set ns = namespace(items=[]) %}
+                {% for w in ac_window_entities %}
+                  {% if states[w] is defined and is_state(w, 'on') %}
+                    {% set fn = state_attr(w, 'friendly_name') %}
+                    {% set ns.items = ns.items + [fn if (fn is not none and (fn | string | trim) != '') else w] %}
+                  {% endif %}
+                {% endfor %}
+                {{ ns.items | join(', ') if ns.items | length > 0 else 'Fenster' }}
               # Recompute warm_alert_suppress nach airing_duration delay.
               # Werte können nach Lüftungsdauer kippen (Innen abgekühlt, Außen warm geworden).
               warm_alert_suppress_now: >
@@ -1518,6 +1677,24 @@ action:
                                 sticky: true
                           continue_on_error: true
 
+          # Klima läuft + ≥2 Klima-Raum-Fenster offen -> vermutlich eines vergessen.
+          - if:
+              - "{{ ac_multi_now | bool(false) }}"
+              - "{{ (notify_targets_list | trim) != '' }}"
+            then:
+              - repeat:
+                  for_each: "{{ (notify_targets_list | trim).split(',') if (notify_targets_list | trim) != '' else [] }}"
+                  sequence:
+                    - action: "{{ repeat.item | trim }}"
+                      data:
+                        title: "❄️ Klima läuft — mehrere Fenster offen"
+                        message: "Offen: {{ ac_open_text_now }}. Eines ist fürs Klimagerät, die anderen bitte schließen.\n(Lüftungs-Steuerung)"
+                        data:
+                          tag: vaillant_lueftung_ac
+                          push:
+                            sticky: true
+                      continue_on_error: true
+
           # ───── SOMMER: keine Minuten-Eskalation. Die eine normale Meldung kam
           #       oben; danach erst bei > 24 h offenem Fenster kritisch (mutebar). ─────
           - if:
@@ -1528,7 +1705,7 @@ action:
                   - trigger: template
                     value_template: >
                       {% set o = namespace(v=false) %}
-                      {% for w in window_entities %}
+                      {% for w in nag_window_entities %}
                         {% if states[w] is defined and is_state(w, 'on') %}{% set o.v = true %}{% endif %}
                       {% endfor %}
                       {{ not o.v }}
@@ -1545,7 +1722,7 @@ action:
                         - condition: template
                           value_template: >
                             {% set o = namespace(v=false) %}
-                            {% for w in window_entities %}
+                            {% for w in nag_window_entities %}
                               {% if states[w] is defined and is_state(w, 'on') %}{% set o.v = true %}{% endif %}
                             {% endfor %}
                             {{ o.v and (repeat.index <= 24) }}
@@ -1588,7 +1765,7 @@ action:
                             - trigger: template
                               value_template: >
                                 {% set o = namespace(v=false) %}
-                                {% for w in window_entities %}
+                                {% for w in nag_window_entities %}
                                   {% if states[w] is defined and is_state(w, 'on') %}{% set o.v = true %}{% endif %}
                                 {% endfor %}
                                 {{ not o.v }}
@@ -1637,7 +1814,7 @@ action:
                             {# Presence-aware: continue loop if at least one open window is eligible (respects notify_on_presence toggle) #}
                             {% set ns = namespace(eligible=false) %}
                             {% set force_notify = inputs.notify_on_presence | bool(false) %}
-                            {% for r in rooms_runtime %}
+                            {% for r in nag_rooms %}
                               {% set w = r.window %}
                               {% if states[w] is defined and is_state(w, 'on') %}
                                 {% set p = r.presence %}
@@ -1674,7 +1851,7 @@ action:
                             escalation_open_text: >
                               {% set ns = namespace(items=[]) %}
                               {% set force_notify = inputs.notify_on_presence | bool(false) %}
-                              {% for r in rooms_runtime %}
+                              {% for r in nag_rooms %}
                                 {% set w = r.window %}
                                 {% if states[w] is defined and is_state(w, 'on') %}
                                   {% set p = r.presence %}
@@ -2100,6 +2277,42 @@ action:
                     message: "Kühlungs-Zeitfenster ist vorbei. Offen: {{ open_windows_text }}."
                     data:
                       tag: vaillant_lueftung
+                      push:
+                        sticky: true
+                  continue_on_error: true
+
+      # ════════════════════════════════════════════════════════
+      # FLOW 5: KLIMA — Freie Kühlung -> Fenster auf, Klima aus (Energie sparen)
+      # Außen kühler als innen, Klima läuft, im Kühl-Zeitfenster.
+      # ════════════════════════════════════════════════════════
+      - conditions:
+          - "{{ trigger.id == 'ac_free_cooling' }}"
+          - "{{ ac_running | bool(false) }}"
+          - "{{ in_cooling_window | bool(false) }}"
+          - "{{ not (rain_now | bool(false)) }}"
+          - "{{ not (quiet_active | bool(false)) }}"
+          - "{{ (notify_targets_list | trim) != '' }}"
+        sequence:
+          # Opt-in: Klima wirklich ausschalten (nur Aus, nie automatisch An).
+          - if:
+              - "{{ inputs.ac_enable_auto_off | bool(false) }}"
+              - "{{ inputs.ac_climate_entity | default('') | string | trim not in ['', 'none', 'None'] }}"
+            then:
+              - action: climate.turn_off
+                target:
+                  entity_id: "{{ inputs.ac_climate_entity }}"
+                continue_on_error: true
+          - repeat:
+              for_each: "{{ (notify_targets_list | trim).split(',') if (notify_targets_list | trim) != '' else [] }}"
+              sequence:
+                - action: "{{ repeat.item | trim }}"
+                  data:
+                    title: "❄️ Freie Kühlung — Klima aus"
+                    message: >
+                      Draußen {{ cooling_outdoor_temp | float(0) | round(1) }}°C, innen {{ cooling_indoor_temp | float(0) | round(1) }}°C.
+                      {% if inputs.ac_enable_auto_off | bool(false) %}Klima ausgeschaltet — {% endif %}Fenster auf zum Kühlen spart Energie.
+                    data:
+                      tag: vaillant_lueftung_ac
                       push:
                         sticky: true
                   continue_on_error: true
