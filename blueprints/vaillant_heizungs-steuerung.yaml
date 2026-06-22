@@ -3637,12 +3637,14 @@ actions:
             {{ msg.out }}
 
   # ════════════════════════════════════════════════════════════
-  # WINDOW FALLBACK REMINDER: Sicherheitsnetz nach langer Fenster-Öffnung
-  # Feuert unabhängig von Präsenz/Home — ergänzt Lüftungs-Steuerung
+  # WINDOW FALLBACK REMINDER: Heizverlust-Sicherheitsnetz nach langer Fenster-Öffnung.
+  # Nur im Heizbetrieb (NICHT im Sommermodus) und nur in Räumen OHNE Präsenz.
   # ════════════════════════════════════════════════════════════
   - if:
       - "{{ inputs.window_presence_reminder_enabled | bool(false) }}"
       - "{{ _notify_configured | bool(false) }}"
+      # Im Sommermodus heizt nichts -> "Heizung pausiert wegen Fenster" waere sinnlos.
+      - "{{ not (summer_mode_active | bool(false)) }}"
     then:
       - variables:
           _window_fallback_rooms: >
@@ -3651,7 +3653,10 @@ actions:
             {% set threshold_s = (inputs.window_presence_reminder_interval | float(60)) * 60 %}
             {% set repeat_s = 1800 %}
             {% for room in rooms_runtime_list | default([], true) %}
-              {% if room.enabled | default(false) | bool(false) and room.window_open_too_long | default(false) | bool(false) %}
+              {# Praesenz-aware: Raeume mit Anwesenheit (Helper ODER Sensor) ueberspringen. #}
+              {% if room.enabled | default(false) | bool(false) and room.window_open_too_long | default(false) | bool(false)
+                    and not (room.helper_on | default(false) | bool(false))
+                    and not (room.sensor_on_long_enough | default(false) | bool(false)) %}
                 {% set w = room.window | default('') | string %}
                 {% if w not in ['', 'sensor.none', 'none'] and states[w] is defined %}
                   {% set open_dur = now_ts - (as_timestamp(states[w].last_changed, now_ts) | float(now_ts)) %}
