@@ -1335,9 +1335,10 @@ action:
       #    entfällt daher. CO₂/Feuchte-Prompts bleiben (saisonunabhängig).
       #  - Kein Fenster ist bereits offen (sonst "lüften!"-Notification während
       #    schon gelüftet wird — nonsensical).
-      # CO2/Luftfeuchte-Trigger feuern unabhängig von Zeitfenster/Heizung/Sommer,
-      # ABER auch sie müssen "kein Fenster offen" respektieren — sonst "Luftfeuchte
-      # zu hoch, lüften!" obwohl gerade gelüftet wird.
+      # CO2-Trigger feuert unabhängig von Zeitfenster/Heizung/Sommer (Gesundheit > Komfort),
+      # muss aber "kein Fenster offen" respektieren.
+      # Feuchte-Trigger zusätzlich mit Temp-Riegel: kein Lüften, wenn außen wärmer als
+      # innen — sonst bringt Lüften eher mehr Wärme/Feuchte rein als raus.
       # POSITION-KRITISCH: Muss NACH allen referenzierten Variablen stehen
       # (any_window_open, cooling_currently_recommended, in_cooling_window, ...) —
       # sonst werden sie als Undefined evaluiert und die Guards greifen nicht.
@@ -1351,8 +1352,11 @@ action:
            and not ((cooling_currently_recommended | bool(false)) and (in_cooling_window | bool(false)))
            and not (summer_mode_active | bool(false))
            and not (any_window_open | bool(false)))
-          or ((trigger.id in ['need_fresh_air_co2', 'need_fresh_air_humidity'])
+          or ((trigger.id == 'need_fresh_air_co2')
               and not (any_window_open | bool(false)))
+          or ((trigger.id == 'need_fresh_air_humidity')
+              and not (any_window_open | bool(false))
+              and not (outdoor_warmer_than_indoor | bool(false)))
         }}
 
       # Kompakter Reason-String für Notification-Title in Klammern.
