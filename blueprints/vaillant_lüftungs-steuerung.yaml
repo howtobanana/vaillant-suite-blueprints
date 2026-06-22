@@ -738,13 +738,13 @@ trigger:
       entity_id: !input room5_presence
     id: room5_presence_change
 
-  # Safety: Rain detected
+  # Safety: Starkregen/Gewitter erkannt. Leichter "rainy" bewusst ausgenommen -> lüften ok.
   - trigger: state
     entity_id: !input weather_entity
     to:
-      - "rainy"
       - "pouring"
       - "lightning-rainy"
+      - "lightning"
       - "hail"
       - "snowy-rainy"
     id: safety_rain
@@ -1004,11 +1004,17 @@ action:
         - room5_presence_change
 
       rain_states:
-        - rainy
+        # Schweres Niederschlags-/Gewitter-Wetter. Leichter "rainy" ist bewusst
+        # NICHT dabei -> bei leichtem Regen darf gelüftet werden.
         - pouring
         - lightning-rainy
+        - lightning
         - hail
         - snowy-rainy
+      storm_states:
+        - windy
+        - windy-variant
+        - exceptional
 
       window_trigger_ids:
         - master_window_change
@@ -1043,6 +1049,8 @@ action:
         {% endif %}
 
       rain_now: "{{ states(inputs.weather_entity) in rain_states }}"
+      # Schweres Wetter = Starkregen/Gewitter ODER Sturm -> blockt Lüften-/Kühl-Aufforderungen.
+      severe_now: "{{ (rain_now | bool(false)) or (states(inputs.weather_entity) in storm_states) }}"
 
       co2_sensor_entity: "{{ inputs.co2_sensor | default('') | string | trim }}"
       humidity_sensor_entity: "{{ inputs.humidity_sensor | default('') | string | trim }}"
@@ -1351,12 +1359,14 @@ action:
            and not (outdoor_warmer_than_indoor | bool(false))
            and not ((cooling_currently_recommended | bool(false)) and (in_cooling_window | bool(false)))
            and not (summer_mode_active | bool(false))
+           and not (severe_now | bool(false))
            and not (any_window_open | bool(false)))
           or ((trigger.id == 'need_fresh_air_co2')
               and not (any_window_open | bool(false)))
           or ((trigger.id == 'need_fresh_air_humidity')
               and not (any_window_open | bool(false))
-              and not (outdoor_warmer_than_indoor | bool(false)))
+              and not (outdoor_warmer_than_indoor | bool(false))
+              and not (severe_now | bool(false)))
         }}
 
       # Kompakter Reason-String für Notification-Title in Klammern.
@@ -2006,7 +2016,8 @@ action:
           - "{{ trigger.id in ['cooling_open_recommended', 'cooling_window_open', 'cooling_hourly_recheck'] }}"
           - "{{ in_cooling_window | bool(false) }}"
           - "{{ cooling_currently_recommended | bool(false) }}"
-          - "{{ not (rain_now | bool(false)) }}"
+          # Kein "Fenster auf zum Kühlen" bei schwerem Wetter (Sturm/Gewitter/Starkregen).
+          - "{{ not (severe_now | bool(false)) }}"
           - "{{ not (quiet_active | bool(false)) }}"
           - "{{ not (away_mode_active | bool(false)) }}"
           - "{{ (notify_targets_list | trim) != '' }}"
