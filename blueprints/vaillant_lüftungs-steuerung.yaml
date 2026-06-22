@@ -996,15 +996,6 @@ action:
           {% endif %}
         {% endfor %}
         {{ ns.items }}
-      nag_window_entities: >
-        {% set ns = namespace(items=[]) %}
-        {% for r in nag_rooms %}
-          {% if (r.window | trim) != '' %}
-            {% set ns.items = ns.items + [r.window] %}
-          {% endif %}
-        {% endfor %}
-        {{ ns.items }}
-
       presence_trigger_ids:
         - master_presence_change
         - room2_presence_change
@@ -1169,24 +1160,6 @@ action:
 
       open_windows_text: "{{ open_windows_list | join(', ') if (open_windows_list | length) > 0 else 'Fenster' }}"
       any_window_open: "{{ (open_windows_list | length) > 0 }}"
-
-      # Offene Klima-Raum-Fenster (für die ≤1/≥2-Logik der mobilen Klima).
-      ac_open_count: >
-        {% set ns = namespace(n=0) %}
-        {% for w in ac_window_entities %}
-          {% if states[w] is defined and is_state(w, 'on') %}{% set ns.n = ns.n + 1 %}{% endif %}
-        {% endfor %}
-        {{ ns.n }}
-      ac_open_windows_text: >
-        {% set ns = namespace(items=[]) %}
-        {% for w in ac_window_entities %}
-          {% if states[w] is defined and is_state(w, 'on') %}
-            {% set fn = state_attr(w, 'friendly_name') %}
-            {% set ns.items = ns.items + [fn if (fn is not none and (fn | string | trim) != '') else w] %}
-          {% endif %}
-        {% endfor %}
-        {{ ns.items | join(', ') if ns.items | length > 0 else 'Fenster' }}
-      ac_multi: "{{ (ac_running | bool(false)) and ((ac_open_count | int(0)) >= 2) }}"
 
       window_opened_trigger: >
         {% if trigger.id in window_trigger_ids and trigger.event is defined and trigger.event.data is defined and trigger.event.data.new_state is defined and trigger.event.data.new_state is not none and trigger.event.data.new_state.state is defined %}
@@ -1574,13 +1547,19 @@ action:
               minutes: "{{ inputs.airing_duration }}"
 
           - variables:
-              # Re-compute presence-aware room list AFTER the delay
+              # Klima-Status JETZT (nach dem Delay) — wichtig, weil die Klima oft
+              # erst NACH dem Fenster-Öffnen eingeschaltet wird (sonst Fehlalarm).
+              ac_running_now: >
+                {% set e = inputs.ac_climate_entity | default('') | string | trim %}
+                {{ (e not in ['', 'none', 'None']) and (states(e) not in ['off', 'unavailable', 'unknown', '', 'none']) }}
+              # Re-compute presence-aware room list AFTER the delay.
+              # Klima-Raum-Fenster werden live ausgeschlossen, solange die Klima läuft.
               rooms_to_notify_after_delay: >
                 {% set ns = namespace(items=[]) %}
                 {% set force_notify = inputs.notify_on_presence | bool(false) %}
-                {% for r in nag_rooms %}
+                {% for r in rooms_runtime %}
                   {% set w = r.window %}
-                  {% if states[w] is defined and is_state(w, 'on') %}
+                  {% if (states[w] is defined and is_state(w, 'on')) and not ((ac_running_now | bool(false)) and (r.is_ac_room | bool(false))) %}
                     {% set p = r.presence %}
                     {% set presence_active = (p not in ['', 'none', 'None']) and (states[p] is defined) and is_state(p, 'on') %}
                     {% if force_notify or not presence_active %}
@@ -1705,8 +1684,8 @@ action:
                   - trigger: template
                     value_template: >
                       {% set o = namespace(v=false) %}
-                      {% for w in nag_window_entities %}
-                        {% if states[w] is defined and is_state(w, 'on') %}{% set o.v = true %}{% endif %}
+                      {% for w in window_entities %}
+                        {% if (states[w] is defined and is_state(w, 'on')) and not ((ac_running_now | bool(false)) and (w in ac_window_entities)) %}{% set o.v = true %}{% endif %}
                       {% endfor %}
                       {{ not o.v }}
                 timeout:
@@ -1722,8 +1701,8 @@ action:
                         - condition: template
                           value_template: >
                             {% set o = namespace(v=false) %}
-                            {% for w in nag_window_entities %}
-                              {% if states[w] is defined and is_state(w, 'on') %}{% set o.v = true %}{% endif %}
+                            {% for w in window_entities %}
+                              {% if (states[w] is defined and is_state(w, 'on')) and not ((ac_running_now | bool(false)) and (w in ac_window_entities)) %}{% set o.v = true %}{% endif %}
                             {% endfor %}
                             {{ o.v and (repeat.index <= 24) }}
                       sequence:
@@ -1765,8 +1744,8 @@ action:
                             - trigger: template
                               value_template: >
                                 {% set o = namespace(v=false) %}
-                                {% for w in nag_window_entities %}
-                                  {% if states[w] is defined and is_state(w, 'on') %}{% set o.v = true %}{% endif %}
+                                {% for w in window_entities %}
+                                  {% if (states[w] is defined and is_state(w, 'on')) and not ((ac_running_now | bool(false)) and (w in ac_window_entities)) %}{% set o.v = true %}{% endif %}
                                 {% endfor %}
                                 {{ not o.v }}
                               id: closed
@@ -1814,9 +1793,9 @@ action:
                             {# Presence-aware: continue loop if at least one open window is eligible (respects notify_on_presence toggle) #}
                             {% set ns = namespace(eligible=false) %}
                             {% set force_notify = inputs.notify_on_presence | bool(false) %}
-                            {% for r in nag_rooms %}
+                            {% for r in rooms_runtime %}
                               {% set w = r.window %}
-                              {% if states[w] is defined and is_state(w, 'on') %}
+                              {% if (states[w] is defined and is_state(w, 'on')) and not ((ac_running_now | bool(false)) and (r.is_ac_room | bool(false))) %}
                                 {% set p = r.presence %}
                                 {% set presence_active = (p not in ['', 'none', 'None']) and (states[p] is defined) and is_state(p, 'on') %}
                                 {% if force_notify or not presence_active %}
@@ -1851,9 +1830,9 @@ action:
                             escalation_open_text: >
                               {% set ns = namespace(items=[]) %}
                               {% set force_notify = inputs.notify_on_presence | bool(false) %}
-                              {% for r in nag_rooms %}
+                              {% for r in rooms_runtime %}
                                 {% set w = r.window %}
-                                {% if states[w] is defined and is_state(w, 'on') %}
+                                {% if (states[w] is defined and is_state(w, 'on')) and not ((ac_running_now | bool(false)) and (r.is_ac_room | bool(false))) %}
                                   {% set p = r.presence %}
                                   {% set presence_active = (p not in ['', 'none', 'None']) and (states[p] is defined) and is_state(p, 'on') %}
                                   {% if force_notify or not presence_active %}
