@@ -1181,6 +1181,22 @@ action:
       open_windows_text: "{{ open_windows_list | join(', ') if (open_windows_list | length) > 0 else 'Fenster' }}"
       any_window_open: "{{ (open_windows_list | length) > 0 }}"
 
+      # Offene Fenster OHNE AC-Abluftfenster (bei laufender Klima ist dieses Fenster
+      # die Abluft und darf offen bleiben -> aus Kühl-Schließ-Meldungen ausnehmen).
+      non_ac_open_windows: >
+        {% set e = inputs.ac_climate_entity | default('') | string | trim %}
+        {% set ac_run = (e not in ['', 'none', 'None']) and (states(e) not in ['off', 'unavailable', 'unknown', '', 'none']) %}
+        {% set ns = namespace(items=[]) %}
+        {% for w in window_entities %}
+          {% if w != '' and states[w] is defined and is_state(w, 'on') and not (ac_run and (w in ac_window_entities)) %}
+            {% set fn = state_attr(w, 'friendly_name') %}
+            {% set ns.items = ns.items + [fn if (fn is not none and (fn | string | trim) != '') else w] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
+      non_ac_any_open: "{{ (non_ac_open_windows | length) > 0 }}"
+      non_ac_open_text: "{{ non_ac_open_windows | join(', ') if (non_ac_open_windows | length) > 0 else 'Fenster' }}"
+
       window_opened_trigger: >
         {% if trigger.id in window_trigger_ids and trigger.event is defined and trigger.event.data is defined and trigger.event.data.new_state is defined and trigger.event.data.new_state is not none and trigger.event.data.new_state.state is defined %}
           {% set new_s = trigger.event.data.new_state.state %}
@@ -2121,6 +2137,8 @@ action:
                or (trigger.id in ['cooling_window_end', 'cooling_schedule_end']
                    and (cooling_outdoor_warmer_currently | bool(false))) }}
           - "{{ inputs.cooling_outdoor_warmer_alert | bool(true) }}"
+          # Nur wenn ein offenes Fenster KEIN AC-Abluftfenster ist (sonst nur Klima-Vent offen).
+          - "{{ non_ac_any_open | bool(false) }}"
           - "{{ not (quiet_active | bool(false)) }}"
           - "{{ not (away_mode_active | bool(false)) }}"
           - "{{ (notify_targets_list | trim) != '' }}"
@@ -2132,7 +2150,7 @@ action:
                 - action: "{{ repeat.item | trim }}"
                   data:
                     title: "🌡️ Fenster zu — zu warm draußen"
-                    message: "Außen {{ cooling_outdoor_temp | float(0) | round(1) }}°C, innen {{ cooling_indoor_temp | float(0) | round(1) }}°C. Offen: {{ open_windows_text }}."
+                    message: "Außen {{ cooling_outdoor_temp | float(0) | round(1) }}°C, innen {{ cooling_indoor_temp | float(0) | round(1) }}°C. Offen: {{ non_ac_open_text }}."
                     data:
                       tag: vaillant_lueftung
                       push:
@@ -2145,9 +2163,11 @@ action:
           # WICHTIG: Live-State-Check (states[w]) statt der gespeicherten Variable
           # any_window_open — letztere ist statisch und hätte den Schließ-Event nie erkannt.
           - wait_template: >
+              {% set e = inputs.ac_climate_entity | default('') | string | trim %}
+              {% set ac_run = (e not in ['', 'none', 'None']) and (states(e) not in ['off', 'unavailable', 'unknown', '', 'none']) %}
               {% set ns = namespace(open=false) %}
               {% for w in window_entities %}
-                {% if w != '' and states[w] is defined and is_state(w, 'on') %}
+                {% if w != '' and states[w] is defined and is_state(w, 'on') and not (ac_run and (w in ac_window_entities)) %}
                   {% set ns.open = true %}
                 {% endif %}
               {% endfor %}
@@ -2237,9 +2257,11 @@ action:
                   {{ 0 }}
                 {% endif %}
               critical_open_windows: >
+                {% set e = inputs.ac_climate_entity | default('') | string | trim %}
+                {% set ac_run = (e not in ['', 'none', 'None']) and (states(e) not in ['off', 'unavailable', 'unknown', '', 'none']) %}
                 {% set ns = namespace(items=[]) %}
                 {% for w in window_entities %}
-                  {% if w != '' and states[w] is defined and is_state(w, 'on') %}
+                  {% if w != '' and states[w] is defined and is_state(w, 'on') and not (ac_run and (w in ac_window_entities)) %}
                     {% set fn = state_attr(w, 'friendly_name') %}
                     {% set label = fn if (fn is not none and (fn | string | trim) != '') else w %}
                     {% set ns.items = ns.items + [label] %}
@@ -2283,7 +2305,7 @@ action:
           - "{{ trigger.id in ['cooling_window_end', 'cooling_schedule_end'] }}"
           - "{{ cooling_enabled | bool(false) }}"
           - "{{ inputs.cooling_morning_close_reminder | bool(true) }}"
-          - "{{ any_window_open | bool(false) }}"
+          - "{{ non_ac_any_open | bool(false) }}"
           - "{{ not (quiet_active | bool(false)) }}"
           - "{{ not (away_mode_active | bool(false)) }}"
           - "{{ (notify_targets_list | trim) != '' }}"
@@ -2294,7 +2316,7 @@ action:
                 - action: "{{ repeat.item | trim }}"
                   data:
                     title: "🌬️ Fenster schließen!"
-                    message: "Kühlungs-Zeitfenster ist vorbei. Offen: {{ open_windows_text }}."
+                    message: "Kühlungs-Zeitfenster ist vorbei. Offen: {{ non_ac_open_text }}."
                     data:
                       tag: vaillant_lueftung
                       push:
