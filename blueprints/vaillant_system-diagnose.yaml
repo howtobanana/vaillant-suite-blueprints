@@ -388,13 +388,6 @@ blueprint:
           default: false
           selector:
             boolean:
-        notify_info:
-          name: "🔔 Info-Updates"
-          description: |
-            Schalter: Recovery-/Normalisierungs-Meldungen senden.
-          default: false
-          selector:
-            boolean:
         enable_daily_briefing:
           name: "📅 Tägliches Briefing"
           description: |
@@ -537,7 +530,6 @@ action:
         critical_beep_enabled: !input critical_beep_enabled
         notify_critical_errors: !input notify_critical_errors
         notify_warnings: !input notify_warnings
-        notify_info: !input notify_info
         notify_warning_entities: !input notify_warning_entities
         notify_critical_entities: !input notify_critical_entities
         quiet_schedule: !input quiet_schedule
