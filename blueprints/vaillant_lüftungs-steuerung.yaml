@@ -466,15 +466,18 @@ blueprint:
             entity:
               domain: schedule
         cooling_hysteresis:
-          name: "🌡️ Hysterese (°C)"
+          name: "🌡️ Kühl-Offset (°C)"
           description: |
-            Außentemp muss mindestens X °C unter Innentemp liegen
-            für eine Kühlempfehlung. Verhindert Flatter-Notifications.
-          default: 2.0
+            Erlaubter Außen-Überschuss für die Lüften-/Kühlempfehlung.
+            Empfohlen wird, wenn: außen ≤ innen + Offset.
+            +2 = empfehlen, auch wenn außen bis 2 °C WÄRMER als innen ist.
+            0 = nur, wenn außen ≤ innen (Default).
+            -2 = nur, wenn außen mind. 2 °C KÜHLER als innen.
+          default: 0
           selector:
             number:
-              min: 0.5
-              max: 5.0
+              min: -2
+              max: 2
               step: 0.5
               unit_of_measurement: "°C"
         cooling_morning_close_reminder:
@@ -804,7 +807,7 @@ trigger:
           {% endif %}
         {% endfor %}
         {{ indoor >= (tv_cooling_indoor_threshold | float(25))
-           and outdoor <= (indoor - (tv_cooling_hysteresis | float(2.0)))
+           and outdoor <= (indoor + (tv_cooling_hysteresis | float(0)))
            and not ns.any_open }}
       {% else %}
         {{ false }}
@@ -862,7 +865,7 @@ trigger:
           {% endif %}
         {% endfor %}
         {{ outdoor >= (tv_cooling_indoor_threshold | float(25))
-           and outdoor >= (indoor - ((tv_cooling_hysteresis | float(2.0)) / 2))
+           and outdoor > (indoor + (tv_cooling_hysteresis | float(0)))
            and ns.any_open }}
       {% else %}
         {{ false }}
@@ -893,7 +896,7 @@ trigger:
         {% elif tv_weather_entity | default('') | string | trim != '' %}
           {% set outdoor = state_attr(tv_weather_entity, 'temperature') | float(0) %}
         {% endif %}
-        {{ outdoor <= (indoor - (tv_cooling_hysteresis | float(2.0))) }}
+        {{ outdoor <= (indoor + (tv_cooling_hysteresis | float(0))) }}
       {% else %}
         {{ false }}
       {% endif %}
@@ -1325,7 +1328,7 @@ action:
               {%- endif -%}
             {%- endfor -%}
             {{ indoor >= (inputs.cooling_indoor_threshold | float(25))
-               and ns.outdoor <= (indoor - (inputs.cooling_hysteresis | float(2.0)))
+               and ns.outdoor <= (indoor + (inputs.cooling_hysteresis | float(0)))
                and not ns2.any_open }}
           {%- endif -%}
         {%- else -%}
@@ -1352,7 +1355,7 @@ action:
             {{ false }}
           {%- else -%}
             {{ ns.outdoor >= (inputs.cooling_indoor_threshold | float(25))
-               and ns.outdoor >= (indoor - ((inputs.cooling_hysteresis | float(2.0)) / 2))
+               and ns.outdoor > (indoor + (inputs.cooling_hysteresis | float(0)))
                and (any_window_open | bool(false)) }}
           {%- endif -%}
         {%- else -%}
@@ -1684,7 +1687,7 @@ action:
                 {% if (inputs.enable_cooling | bool(false)) and indoor_ok and outdoor_ok %}
                   {% set indoor_t = states(indoor_s) | float(0) %}
                   {% set outdoor_t = states(outdoor_s) | float(0) if (outdoor_s not in ['', 'none', 'None'] and has_value(outdoor_s)) else (state_attr(inputs.weather_entity, 'temperature') | float(0)) %}
-                  {{ indoor_t >= (inputs.cooling_indoor_threshold | float(25)) and outdoor_t <= (indoor_t - (inputs.cooling_hysteresis | float(2.0))) and (in_cooling_window | bool(false)) and not (states(inputs.weather_entity) in rain_states) and not (states(inputs.weather_entity) in storm_states) and not (away_mode_active | bool(false)) }}
+                  {{ indoor_t >= (inputs.cooling_indoor_threshold | float(25)) and outdoor_t <= (indoor_t + (inputs.cooling_hysteresis | float(0))) and (in_cooling_window | bool(false)) and not (states(inputs.weather_entity) in rain_states) and not (states(inputs.weather_entity) in storm_states) and not (away_mode_active | bool(false)) }}
                 {% else %}
                   {{ false }}
                 {% endif %}
@@ -1871,7 +1874,7 @@ action:
                               {% set outdoor_t = state_attr(we, 'temperature') | float(0) %}
                             {% endif %}
                             {% if (inputs.enable_cooling | bool(false)) and indoor_t is not none and outdoor_t is not none %}
-                              {% set cool_ok = indoor_t >= (inputs.cooling_indoor_threshold | float(25)) and outdoor_t <= (indoor_t - (inputs.cooling_hysteresis | float(2.0))) and (in_cooling_window | bool(false)) %}
+                              {% set cool_ok = indoor_t >= (inputs.cooling_indoor_threshold | float(25)) and outdoor_t <= (indoor_t + (inputs.cooling_hysteresis | float(0))) and (in_cooling_window | bool(false)) %}
                             {% endif %}
                             {# Heizverlust-Schutz: warmes Wetter UND kein Regen UND nicht away → Eskalation stoppen #}
                             {% set ind_thr = inputs.warm_suppress_indoor_threshold | float(23) %}
@@ -2080,12 +2083,12 @@ action:
                 {%- else -%}
                   {{ [] }}
                 {%- endif -%}
-              # Erste Stunde wo Außen wieder ≥ (Innen − Hysterese) → Lüften lohnt nicht mehr
+              # Erste Stunde wo Außen wieder > (Innen + Offset) → Lüften lohnt nicht mehr
               cooling_until: >
                 {%- set fc = forecast_list | default([], true) -%}
                 {%- set indoor = cooling_indoor_temp | float(0) -%}
-                {%- set hyst = inputs.cooling_hysteresis | float(2.0) -%}
-                {%- set cutoff = indoor - hyst -%}
+                {%- set hyst = inputs.cooling_hysteresis | float(0) -%}
+                {%- set cutoff = indoor + hyst -%}
                 {%- set ns = namespace(end_at=none) -%}
                 {%- for f in fc[:12] -%}
                   {%- if ns.end_at is none and (f.temperature | float(99) > cutoff) -%}
