@@ -2292,8 +2292,6 @@ actions:
         {{ (inputs.master_presence_sensors | reject('in', ['', 'sensor.none', 'none']) | list | length > 0) if inputs.master_presence_sensors else false }}
       master_is_manual: >
         {{ (not (master_sched_valid | bool(false))) and (not (master_helper_valid | bool(false))) and (not (master_sensors_valid | bool(false))) }}
-      master_pre_heat_valid: >
-        {{ inputs.master_pre_heat_helper | string not in ['', 'sensor.none', 'none'] }}
       master_pre_heat_active: >
         {% set _ph_eid = inputs.master_pre_heat_helper | string %}
         {% if _ph_eid in ['', 'sensor.none', 'none'] %}
@@ -3590,7 +3588,6 @@ actions:
         {% endif %}
       _leitstand_normal: "{{ inputs.enable_leitstand_normal | default(false) | bool(false) and not (_quiet_active | bool(false)) }}"
       _leitstand_expert: "{{ inputs.enable_leitstand_expert | default(false) | bool(false) and not (_quiet_active | bool(false)) }}"
-      _leitstand_any: "{{ (_leitstand_normal | bool(false)) or (_leitstand_expert | bool(false)) }}"
       _notify_targets_list: >
         {% set raw = inputs.notify_devices %}
         {% set ns = namespace(items=[]) %}
@@ -3880,7 +3877,6 @@ actions:
   # Skip on ha_start — Sensoren sind nach Restart kurz unavailable
   # ════════════════════════════════════════════════════════════
   - variables:
-      _alert_skip_startup: "{{ trigger.id | default('manual') == 'ha_start' }}"
       _alert_problems: >
         {%- set ns = namespace(items=[]) -%}
         {%- if trigger.id | default('manual') == 'ha_start' -%}

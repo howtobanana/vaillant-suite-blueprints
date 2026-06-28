@@ -616,7 +616,6 @@ action:
         {% endif %}
       notifications_enabled: "{{ inputs.notifications_enabled and not (quiet_active | bool(false)) }}"
       warning_notifications_allowed: "{{ notifications_enabled and inputs.notify_warnings }}"
-      info_notifications_allowed: "{{ notifications_enabled and inputs.notify_info }}"
       critical_notifications_allowed: "{{ notifications_enabled and inputs.notify_critical_errors }}"
       critical_beep_allowed: "{{ inputs.critical_beep_enabled }}"
       master_climate_state: >

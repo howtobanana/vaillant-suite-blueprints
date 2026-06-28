@@ -1278,13 +1278,6 @@ action:
           {{ 0 }}
         {% endif %}
 
-      cooling_sensors_valid: >
-        {% set indoor_s = inputs.cooling_indoor_temp_sensor | default('') | string | trim %}
-        {% set outdoor_s = inputs.cooling_outdoor_temp_source | default('') | string | trim %}
-        {% set indoor_ok = indoor_s not in ['', 'none', 'None'] and has_value(indoor_s) %}
-        {% set outdoor_ok = (outdoor_s not in ['', 'none', 'None'] and has_value(outdoor_s)) or (inputs.weather_entity | default('') | string | trim != '' and state_attr(inputs.weather_entity, 'temperature') is not none) %}
-        {{ indoor_ok and outdoor_ok }}
-
       # Aktuelle Zeit liegt im Kühlungs-Zeitfenster.
       # Schedule (wenn konfiguriert) überschreibt manuelle Start/Ende-Zeiten.
       # Default 20:00–08:00 für typische Sommer-Nachtkühlung (über Mitternacht).
