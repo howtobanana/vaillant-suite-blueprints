@@ -12,7 +12,7 @@ blueprint:
     *   ⚡ **Echtzeit-Reaktion:** Sofortige Anpassung bei Statusänderungen ohne Latenz.
     *   🧠 **Fail-Safe:** Mehrstufige Sicherheitslogik (Debounce, Frostschutz, 60min Time-Guard).
     *   ❄️ **Sommermodus:** Stabile Saison-Erkennung (gleitende Außentemperatur + Hysterese + Haltezeit). Setzt Pre-Heat, Boost und Gebäude-Kompensation aus und steuert einen zentralen `input_boolean`, den Lüftung & Geofencing mitlesen. Optional schaltet er die Therme-Heizung ab (HVAC 'Off'), während das Warmwasser weiterläuft (Frostschutz bleibt).
-    *   🔌 **Therme-Klima-Verriegelung (CO-Schutz):** Läuft das mobile Klimagerät, wird die Therme hart abgeschaltet (nur kaltes Wasser) und der Leitstand pausiert; Klima aus → Therme wieder ein. Inkl. Push. **Kein Ersatz für einen CO-Melder.**
+    *   🔌 **Therme-Klima-Verriegelung (optional):** Läuft das mobile Klimagerät, wird die Therme abgeschaltet und der Leitstand pausiert; Klima aus → Therme wieder ein. Inkl. Push. Nur für raumluftabhängige Geräte relevant (Unterdruck → CO-Risiko) — raumluftunabhängige Brennwertgeräte dürfen parallel zur Klima laufen. **Kein Ersatz für einen CO-Melder.**
 
     **Das Ökosystem:**
     Entwickelt für den Betrieb im Verbund mit:
@@ -1226,27 +1226,35 @@ blueprint:
             Heizung aus, Warmwasser bleibt. Falls deine Anlage dafür stattdessen
             einen bestimmten Preset braucht, hier eintragen → dann wird
             climate.set_preset_mode genutzt.
-            NICHT "system_off" verwenden (das schaltet auch das Warmwasser ab —
-            dafür ist die CO-Verriegelung zuständig).
+            NICHT "system_off" verwenden — das beendet auch die
+            Warmwasser-Bereitung.
           default: ""
           selector:
             text:
 
     section_therme_lockout:
-      name: "🔌 Therme-Klima-Verriegelung (CO-Schutz)"
+      name: "🔌 Therme-Klima-Verriegelung (opt)"
       description: |
-        Schaltet die Therme (= Master-Thermostat) komplett aus, solange das mobile
-        Klimagerät läuft — gegen CO-Risiko durch Unterdruck. Während der Sperre
-        schreibt der Leitstand nichts (kein Gegen-Steuern); sobald die Klima aus
-        ist, läuft der Leitstand normal weiter und stellt den Zustand wieder her.
-        ⚠️ KEIN Ersatz für einen CO-Melder!
+        Schaltet die Therme (= Master-Thermostat) ab, solange das mobile
+        Klimagerät läuft. Nur relevant für raumluftABHÄNGIGE Geräte, die ihre
+        Verbrennungsluft aus dem Raum ziehen — dort kann der Unterdruck der
+        Klima Abgase (CO) in den Raum zurückziehen. RaumluftUNABHÄNGIGE
+        Brennwertgeräte (eigene Zu-/Abluftführung) dürfen parallel zur Klima
+        laufen → Feature AUS lassen.
+        ⚠️ Softwareseitig lässt sich die Anlage nicht wirklich ausschalten —
+        auch Presets beenden nur die Heiz-/WW-Programme (Frostschutz bleibt).
+        Ein echtes Aus geht nur am Gerät selbst. KEIN Ersatz für einen
+        CO-Melder!
+        Während der Sperre schreibt der Leitstand nichts (kein Gegen-Steuern);
+        sobald die Klima aus ist, läuft der Leitstand normal weiter und stellt
+        den Zustand wieder her.
       collapsed: true
       input:
         therme_lockout_enabled:
           name: "🔘 Therme-Klima-Verriegelung aktiv"
           description: |
-            AN: Wenn die Klima läuft, wird die Therme (Master-Thermostat) aus-
-            geschaltet (nur kaltes Wasser). Klima aus → Therme wieder ein.
+            AN: Wenn die Klima läuft, wird die Therme (Master-Thermostat)
+            abgeschaltet. Klima aus → Therme wieder ein.
           default: false
           selector:
             boolean:
@@ -1260,17 +1268,16 @@ blueprint:
             entity:
               domain: climate
         therme_off_preset:
-          name: "⚙️ Aus über Preset (CO-Schutz)"
+          name: "⚙️ Aus über Preset (opt)"
           description: |
-            Preset, mit dem die Therme bei laufender Klima KOMPLETT abgeschaltet
-            wird (Heizung UND Warmwasser/Gas) — gegen CO-Risiko durch Unterdruck.
-            Default "system_off": schaltet das gesamte System ab ("nur kaltes
-            Wasser") → climate.set_preset_mode.
-            ⚠️ Empfehlung NICHT ändern. climate.turn_off (HVAC 'Off') reicht für
-            den CO-Schutz NICHT, weil dabei Warmwasser/Gas weiterlaufen können.
-            Nur leeren, wenn per CO-Melder/Vaillant-App bestätigt ist, dass HVAC
-            'Off' bei dir wirklich auch Gas/Warmwasser stoppt → dann turn_off.
-          default: "system_off"
+            Leer (Default): Therme wird per climate.turn_off (HVAC 'Off')
+            abgeschaltet. Optional: Preset eintragen (z. B. "system_off") →
+            dann wird stattdessen climate.set_preset_mode genutzt.
+            Hinweis: Softwareseitig lässt sich die Anlage in keinem Fall
+            komplett ausschalten — auch "system_off" beendet nur die
+            Heiz-/WW-Programme (Frostschutz bleibt). Ein echtes Aus geht nur
+            am Gerät selbst.
+          default: ""
           selector:
             text:
 
@@ -2851,8 +2858,8 @@ actions:
                       sequence:
                         - action: "{{ repeat.item }}"
                           data:
-                            title: "🔌 Therme aus — Klima läuft (CO-Schutz)"
-                            message: "Klima in Betrieb → Therme abgeschaltet, nur kaltes Wasser.\n(Heizungs-Steuerung)"
+                            title: "🔌 Therme aus — Klima läuft"
+                            message: "Klima in Betrieb → Therme abgeschaltet.\n(Heizungs-Steuerung)"
                             data:
                               tag: vaillant_therme_lockout
                               push:
