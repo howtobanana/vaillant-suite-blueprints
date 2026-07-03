@@ -11,7 +11,7 @@ blueprint:
     *   🌦️ **Gebäude-Kompensation:** Plan A per Template-Sensor (empfohlen), Plan B per Außensensor-Fallback; wirkt als Aufschlag auf den Master-Sollwert.
     *   ⚡ **Echtzeit-Reaktion:** Sofortige Anpassung bei Statusänderungen ohne Latenz.
     *   🧠 **Fail-Safe:** Mehrstufige Sicherheitslogik (Debounce, Frostschutz, 60min Time-Guard).
-    *   ❄️ **Sommermodus:** Stabile Saison-Erkennung (gleitende Außentemperatur + Hysterese + Haltezeit). Setzt Pre-Heat, Boost und Gebäude-Kompensation aus und steuert einen zentralen `input_boolean`, den Lüftung & Geofencing mitlesen. Optional schaltet er die Therme-Heizung ab (HVAC 'Off'), während das Warmwasser weiterläuft (Frostschutz bleibt).
+    *   ❄️ **Sommermodus:** Stabile Saison-Erkennung (gleitende Außentemperatur + Hysterese + Haltezeit). Setzt Pre-Heat, Boost und Gebäude-Kompensation aus und steuert einen zentralen `input_boolean`, den Lüftung & Geofencing mitlesen. Optional schaltet er die Therme-Heizung ab (HVAC 'Off', Warmwasser läuft weiter) und setzt alle TRVs auf das TRV-Minimum (Frostschutz bleibt).
     *   🔌 **Therme-Klima-Verriegelung (optional):** Läuft das mobile Klimagerät, wird die Therme abgeschaltet und der Leitstand pausiert; Klima aus → Therme wieder ein. Inkl. Push. Nur für raumluftabhängige Geräte relevant (Unterdruck → CO-Risiko) — raumluftunabhängige Brennwertgeräte dürfen parallel zur Klima laufen. **Kein Ersatz für einen CO-Melder.**
 
     **Das Ökosystem:**
@@ -1094,9 +1094,10 @@ blueprint:
         bleibt dann stehen (kein tägliches Pendeln). Bei aktivem Sommermodus
         werden Pre-Heat, Boost und Gebäude-Kompensation ausgesetzt
         (Frostschutz bleibt). Optional wird zusätzlich die Heizung der Therme
-        abgeschaltet (HVAC 'Off'), während das Warmwasser weiterläuft — siehe
-        "Therme-Heizung aus (WW bleibt)". Der gesetzte input_boolean wird auch
-        von Lüftungs-Steuerung und Geofencing mitgelesen.
+        abgeschaltet (HVAC 'Off', Warmwasser läuft weiter) und alle TRVs gehen
+        auf das TRV-Minimum — siehe "Sommer: Heizung aus (WW bleibt)".
+        Der gesetzte input_boolean wird auch von Lüftungs-Steuerung und
+        Geofencing mitgelesen.
       collapsed: true
       input:
         summer_auto_enable:
@@ -1207,11 +1208,13 @@ blueprint:
               max: 12
               step: 1
         summer_heat_off_enabled:
-          name: "🛑 Sommer: Therme-Heizung aus (WW bleibt)"
+          name: "🛑 Sommer: Heizung aus (WW bleibt)"
           description: |
             AN (Default): Im Sommermodus wird die Heizung der Therme abgeschaltet
-            (HVAC 'Off') — das Warmwasser läuft normal weiter. Frostschutz bleibt
-            über den Zonen-Aus-Modus der Vaillant erhalten.
+            (HVAC 'Off') — das Warmwasser läuft normal weiter — und alle TRVs
+            werden auf das TRV-Minimum gesetzt (keine Eco/Komfort-Regelung,
+            kein Pendeln). Frostschutz bleibt über den Zonen-Aus-Modus der
+            Vaillant bzw. das TRV-Minimum erhalten.
             AUS: Sommermodus senkt wie bisher nur auf Eco/Frost ab, ohne die
             Therme aktiv abzuschalten.
             ⚠️ Prüfe einmal per Vaillant-App, ob HVAC 'Off' bei dir wirklich nur
@@ -2655,13 +2658,20 @@ actions:
           {% else %}
             {% set final_raw = base_target | float(0) %}
           {% endif %}
+          {# Sommer-Aus: TRVs hart auf TRV-Minimum — keine Eco/Komfort-Regelung,
+             kein Pendeln. Deckt Isolated UND Follower ab (gemeinsamer Pfad). #}
+          {% if summer_heat_off_active | bool(false) %}
+            {% set final_raw = inputs.min_trv_temp | float(12) %}
+          {% endif %}
           {% set final_target = [inputs.min_trv_temp | float(12), final_raw | float(0)] | max %}
-          {% set needs_heat = (active_for_demand | bool(false)) and ((final_target | float(0)) > ((current_temp | float(0)) + (inputs.hysteresis | float(0.6)))) %}
+          {% set needs_heat = (active_for_demand | bool(false)) and ((final_target | float(0)) > ((current_temp | float(0)) + (inputs.hysteresis | float(0.6)))) and (not (summer_heat_off_active | bool(false))) %}
           {% if role == 'isolated' %}
             {% set boost_delta = (comfort_target | float(0)) - (current_temp | float(0)) %}
             {% set boost_needed = (inputs.enable_room_boost | bool(false)) and (active_for_demand | bool(false)) and (not (window_open_too_long | bool(false))) and ((boost_delta | float(0)) >= threshold) and (not (summer_mode_active | bool(false))) %}
             {% set boost_deactivate = (not (inputs.enable_room_boost | bool(false))) or (not (active_for_demand | bool(false))) or ((boost_delta | float(0)) < (threshold / 2)) %}
-            {% if window_open_too_long | bool(false) %}
+            {% if summer_heat_off_active | bool(false) %}
+              {% set mode_label = 'Sommer' %}
+            {% elif window_open_too_long | bool(false) %}
               {% set mode_label = 'WindowOpen' %}
             {% elif schedule_active | bool(false) %}
               {% set mode_label = 'Zeitplan' %}
@@ -2678,7 +2688,9 @@ actions:
             {% set boost_delta = 0 %}
             {% set boost_needed = false %}
             {% set boost_deactivate = true %}
-            {% if window_open_too_long | bool(false) %}
+            {% if summer_heat_off_active | bool(false) %}
+              {% set mode_label = 'Sommer' %}
+            {% elif window_open_too_long | bool(false) %}
               {% set mode_label = 'WindowOpen' %}
             {% else %}
               {% set mode_label = 'Follower' %}
@@ -3512,7 +3524,11 @@ actions:
                               entity_id: "{{ inputs.master_climate }}"
                             continue_on_error: true
               # PATH A (CRITICAL): forced-min writes bypass cooldown
+              # Soll-0-Guard (A/B/C): meldet die Vaillant-Cloud kurzzeitig
+              # Soll 0 (Poll-Artefakt), sind alle Deltas Muell -> Lauf
+              # ueberspringen statt gegenregeln; der 3-min-Zyklus holt es nach.
               - conditions:
+                  - "{{ (master_set_now | float(0)) > 0 }}"
                   - "{{ master_forced_min_active | bool(false) }}"
                   - "{{ (master_target_delta_abs | float(0)) > 0.5 }}"
                 sequence:
@@ -3555,6 +3571,7 @@ actions:
 
               # PATH B (CRITICAL): highest bidder boost or significant drop WITH strict cooldown
               - conditions:
+                  - "{{ (master_set_now | float(0)) > 0 }}"
                   - "{{ not (master_forced_min_active | bool(false)) }}"
                   - "{{ (master_needs_global_boost | bool(false)) or (master_significant_drop | bool(false)) }}"
                   - "{{ (master_target_delta_abs | float(0)) > 0.1 }}"
@@ -3607,6 +3624,7 @@ actions:
                             Vaillant Blueprint: PATH B master write verification timeout (target={{ master_final_target | float(0) }}, actual={{ state_attr(inputs.master_climate, 'temperature') | float(0) }})
               # PATH C (COMFORT): regular writes with strict cooldown guard
               - conditions:
+                  - "{{ (master_set_now | float(0)) > 0 }}"
                   - "{{ master_write_allowed | bool(false) }}"
                 sequence:
                   - action: climate.set_temperature

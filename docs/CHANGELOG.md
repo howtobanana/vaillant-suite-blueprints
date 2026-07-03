@@ -1,12 +1,18 @@
 # Changelog
 
-## 2026-07-01
-- Heizungs-Steuerung: Sommermodus kann die Therme-Heizung abschalten (HVAC
-  'Off'), Warmwasser läuft weiter, Frostschutz bleibt. Neue Inputs
-  `summer_heat_off_enabled` (Default an) und `summer_off_preset` (opt).
-- Heizungs-Steuerung: CO-Verriegelung schaltet die Therme jetzt per Default
-  komplett ab — `therme_off_preset` Default auf `system_off` (Heizung + WW),
-  Hilfetext geschärft.
+## 2026-07-04
+- Heizungs-Steuerung: Sommermodus schaltet optional die Therme-Heizung ab
+  (HVAC 'Off', Warmwasser läuft weiter) und setzt alle TRVs auf das
+  TRV-Minimum statt weiterzuregeln. Neue Inputs `summer_heat_off_enabled`
+  (Default an) und `summer_off_preset` (opt).
+- Heizungs-Steuerung: Soll-0-Guard — Master-Writes werden übersprungen, wenn
+  die Vaillant-Entity kurzzeitig Soll 0 meldet (Cloud-Poll-Artefakt), statt
+  gegenzuregeln.
+- Heizungs-Steuerung: Therme-Klima-Verriegelung fachlich korrigiert:
+  softwareseitig ist kein komplettes Ausschalten möglich (Presets beenden nur
+  Heiz-/WW-Programme); Feature nur für raumluftabhängige Geräte relevant,
+  raumluftunabhängige Brennwertgeräte dürfen parallel zur Klima laufen.
+  `therme_off_preset` Default bleibt leer (climate.turn_off).
 
 ## 2026-02-13
 - Repository initial versioned (`baseline-2026-02-13`).
