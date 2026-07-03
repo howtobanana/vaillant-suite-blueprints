@@ -11,7 +11,7 @@ blueprint:
     *   🌦️ **Gebäude-Kompensation:** Plan A per Template-Sensor (empfohlen), Plan B per Außensensor-Fallback; wirkt als Aufschlag auf den Master-Sollwert.
     *   ⚡ **Echtzeit-Reaktion:** Sofortige Anpassung bei Statusänderungen ohne Latenz.
     *   🧠 **Fail-Safe:** Mehrstufige Sicherheitslogik (Debounce, Frostschutz, 60min Time-Guard).
-    *   ❄️ **Sommermodus:** Stabile Saison-Erkennung (gleitende Außentemperatur + Hysterese + Haltezeit). Setzt Pre-Heat, Boost und Gebäude-Kompensation aus und steuert einen zentralen `input_boolean`, den Lüftung & Geofencing mitlesen.
+    *   ❄️ **Sommermodus:** Stabile Saison-Erkennung (gleitende Außentemperatur + Hysterese + Haltezeit). Setzt Pre-Heat, Boost und Gebäude-Kompensation aus und steuert einen zentralen `input_boolean`, den Lüftung & Geofencing mitlesen. Optional schaltet er die Therme-Heizung ab (HVAC 'Off'), während das Warmwasser weiterläuft (Frostschutz bleibt).
     *   🔌 **Therme-Klima-Verriegelung (CO-Schutz):** Läuft das mobile Klimagerät, wird die Therme hart abgeschaltet (nur kaltes Wasser) und der Leitstand pausiert; Klima aus → Therme wieder ein. Inkl. Push. **Kein Ersatz für einen CO-Melder.**
 
     **Das Ökosystem:**
@@ -1093,8 +1093,10 @@ blueprint:
         Stabiler Saison-Schalter: wechselt erst nach Hysterese + Haltezeit und
         bleibt dann stehen (kein tägliches Pendeln). Bei aktivem Sommermodus
         werden Pre-Heat, Boost und Gebäude-Kompensation ausgesetzt
-        (Frostschutz bleibt). Der gesetzte input_boolean wird auch von
-        Lüftungs-Steuerung und Geofencing mitgelesen.
+        (Frostschutz bleibt). Optional wird zusätzlich die Heizung der Therme
+        abgeschaltet (HVAC 'Off'), während das Warmwasser weiterläuft — siehe
+        "Therme-Heizung aus (WW bleibt)". Der gesetzte input_boolean wird auch
+        von Lüftungs-Steuerung und Geofencing mitgelesen.
       collapsed: true
       input:
         summer_auto_enable:
@@ -1204,6 +1206,31 @@ blueprint:
               min: 1
               max: 12
               step: 1
+        summer_heat_off_enabled:
+          name: "🛑 Sommer: Therme-Heizung aus (WW bleibt)"
+          description: |
+            AN (Default): Im Sommermodus wird die Heizung der Therme abgeschaltet
+            (HVAC 'Off') — das Warmwasser läuft normal weiter. Frostschutz bleibt
+            über den Zonen-Aus-Modus der Vaillant erhalten.
+            AUS: Sommermodus senkt wie bisher nur auf Eco/Frost ab, ohne die
+            Therme aktiv abzuschalten.
+            ⚠️ Prüfe einmal per Vaillant-App, ob HVAC 'Off' bei dir wirklich nur
+            die Heizung stoppt und das Warmwasser weiterläuft.
+          default: true
+          selector:
+            boolean:
+        summer_off_preset:
+          name: "⚙️ Sommer-Aus über Preset (opt)"
+          description: |
+            Leer (Default): Abschaltung per climate.turn_off (HVAC 'Off') — nur
+            Heizung aus, Warmwasser bleibt. Falls deine Anlage dafür stattdessen
+            einen bestimmten Preset braucht, hier eintragen → dann wird
+            climate.set_preset_mode genutzt.
+            NICHT "system_off" verwenden (das schaltet auch das Warmwasser ab —
+            dafür ist die CO-Verriegelung zuständig).
+          default: ""
+          selector:
+            text:
 
     section_therme_lockout:
       name: "🔌 Therme-Klima-Verriegelung (CO-Schutz)"
@@ -1233,14 +1260,17 @@ blueprint:
             entity:
               domain: climate
         therme_off_preset:
-          name: "⚙️ Aus über Preset (opt)"
+          name: "⚙️ Aus über Preset (CO-Schutz)"
           description: |
-            Leer (Default): Therme wird per climate.turn_off (Modus 'Off') aus-
-            geschaltet. ⚠️ Prüfe per CO-Melder/Vaillant-App, ob damit auch das
-            Gas/Warmwasser stoppt! Falls NICHT: hier den Preset eintragen, der das
-            GANZE System ausschaltet (z. B. "System Off") → dann wird stattdessen
-            climate.set_preset_mode genutzt.
-          default: ""
+            Preset, mit dem die Therme bei laufender Klima KOMPLETT abgeschaltet
+            wird (Heizung UND Warmwasser/Gas) — gegen CO-Risiko durch Unterdruck.
+            Default "system_off": schaltet das gesamte System ab ("nur kaltes
+            Wasser") → climate.set_preset_mode.
+            ⚠️ Empfehlung NICHT ändern. climate.turn_off (HVAC 'Off') reicht für
+            den CO-Schutz NICHT, weil dabei Warmwasser/Gas weiterlaufen können.
+            Nur leeren, wenn per CO-Melder/Vaillant-App bestätigt ist, dass HVAC
+            'Off' bei dir wirklich auch Gas/Warmwasser stoppt → dann turn_off.
+          default: "system_off"
           selector:
             text:
 
@@ -2121,6 +2151,8 @@ actions:
         window_presence_reminder_interval: !input window_presence_reminder_interval
         summer_auto_enable: !input summer_auto_enable
         summer_mode_boolean: !input summer_mode_boolean
+        summer_heat_off_enabled: !input summer_heat_off_enabled
+        summer_off_preset: !input summer_off_preset
         therme_lockout_enabled: !input therme_lockout_enabled
         therme_lockout_ac: !input therme_lockout_ac
         therme_off_preset: !input therme_off_preset
@@ -2249,6 +2281,20 @@ actions:
       summer_mode_active: >
         {% set b = inputs.summer_mode_boolean | default('') | string | trim %}
         {{ (b not in ['', 'sensor.none', 'none', 'None']) and is_state(b, 'on') }}
+
+      # Sommer-Aus: Therme-Heizung im Sommer abschalten (WW bleibt). Aktiv nur,
+      # wenn Sommermodus AN und das Feature eingeschaltet ist.
+      summer_heat_off_active: >
+        {{ (summer_mode_active | bool(false)) and (inputs.summer_heat_off_enabled | default(true) | bool(true)) }}
+      _summer_off_preset: "{{ inputs.summer_off_preset | default('') | string | trim }}"
+      # Idempotenz: steht der Master bereits im Sommer-Aus-Zustand?
+      _summer_master_off: >
+        {% set p = _summer_off_preset | default('') | string | trim %}
+        {% if p != '' %}
+          {{ (state_attr(inputs.master_climate, 'preset_mode') | string) == p }}
+        {% else %}
+          {{ states(inputs.master_climate) == 'off' }}
+        {% endif %}
 
       # Therme-Klima-Verriegelung aktiv = Feature an UND Klima läuft (Status ≠ off).
       therme_lockout_active: >
@@ -3424,7 +3470,40 @@ actions:
                     write_path={{ _write_path }}
                     skip_reasons={{ _skip_reasons.items | join(',') if _skip_reasons.items | length > 0 else 'none' }}
 
+          # Sommer-Ende / kein Sommer-Aus: stand der Master wegen Sommer auf
+          # 'Off', wird er einmal wieder eingeschaltet; den korrekten Sollwert
+          # schreibt danach der normale Write-Pfad (idempotent, selbstheilend).
+          - if:
+              - "{{ (not (summer_heat_off_active | bool(false))) and (states(inputs.master_climate) == 'off') }}"
+            then:
+              - action: climate.turn_on
+                target:
+                  entity_id: "{{ inputs.master_climate }}"
+                continue_on_error: true
           - choose:
+              # PATH S (SOMMER): Heizung aus, Warmwasser bleibt. Idempotent —
+              # nur schalten, wenn nicht schon aus (schont API-Budget). Kein
+              # set_temperature; Frostschutz übernimmt der Zonen-Aus-Modus.
+              - conditions:
+                  - "{{ summer_heat_off_active | bool(false) }}"
+                sequence:
+                  - if:
+                      - "{{ not (_summer_master_off | bool(false)) }}"
+                    then:
+                      - if:
+                          - "{{ _summer_off_preset != '' }}"
+                        then:
+                          - action: climate.set_preset_mode
+                            target:
+                              entity_id: "{{ inputs.master_climate }}"
+                            data:
+                              preset_mode: "{{ _summer_off_preset }}"
+                            continue_on_error: true
+                        else:
+                          - action: climate.turn_off
+                            target:
+                              entity_id: "{{ inputs.master_climate }}"
+                            continue_on_error: true
               # PATH A (CRITICAL): forced-min writes bypass cooldown
               - conditions:
                   - "{{ master_forced_min_active | bool(false) }}"
