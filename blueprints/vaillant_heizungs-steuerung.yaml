@@ -1219,6 +1219,9 @@ blueprint:
             Therme aktiv abzuschalten.
             ⚠️ Prüfe einmal per Vaillant-App, ob HVAC 'Off' bei dir wirklich nur
             die Heizung stoppt und das Warmwasser weiterläuft.
+            Hinweis: Außerhalb des Sommermodus schaltet der Leitstand einen auf
+            'Off' stehenden Master automatisch wieder ein (selbstheilend). Zum
+            bewussten Abschalten den Sommermodus-Schalter oder Away nutzen.
           default: true
           selector:
             boolean:
@@ -2297,14 +2300,6 @@ actions:
       summer_heat_off_active: >
         {{ (summer_mode_active | bool(false)) and (inputs.summer_heat_off_enabled | default(true) | bool(true)) }}
       _summer_off_preset: "{{ inputs.summer_off_preset | default('') | string | trim }}"
-      # Idempotenz: steht der Master bereits im Sommer-Aus-Zustand?
-      _summer_master_off: >
-        {% set p = _summer_off_preset | default('') | string | trim %}
-        {% if p != '' %}
-          {{ (state_attr(inputs.master_climate, 'preset_mode') | string) == p }}
-        {% else %}
-          {{ states(inputs.master_climate) == 'off' }}
-        {% endif %}
 
       # Therme-Klima-Verriegelung aktiv = Feature an UND Klima läuft (Status ≠ off).
       therme_lockout_active: >
@@ -3388,7 +3383,9 @@ actions:
               master_hvac_action: >
                 {{ state_attr(inputs.master_climate, 'hvac_action') | default('n/a', true) }}
               master_state: >
-                {% if master_forced_min_active | bool(false) %}
+                {% if summer_heat_off_active | bool(false) %}
+                  SOMMER
+                {% elif master_forced_min_active | bool(false) %}
                   FORCED_MIN
                 {% elif away_mode_active_effective | bool(false) %}
                   AWAY
@@ -3499,6 +3496,18 @@ actions:
                 target:
                   entity_id: "{{ inputs.master_climate }}"
                 continue_on_error: true
+          # Preset-Variante des Sommer-Aus: der Status ist dann nie 'off',
+          # deshalb muss der Preset beim Saisonende explizit zurueckgesetzt
+          # werden, sonst schreibt der Leitstand gegen einen aktiven Preset.
+          - if:
+              - "{{ (not (summer_heat_off_active | bool(false))) and (_summer_off_preset != '') and ((state_attr(inputs.master_climate, 'preset_mode') | string) == _summer_off_preset) }}"
+            then:
+              - action: climate.set_preset_mode
+                target:
+                  entity_id: "{{ inputs.master_climate }}"
+                data:
+                  preset_mode: "none"
+                continue_on_error: true
           - choose:
               # PATH S (SOMMER): Heizung aus, Warmwasser bleibt. Idempotent —
               # nur schalten, wenn nicht schon aus (schont API-Budget). Kein
@@ -3506,8 +3515,16 @@ actions:
               - conditions:
                   - "{{ summer_heat_off_active | bool(false) }}"
                 sequence:
+                  # Live-Check statt Variable vom Lauf-Start: nach einem
+                  # Scene-Restore der Klima-Verriegelung im selben Lauf waere
+                  # ein zu Beginn eingefrorener Wert veraltet.
                   - if:
-                      - "{{ not (_summer_master_off | bool(false)) }}"
+                      - >
+                        {% if (_summer_off_preset | default('') | string) != '' %}
+                          {{ (state_attr(inputs.master_climate, 'preset_mode') | string) != _summer_off_preset }}
+                        {% else %}
+                          {{ states(inputs.master_climate) != 'off' }}
+                        {% endif %}
                     then:
                       - if:
                           - "{{ _summer_off_preset != '' }}"
@@ -3523,6 +3540,25 @@ actions:
                             target:
                               entity_id: "{{ inputs.master_climate }}"
                             continue_on_error: true
+                      # Verifikation analog PATH A/B: kommt der Aus-Zustand
+                      # nicht an, Warnung loggen. Retry macht der 3-min-Zyklus.
+                      - wait_template: >
+                          {% if (_summer_off_preset | default('') | string) != '' %}
+                            {{ (state_attr(inputs.master_climate, 'preset_mode') | string) == _summer_off_preset }}
+                          {% else %}
+                            {{ states(inputs.master_climate) == 'off' }}
+                          {% endif %}
+                        timeout: "00:00:20"
+                        continue_on_timeout: true
+                      - if:
+                          - "{{ not (wait.completed | default(false) | bool(false)) }}"
+                        then:
+                          - action: system_log.write
+                            continue_on_error: true
+                            data:
+                              level: warning
+                              message: >
+                                Vaillant Blueprint: PATH S Sommer-Abschaltung nicht bestaetigt (Master weiterhin '{{ states(inputs.master_climate) }}')
               # PATH A (CRITICAL): forced-min writes bypass cooldown
               # Soll-0-Guard (A/B/C): meldet die Vaillant-Cloud kurzzeitig
               # Soll 0 (Poll-Artefakt), sind alle Deltas Muell -> Lauf
@@ -3752,7 +3788,7 @@ actions:
       _l_m_window: "{{ master_window_open_too_long | default(false) | bool(false) }}"
       _l_m_sens_valid: "{{ master_sensors_valid | default(false) | bool(false) }}"
       _l_m_help_valid: "{{ master_helper_valid | default(false) | bool(false) }}"
-      _l_m_mode_modus: "{{ 'Fenster offen' if (_l_m_window | bool(false)) else ('Not-Aus' if (_l_m_forced | bool(false)) else ('Gast-Modus' if (_l_m_guest | bool(false) and _l_m_away_raw | bool(false)) else ('Abwesend' if (_l_m_away | bool(false) and not (_l_m_pre_heat | bool(false))) else ('PreHeat' if (_l_m_pre_heat | bool(false)) else 'Heizbetrieb')))) }}"
+      _l_m_mode_modus: "{{ 'Sommer (Heizung aus)' if (summer_heat_off_active | default(false) | bool(false)) else ('Fenster offen' if (_l_m_window | bool(false)) else ('Not-Aus' if (_l_m_forced | bool(false)) else ('Gast-Modus' if (_l_m_guest | bool(false) and _l_m_away_raw | bool(false)) else ('Abwesend' if (_l_m_away | bool(false) and not (_l_m_pre_heat | bool(false))) else ('PreHeat' if (_l_m_pre_heat | bool(false)) else 'Heizbetrieb'))))) }}"
 
   # ════════════════════════════════════════════════════════════
   # LEITSTAND NORMAL: Demand-only Dashboard (überschreibt sich selbst)
@@ -3771,7 +3807,11 @@ actions:
             {%- set msg = namespace(out='') -%}
             {%- set msg.out = msg.out ~ '🚨 Trigger: ' ~ (trigger_id_safe | default('manual')) ~ ' | Boost ' ~ ('AN' if (_l_m_boost | bool(false)) else 'AUS') ~ ' | Wetter ' ~ (_l_m_weather | float(0) | round(1)) ~ '°C | Away ' ~ ('✅' if (_l_m_away_raw | bool(false)) else '⬜') ~ ' | Gast ' ~ ('✅' if (_l_m_guest | bool(false)) else '⬜') -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🌡️ **Master — ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus ~ '** (' ~ _l_m_reason ~ ')' -%}
-            {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Komfort ' ~ (master_comfort_temp | default(0) | float(0) | round(1)) ~ '°C' -%}
+            {%- if summer_heat_off_active | default(false) | bool(false) -%}
+              {%- set msg.out = msg.out ~ n ~ '💤 Heizung aus (WW läuft) | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C' -%}
+            {%- else -%}
+              {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Komfort ' ~ (master_comfort_temp | default(0) | float(0) | round(1)) ~ '°C' -%}
+            {%- endif -%}
             {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren | ' ~ ('🔥' if (_l_m_pre_heat | bool(false)) else '⬜') ~ ' PreHeat' ~ (' 🪟' if (_l_m_window | bool(false)) else '') -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🚪 **Räume**' -%}
             {%- set ns_dis = namespace(labels=[]) -%}
@@ -3830,7 +3870,11 @@ actions:
                       {%- set n = '\n' -%}
                       {%- set msg = namespace(out='') -%}
                       {%- set msg.out = msg.out ~ '🌡️ Master: ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus -%}
-                      {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C' -%}
+                      {%- if summer_heat_off_active | default(false) | bool(false) -%}
+                        {%- set msg.out = msg.out ~ n ~ '💤 Heizung aus (WW läuft) | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C' -%}
+                      {%- else -%}
+                        {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C' -%}
+                      {%- endif -%}
                       {%- set msg.out = msg.out ~ n ~ '🚧 Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) -%}
                       {%- for room in rooms_runtime_list | default([], true) -%}
                         {%- if room.enabled | default(false) | bool(false) -%}
@@ -3866,7 +3910,11 @@ actions:
             {%- set msg.out = msg.out ~ '🚨 Trigger: ' ~ (trigger_id_safe | default('manual')) ~ ' | Boost ' ~ ('AN' if (_l_m_boost | bool(false)) else 'AUS') ~ ' | Wetter ' ~ (_l_m_weather | float(0) | round(1)) ~ '°C | Feucht. ' ~ (_l_m_humidity | float(0) | round(1)) ~ '°C' -%}
             {%- set msg.out = msg.out ~ n ~ 'Away ' ~ ('✅' if (_l_m_away_raw | bool(false)) else '⬜') ~ ' | Gast ' ~ ('✅' if (_l_m_guest | bool(false)) else '⬜') ~ ' | Entität: ' ~ (inputs.master_climate | default('n/a')) -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🌡️ **Master — ' ~ _l_m_state ~ ' / ' ~ _l_m_mode_modus ~ '** (' ~ _l_m_reason ~ ')' -%}
-            {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Base ' ~ (_l_m_base | float(0) | round(1)) ~ '°C | Eco ' ~ (eco_temp | default(0) | float(0) | round(1)) ~ '°C | Δ=' ~ (_l_m_delta | float(0) | round(1)) -%}
+            {%- if summer_heat_off_active | default(false) | bool(false) -%}
+              {%- set msg.out = msg.out ~ n ~ '💤 Heizung aus (WW läuft) | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C' -%}
+            {%- else -%}
+              {%- set msg.out = msg.out ~ n ~ _l_hvac_icon ~ ' Heizen | Ist ' ~ (_l_m_current_temp | float(0) | round(1)) ~ '°C → Soll ' ~ (_l_m_target | float(0) | round(1)) ~ '°C | Base ' ~ (_l_m_base | float(0) | round(1)) ~ '°C | Eco ' ~ (eco_temp | default(0) | float(0) | round(1)) ~ '°C | Δ=' ~ (_l_m_delta | float(0) | round(1)) -%}
+            {%- endif -%}
             {%- set msg.out = msg.out ~ n ~ ('✅' if (_l_m_pres | bool(false)) else '⬜') ~ ' Präsenz | ' ~ ('✅' if (_l_m_sched | bool(false)) else '⬜') ~ ' Zeitplan | ' ~ ('✅' if (_l_m_man | bool(false)) else '⬜') ~ ' Manuell | ' ~ ('✅' if ((_l_m_sens_valid | bool(false)) or (_l_m_help_valid | bool(false))) else '⬜') ~ ' Sensoren | ' ~ ('🔥' if (_l_m_pre_heat | bool(false)) else '⬜') ~ ' PreHeat' ~ (' 🪟' if (_l_m_window | bool(false)) else '') -%}
             {%- set msg.out = msg.out ~ n ~ n ~ '🚪 **Räume**' -%}
             {%- set ns_dis = namespace(labels=[]) -%}
