@@ -448,13 +448,14 @@ blueprint:
               step: 0.5
               unit_of_measurement: "°C"
         cooling_outdoor_warmer_alert:
-          name: "🌡️ Außen-wärmer-Alert + Critical-Eskalation"
+          name: "🌡️ Außen-wärmer-Alert"
           description: |
             AN (Default): Sobald außen wärmer als innen wird UND ein Fenster
             noch offen ist (und außen über der Innen-Schwelle liegt), kommt
             eine normale Push-Notification — das ersetzt die frühere fixe
             Morgen-Erinnerung, rein temperaturbasiert. Bleibt das Fenster
-            60 Min weiter offen, folgt ein Critical-Alert.
+            60 Min weiter offen, folgt eine erneute normale Erinnerung
+            (bewusst KEIN Critical — morgens schläft eventuell noch jemand).
             AUS: Kein Außen-wärmer-Alert.
           default: true
           selector:
@@ -1919,7 +1920,8 @@ action:
       # innen + Offset, außen über Innen-Schwelle) — typischerweise morgens.
       # Ersetzt die frühere fixe Morgen-Erinnerung.
       # Stage 1: Normaler Push.
-      # Stage 2: 60 Min später Critical-Alert wenn Fenster IMMER NOCH offen.
+      # Stage 2: 60 Min später erneute NORMALE Erinnerung wenn Fenster immer
+      # noch offen (bewusst kein Critical — morgens schläft evtl. noch jemand).
       # Beide Stages durch cooling_outdoor_warmer_alert-Toggle steuerbar.
       # ════════════════════════════════════════════════════════
       - conditions:
@@ -1963,17 +1965,17 @@ action:
             timeout: "01:00:00"
             continue_on_timeout: true
           # Live-Werte berechnen — Top-Action-Vars sind nach 60min stale.
-          # Auch critical_targets_now neu berechnen weil der Anwesenheits-
-          # Filter sich während des Waits geändert haben kann (jemand kommt heim).
+          # Targets neu berechnen weil der Anwesenheits-Filter sich während
+          # des Waits geändert haben kann (jemand kommt heim).
           - variables:
-              critical_quiet_now: >
+              stage2_quiet_now: >
                 {% set sched = inputs.quiet_schedule | default('') | string | trim %}
                 {% if sched not in ['', 'none', 'None'] %}
                   {{ is_state(sched, 'on') }}
                 {% else %}
                   {{ false }}
                 {% endif %}
-              critical_away_now: >
+              stage2_away_now: >
                 {% set guest_eid = inputs.guest_mode_boolean | default('') | string %}
                 {% set guest_on = guest_eid not in ['', 'sensor.none', 'none'] and is_state(guest_eid, 'on') %}
                 {% set ph = inputs.people_home_entity | default('') | string | trim %}
@@ -1984,8 +1986,8 @@ action:
                 {% else %}
                   {{ false }}
                 {% endif %}
-              critical_targets_now: >
-                {% set raw = inputs.critical_notify_device %}
+              stage2_targets_now: >
+                {% set raw = inputs.notify_device %}
                 {% set only_home = inputs.notify_only_when_home | bool(true) %}
                 {% set ns = namespace(items=[]) %}
                 {% set r_list = raw if (raw is iterable and raw is not string) else ([raw] if raw != '' else []) %}
@@ -2004,38 +2006,15 @@ action:
                     {% endif %}
                   {% endif %}
                 {% endfor %}
-                {% if (ns.items | length) == 0 %}
-                  {# Fallback auf Normal-Targets, live berechnet #}
-                  {% set raw2 = inputs.notify_device %}
-                  {% set ns2 = namespace(items=[]) %}
-                  {% set r_list2 = raw2 if (raw2 is iterable and raw2 is not string) else ([raw2] if raw2 != '' else []) %}
-                  {% for ent_raw in r_list2 %}
-                    {% set ent = (ent_raw | string) | trim %}
-                    {% if ent != '' %}
-                      {% set dev_name = device_attr(ent, 'name') %}
-                      {% if dev_name is string and (dev_name | trim) != '' %}
-                        {% set slug = (dev_name | slugify) | replace('-', '_') %}
-                        {% set tracker = 'device_tracker.' ~ slug %}
-                        {% set tracker_present = states[tracker] is defined %}
-                        {% set include = (not only_home) or (tracker_present and (states(tracker) == 'home')) or (not tracker_present) %}
-                        {% if include %}
-                          {% set ns2.items = ns2.items + ['notify.mobile_app_' ~ slug] %}
-                        {% endif %}
-                      {% endif %}
-                    {% endif %}
-                  {% endfor %}
-                  {{ ns2.items | unique | join(',') }}
-                {% else %}
-                  {{ ns.items | unique | join(',') }}
-                {% endif %}
-              critical_indoor_temp: >
+                {{ ns.items | unique | join(',') }}
+              stage2_indoor_temp: >
                 {% set s = inputs.cooling_indoor_temp_sensor | default('') | string | trim %}
                 {% if s not in ['', 'none', 'None'] and has_value(s) %}
                   {{ states(s) | float(0) }}
                 {% else %}
                   {{ 0 }}
                 {% endif %}
-              critical_outdoor_temp: >
+              stage2_outdoor_temp: >
                 {% set s = inputs.cooling_outdoor_temp_source | default('') | string | trim %}
                 {% if s not in ['', 'none', 'None'] and has_value(s) %}
                   {{ states(s) | float(0) }}
@@ -2044,7 +2023,7 @@ action:
                 {% else %}
                   {{ 0 }}
                 {% endif %}
-              critical_open_windows: >
+              stage2_open_windows: >
                 {% set e = inputs.ac_climate_entity | default('') | string | trim %}
                 {% set ac_run = (e not in ['', 'none', 'None']) and (states(e) not in ['off', 'unavailable', 'unknown', '', 'none']) %}
                 {% set ns = namespace(items=[]) %}
@@ -2056,30 +2035,26 @@ action:
                   {% endif %}
                 {% endfor %}
                 {{ ns.items | join(', ') if ns.items | length > 0 else 'Fenster' }}
+          # Stage 2 ist bewusst eine NORMALE Nachricht (kein Critical, kein
+          # Alarm-Ton) — morgens schläft eventuell noch jemand.
           - choose:
               - conditions:
                   - "{{ not (wait.completed | default(false)) }}"
-                  - "{{ not (critical_quiet_now | bool(false)) }}"
-                  - "{{ not (critical_away_now | bool(false)) }}"
-                  - "{{ (critical_targets_now | trim) != '' }}"
+                  - "{{ not (stage2_quiet_now | bool(false)) }}"
+                  - "{{ not (stage2_away_now | bool(false)) }}"
+                  - "{{ (stage2_targets_now | trim) != '' }}"
                 sequence:
                   - repeat:
-                      for_each: "{{ (critical_targets_now | trim).split(',') if (critical_targets_now | trim) != '' else [] }}"
+                      for_each: "{{ (stage2_targets_now | trim).split(',') if (stage2_targets_now | trim) != '' else [] }}"
                       sequence:
                         - action: "{{ repeat.item | trim }}"
                           data:
-                            title: "🚨 Fenster IMMER NOCH offen!"
-                            message: "Außen {{ critical_outdoor_temp | float(0) | round(1) }}°C heizt seit 1h rein. Innen {{ critical_indoor_temp | float(0) | round(1) }}°C. Offen: {{ critical_open_windows }}.\n(Lüftungs-Steuerung)"
+                            title: "🌡️ Fenster immer noch offen"
+                            message: "Außen {{ stage2_outdoor_temp | float(0) | round(1) }}°C heizt seit 1h rein. Innen {{ stage2_indoor_temp | float(0) | round(1) }}°C. Offen: {{ stage2_open_windows }}.\n(Lüftungs-Steuerung)"
                             data:
                               tag: vaillant_lueftung
                               push:
-                                interruption-level: critical
-                                sound:
-                                  name: alarm.caf
-                                  critical: 1
-                                  volume: 1.0
-                              ttl: 0
-                              priority: high
+                                sticky: true
                           continue_on_error: true
 
       # ════════════════════════════════════════════════════════
