@@ -23,8 +23,12 @@ blueprint:
     *   📍 `(Vaillant) Geofencing` (Anwesenheit & Eco).
     *   ❤️ `(Vaillant) System-Diagnose` (Wartung & Batterien).
 
-    **Info:**
-    Dieses Modul sendet nur Nachrichten. Das "Core Heating" Modul erkennt die offenen Fenster separat und stoppt die Heizung automatisch.
+    **Zuständigkeit:**
+    Dieses Modul ist der einzige Absender von Fenster-/Lüftungs-
+    Benachrichtigungen der Suite und steuert als einzigen Aktor die mobile
+    Klimaanlage (Auto-Off). Die Heizungs-Steuerung erkennt offene Fenster
+    separat, stoppt die Heizung still (ohne Push) und meldet nur
+    System-Health.
 
     **Version:** 1.0 | **Autor:** BananaPower
 

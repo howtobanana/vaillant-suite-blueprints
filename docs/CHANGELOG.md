@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-04 (Zuständigkeits-Trennung Heizung/Lüftung)
+- Heizungs-Steuerung: Fenster-Fallback-Erinnerung entfernt (2 Inputs + Flow).
+  Sie duplizierte die Lüftungs-Meldungen, überschrieb per identischem
+  Notification-Tag deren Pushes und hatte einen funktionslosen Snooze-Button,
+  der wartende Lüftungs-Eskalationen fern-snoozen konnte. Fenster-Pushes
+  kommen jetzt ausschließlich aus der Lüftungs-Steuerung.
+- Doku: Zuständigkeits-Matrix in beiden Blueprint-Headern und in
+  COMPATIBILITY.md (Aktor-Besitz, ein Benachrichtigungs-Absender pro
+  Sachverhalt, doppelte Klima-Entity-Konfiguration, Away-Quellen).
+
 ## 2026-07-04 (Lüftungs-Steuerung Refactor)
 - Fenster-Timer/Eskalation laufen jetzt PRO FENSTER (keine Mehrfach-Meldungen
   mehr, wenn mehrere Fenster offen sind); Klima-, Präsenz-, Kühl- und
