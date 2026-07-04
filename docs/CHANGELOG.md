@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-04 (Lüftungs-Steuerung Refactor)
+- Fenster-Timer/Eskalation laufen jetzt PRO FENSTER (keine Mehrfach-Meldungen
+  mehr, wenn mehrere Fenster offen sind); Klima-, Präsenz-, Kühl- und
+  Warm-Checks werden in Langläufern (Eskalation, 24h-Wait) live ausgewertet
+  statt mit eingefrorenen Variablen.
+- Sommer-Bypass entfernt: Im Sommermodus gibt es keine 10-min-Schließ-Meldung
+  mehr (Abend-Durchlüften bleibt still); vergessene Fenster deckt der
+  24h-Pfad bzw. der "Außen wärmer"-Alert ab.
+- Kühl-Logik rein temperaturbasiert: Kühlungs-Zeitfenster (Start/Ende/
+  Zeitplan) und fixe Morgen-Schließ-Erinnerung entfernt — geschlossen wird,
+  wenn außen wärmer als innen wird.
+- Klima-Räume (5 Toggles) ersetzt durch direkte Auswahl der Abluftfenster
+  (`ac_exhaust_windows`).
+- Klima-Automatik neu: Bei freier Kühlung Rückfrage-Push mit "Weiterlaufen
+  lassen"-Button (Auto-Off nach 10 min ohne Antwort); bei Erreichen der
+  Innen-Schwelle (10 min stabil) automatische Abschaltung mit Info-Push.
+- Warm-Suppress: Innen-Schwelle nutzt jetzt die Kühl-Innen-Schwelle (ein
+  Input weniger); `presence_filter_strict` entfernt (Fallback-Verhalten).
+- Away-Erkennung akzeptiert person/group ('not_home'/'off') zusätzlich zu
+  zone ('0') — konsistent zum Trigger.
+- ⚠️ Breaking: Inputs entfernt/geändert — Automation nach Blueprint-Update
+  einmal neu konfigurieren (v. a. Abluftfenster wählen).
+
 ## 2026-07-04
 - Heizungs-Steuerung: Sommermodus schaltet optional die Therme-Heizung ab
   (HVAC 'Off', Warmwasser läuft weiter) und setzt alle TRVs auf das
