@@ -758,6 +758,9 @@ trigger:
   # Sommer-Filter via OUTDOOR-Threshold (nicht indoor) damit der Alert auch
   # feuert, wenn das nächtliche Cooling super gelaufen ist und innen z.B.
   # nur noch 21 °C hat — sonst würde der Heat-In bei warmem Wetter unbemerkt.
+  # +1.0 °C Totband über der Empfehlungs-Linie (innen + Offset): dazwischen
+  # weder "lüften!" noch "zu warm!" — verhindert widersprüchliche Meldungen
+  # bei fast gleichen Temperaturen.
   - trigger: template
     value_template: >
       {% set indoor_s = tv_cooling_indoor_temp_sensor | default('') | string | trim %}
@@ -777,7 +780,7 @@ trigger:
           {% endif %}
         {% endfor %}
         {{ outdoor >= (tv_cooling_indoor_threshold | float(25))
-           and outdoor > (indoor + (tv_cooling_hysteresis | float(0)))
+           and outdoor > (indoor + (tv_cooling_hysteresis | float(0)) + 1.0)
            and ns.any_open }}
       {% else %}
         {{ false }}
@@ -1036,8 +1039,10 @@ action:
           {{ ns.active }}
         {%- endif -%}
 
-      # Sommer-Schutz: Außen ist deutlich wärmer als Innen → Lüften würde Wärme reinbringen.
-      # 1°C Buffer gegen Mess-Rauschen. Ohne konfigurierte Sensoren → keine Suppression.
+      # Sommer-Schutz: Außen ist wärmer als Innen → Lüften würde Wärme reinbringen.
+      # WICHTIG: exakt dieselbe Linie wie die Kühl-Empfehlung (innen + Kühl-Offset),
+      # sonst empfiehlt FLOW 1 Lüften, während FLOW 4b es als "zu warm" einstuft.
+      # Ohne konfigurierte Sensoren → keine Suppression.
       outdoor_warmer_than_indoor: >
         {%- set indoor_s = inputs.cooling_indoor_temp_sensor | default('') | string | trim -%}
         {%- set indoor_ok = indoor_s not in ['', 'none', 'None'] and has_value(indoor_s) -%}
@@ -1055,7 +1060,7 @@ action:
           {%- if ns.outdoor is none -%}
             {{ false }}
           {%- else -%}
-            {{ ns.outdoor > (indoor + 1) }}
+            {{ ns.outdoor > (indoor + (inputs.cooling_hysteresis | float(0))) }}
           {%- endif -%}
         {%- endif -%}
 
@@ -1091,14 +1096,21 @@ action:
 
       # Offene Fenster OHNE AC-Abluftfenster (bei laufender Klima ist dieses Fenster
       # die Abluft und darf offen bleiben -> aus Kühl-Schließ-Meldungen ausnehmen).
+      # Raum-Label zuerst, friendly_name nur als Fallback — Fensterkontakte
+      # heißen oft generisch "Fenster".
       non_ac_open_windows: >
         {% set e = inputs.ac_climate_entity | default('') | string | trim %}
         {% set ac_run = (e not in ['', 'none', 'None']) and (states(e) not in ['off', 'unavailable', 'unknown', '', 'none']) %}
         {% set ns = namespace(items=[]) %}
-        {% for w in window_entities %}
+        {% for r in rooms_runtime %}
+          {% set w = r.window %}
           {% if w != '' and states[w] is defined and is_state(w, 'on') and not (ac_run and (w in ac_window_entities)) %}
-            {% set fn = state_attr(w, 'friendly_name') %}
-            {% set ns.items = ns.items + [fn if (fn is not none and (fn | string | trim) != '') else w] %}
+            {% set lbl = r.label | default('') | string | trim %}
+            {% if lbl == '' %}
+              {% set fn = state_attr(w, 'friendly_name') %}
+              {% set lbl = fn if (fn is not none and (fn | string | trim) != '') else w %}
+            {% endif %}
+            {% set ns.items = ns.items + [lbl] %}
           {% endif %}
         {% endfor %}
         {{ ns.items }}
@@ -1949,7 +1961,6 @@ action:
                       tag: vaillant_lueftung
                       push:
                         sticky: true
-                        interruption-level: time-sensitive
                   continue_on_error: true
 
           # Stage 2: 60 Min Wartezeit. Wenn User Fenster schließt → wait completed → kein Critical.
@@ -2031,11 +2042,15 @@ action:
                 {% set e = inputs.ac_climate_entity | default('') | string | trim %}
                 {% set ac_run = (e not in ['', 'none', 'None']) and (states(e) not in ['off', 'unavailable', 'unknown', '', 'none']) %}
                 {% set ns = namespace(items=[]) %}
-                {% for w in window_entities %}
+                {% for r in rooms_runtime %}
+                  {% set w = r.window %}
                   {% if w != '' and states[w] is defined and is_state(w, 'on') and not (ac_run and (w in ac_window_entities)) %}
-                    {% set fn = state_attr(w, 'friendly_name') %}
-                    {% set label = fn if (fn is not none and (fn | string | trim) != '') else w %}
-                    {% set ns.items = ns.items + [label] %}
+                    {% set lbl = r.label | default('') | string | trim %}
+                    {% if lbl == '' %}
+                      {% set fn = state_attr(w, 'friendly_name') %}
+                      {% set lbl = fn if (fn is not none and (fn | string | trim) != '') else w %}
+                    {% endif %}
+                    {% set ns.items = ns.items + [lbl] %}
                   {% endif %}
                 {% endfor %}
                 {{ ns.items | join(', ') if ns.items | length > 0 else 'Fenster' }}

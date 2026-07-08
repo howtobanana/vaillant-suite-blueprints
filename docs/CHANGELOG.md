@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-05 (Lüftung: Totband gegen widersprüchliche Meldungen)
+- "Zeit zum Lüften" und "Fenster zu — zu warm draußen" nutzen jetzt dieselbe
+  Temperatur-Linie (innen + Kühl-Offset); der "zu warm"-Alert feuert erst
+  1 °C darüber (Totband). Vorher konnten sich beide bei fast gleichen
+  Temperaturen direkt widersprechen (empfehlen → öffnen → "zu warm").
+- 4b-Meldungen zeigen konfigurierte Raum-Namen statt der friendly_names der
+  Fensterkontakte ("Fenster, Fenster").
+- 4b Stage 1 ohne time-sensitive — keine Fokus-/Schlafmodus-Durchbrechung.
+
 ## 2026-07-04 (Zuständigkeits-Trennung Heizung/Lüftung)
 - Heizungs-Steuerung: Fenster-Fallback-Erinnerung entfernt (2 Inputs + Flow).
   Sie duplizierte die Lüftungs-Meldungen, überschrieb per identischem
