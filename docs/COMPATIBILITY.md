@@ -15,7 +15,7 @@
 | Fenster → Benachrichtigungen | — | einziger Absender |
 | Saison (Sommermodus-Boolean) | Single Writer | liest nur |
 | Kühl-Empfehlungen | — | sendet |
-| Mobile Klima als Sensor (läuft sie?) | Therme-Klima-Verriegelung | Abluftfenster-Ausnahme |
+| Mobile Klima als Sensor (läuft sie?) | — | Abluftfenster-Ausnahme |
 | Mobile Klima als Aktor (ausschalten) | — | Klima-Automatik (Auto-Off) |
 | System-Health (offline, Budget, NOT-AUS) | sendet | — |
 

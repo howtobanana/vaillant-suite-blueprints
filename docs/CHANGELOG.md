@@ -18,6 +18,12 @@
   3 min mehr (Master 'off' → Soll 0 wurde als Anhebe-Bedarf gewertet).
 - "TRV Write Failed" verschwindet wieder, sobald das TRV antwortet;
   Readback wartet bis 15 s statt fix 3 s.
+- **Therme-Klima-Verriegelung entfernt** (3 Inputs, 2 Trigger, Lockout-Flow).
+  Nur für raumluftabhängige Thermen relevant, und eine softwareseitige
+  CO-Schutzfunktion ist bei Fehlkonfiguration ein Haftungsrisiko. Der
+  letzte Stand mit Feature ist als Tag
+  `snapshot-pre-remove-therme-lockout-2026-09-24` gesichert
+  (`git show <tag>:blueprints/vaillant_heizungs-steuerung.yaml`).
 - Aufgeräumt ohne Verhaltensänderung: Präsenz-Branches (10 → 1),
   Schreibpfade A/B/C (3 → 1, `_write_path` als einzige Entscheidung — das
   Debug-Log zeigt jetzt den echten Pfad), Leitstand aus gemeinsamen

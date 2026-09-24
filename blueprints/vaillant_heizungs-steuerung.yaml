@@ -12,7 +12,6 @@ blueprint:
     *   ⚡ **Echtzeit-Reaktion:** Sofortige Anpassung bei Statusänderungen ohne Latenz.
     *   🧠 **Fail-Safe:** Mehrstufige Sicherheitslogik (Debounce, Frostschutz, 60min Time-Guard).
     *   ❄️ **Sommermodus:** Stabile Saison-Erkennung über das 72-h-Außen-Mittel und eine einstellbare Heizgrenze (±1,5 °C Hysterese). Setzt Pre-Heat, Boost und Gebäude-Kompensation aus und steuert einen zentralen `input_boolean`, den Lüftung & Geofencing mitlesen. Optional schaltet er die Therme-Heizung ab (HVAC 'Off', Warmwasser läuft weiter) und setzt alle TRVs auf das TRV-Minimum (Frostschutz bleibt).
-    *   🔌 **Therme-Klima-Verriegelung (optional):** Läuft das mobile Klimagerät, wird die Therme abgeschaltet und der Leitstand pausiert; Klima aus → Therme wieder ein. Inkl. Push. Nur für raumluftabhängige Geräte relevant (Unterdruck → CO-Risiko) — raumluftunabhängige Brennwertgeräte dürfen parallel zur Klima laufen. **Kein Ersatz für einen CO-Melder.**
 
     **Das Ökosystem:**
     Entwickelt für den Betrieb im Verbund mit:
@@ -23,9 +22,8 @@ blueprint:
     **Zuständigkeit:**
     Dieses Modul steuert die Wärme-Aktorik (Therme + TRVs, inkl. stillem
     Frostschutz bei offenem Fenster) und benachrichtigt ausschließlich über
-    System-Health (Leitstand, kritische Alerts) und die Therme-Klima-
-    Verriegelung. Fenster-/Lüftungs-Benachrichtigungen kommen ausschließlich
-    aus der Lüftungs-Steuerung.
+    System-Health (Leitstand, kritische Alerts). Fenster-/Lüftungs-
+    Benachrichtigungen kommen ausschließlich aus der Lüftungs-Steuerung.
 
     **Voraussetzungen:**
     Erfordert die **myVaillant** Integration (HACS). Besonderer Dank an die Entwickler dieser Integration für die Bereitstellung der Schnittstelle.
@@ -1177,55 +1175,6 @@ blueprint:
           selector:
             text:
 
-    section_therme_lockout:
-      name: "🔌 Therme-Klima-Verriegelung (opt)"
-      description: |
-        Schaltet die Therme (= Master-Thermostat) ab, solange das mobile
-        Klimagerät läuft. Nur relevant für raumluftABHÄNGIGE Geräte, die ihre
-        Verbrennungsluft aus dem Raum ziehen — dort kann der Unterdruck der
-        Klima Abgase (CO) in den Raum zurückziehen. RaumluftUNABHÄNGIGE
-        Brennwertgeräte (eigene Zu-/Abluftführung) dürfen parallel zur Klima
-        laufen → Feature AUS lassen.
-        ⚠️ Softwareseitig lässt sich die Anlage nicht wirklich ausschalten —
-        auch Presets beenden nur die Heiz-/WW-Programme (Frostschutz bleibt).
-        Ein echtes Aus geht nur am Gerät selbst. KEIN Ersatz für einen
-        CO-Melder!
-        Während der Sperre schreibt der Leitstand nichts (kein Gegen-Steuern);
-        sobald die Klima aus ist, läuft der Leitstand normal weiter und stellt
-        den Zustand wieder her.
-      collapsed: true
-      input:
-        therme_lockout_enabled:
-          name: "🔘 Therme-Klima-Verriegelung aktiv"
-          description: |
-            AN: Wenn die Klima läuft, wird die Therme (Master-Thermostat)
-            abgeschaltet. Klima aus → Therme wieder ein.
-          default: false
-          selector:
-            boolean:
-        therme_lockout_ac:
-          name: "❄️ Klima-Entity (climate)"
-          description: |
-            Das mobile Klimagerät. "läuft" = Status ≠ off. Dieselbe Entity wie
-            in der Lüftungs-Steuerung.
-          default: ""
-          selector:
-            entity:
-              domain: climate
-        therme_off_preset:
-          name: "⚙️ Aus über Preset (opt)"
-          description: |
-            Leer (Default): Therme wird per climate.turn_off (HVAC 'Off')
-            abgeschaltet. Optional: Preset eintragen (z. B. "system_off") →
-            dann wird stattdessen climate.set_preset_mode genutzt.
-            Hinweis: Softwareseitig lässt sich die Anlage in keinem Fall
-            komplett ausschalten — auch "system_off" beendet nur die
-            Heiz-/WW-Programme (Frostschutz bleibt). Ein echtes Aus geht nur
-            am Gerät selbst.
-          default: ""
-          selector:
-            text:
-
     section_debug:
       name: "🛠️ System & Debugging"
       description: |
@@ -1295,9 +1244,6 @@ trigger_variables:
   tv_room3_presence_helper: !input room3_presence_helper
   tv_room4_presence_helper: !input room4_presence_helper
   tv_room5_presence_helper: !input room5_presence_helper
-  # Therme-Klima-Verriegelung
-  tv_therme_lockout_enabled: !input therme_lockout_enabled
-  tv_therme_lockout_ac: !input therme_lockout_ac
 
 triggers:
   # ============================================
@@ -1576,22 +1522,6 @@ triggers:
     event_data:
       entity_id: !input summer_mode_boolean
     id: summer_mode_changed
-
-  # ============================================
-  # THERME-KLIMA-VERRIEGELUNG: Klima an/aus
-  # ============================================
-  - trigger: template
-    value_template: >
-      {% set en = tv_therme_lockout_enabled | default(false) | bool(false) %}
-      {% set ac = tv_therme_lockout_ac | default('') | string | trim %}
-      {{ en and (ac not in _empty) and (states(ac) not in ['off', 'unavailable', 'unknown', '', 'none']) }}
-    id: therme_ac_on
-  - trigger: template
-    value_template: >
-      {% set en = tv_therme_lockout_enabled | default(false) | bool(false) %}
-      {% set ac = tv_therme_lockout_ac | default('') | string | trim %}
-      {{ en and (ac not in _empty) and (states(ac) == 'off') }}
-    id: therme_ac_off
 
 conditions: []
 
@@ -1881,9 +1811,6 @@ actions:
         summer_mode_boolean: !input summer_mode_boolean
         summer_heat_off_enabled: !input summer_heat_off_enabled
         summer_off_preset: !input summer_off_preset
-        therme_lockout_enabled: !input therme_lockout_enabled
-        therme_lockout_ac: !input therme_lockout_ac
-        therme_off_preset: !input therme_off_preset
       rooms_model:
         - key: room2
           role: isolated
@@ -2015,12 +1942,6 @@ actions:
       summer_heat_off_active: >
         {{ (summer_mode_active | bool(false)) and (inputs.summer_heat_off_enabled | default(true) | bool(true)) }}
       _summer_off_preset: "{{ inputs.summer_off_preset | default('') | string | trim }}"
-
-      # Therme-Klima-Verriegelung aktiv = Feature an UND Klima läuft (Status ≠ off).
-      therme_lockout_active: >
-        {% set en = inputs.therme_lockout_enabled | default(false) | bool(false) %}
-        {% set ac = inputs.therme_lockout_ac | default('') | string | trim %}
-        {{ en and (ac not in _empty) and (states(ac) not in ['off', 'unavailable', 'unknown', '', 'none']) }}
 
       # ===== GROUP 2: ROOM STATES =====
       master_schedule_active: >
@@ -2525,118 +2446,6 @@ actions:
                     {% endif %}
                 sequence:
                   - stop: "Neuere Helper-Änderung erkannt - veralteten Lauf beendet."
-
-  # ════════════════════════════════════════════════════════════
-  # THERME-KLIMA-VERRIEGELUNG (CO-Schutz)
-  # Klima läuft -> Therme/Master HART aus, Leitstand stoppt (kein Gegen-Steuern).
-  # Klima aus -> Zustand wiederherstellen, danach läuft der Leitstand normal.
-  # Idempotent (Aus nur wenn nötig -> schont API-Budget); wird durch den
-  # 3-min-Trigger + ha_start laufend nachgehalten.
-  # ════════════════════════════════════════════════════════════
-  - variables:
-      # Mobile-App-Notify-Services aus den gewählten Geräten (einzige Stelle)
-      _notify_targets: >
-        {% set raw = inputs.notify_devices %}
-        {% set lst = raw if (raw is iterable and raw is not string) else ([raw] if (raw not in ['', none]) else []) %}
-        {% set ns = namespace(items=[]) %}
-        {% for d in lst %}
-          {% set dn = device_attr(d | string | trim, 'name') %}
-          {% if dn is string and (dn | trim) != '' %}
-            {% set ns.items = ns.items + ['notify.mobile_app_' ~ ((dn | slugify) | replace('-', '_'))] %}
-          {% endif %}
-        {% endfor %}
-        {{ ns.items | unique | list }}
-      _tl_off_preset: "{{ inputs.therme_off_preset | default('') | string | trim }}"
-      _tl_master_off: >
-        {% set p = inputs.therme_off_preset | default('') | string | trim %}
-        {% if p != '' %}
-          {{ (state_attr(inputs.master_climate, 'preset_mode') | string) == p }}
-        {% else %}
-          {{ states(inputs.master_climate) == 'off' }}
-        {% endif %}
-  - choose:
-      # ── Verriegelt: Klima läuft -> Therme aus, Leitstand stoppen ──
-      - conditions:
-          - "{{ therme_lockout_active | bool(false) }}"
-        sequence:
-          # Snapshot + Push nur bei der EIN-Flanke (einmalig).
-          - if:
-              - "{{ (trigger.id | default('')) == 'therme_ac_on' }}"
-            then:
-              - action: scene.create
-                data:
-                  scene_id: vaillant_therme_lockout
-                  snapshot_entities:
-                    - "{{ inputs.master_climate }}"
-                continue_on_error: true
-              - if:
-                  - "{{ (_notify_targets | length) > 0 }}"
-                then:
-                  - repeat:
-                      for_each: "{{ _notify_targets }}"
-                      sequence:
-                        - action: "{{ repeat.item }}"
-                          data:
-                            title: "🔌 Therme aus — Klima läuft"
-                            message: "Klima in Betrieb → Therme abgeschaltet.\n(Heizungs-Steuerung)"
-                            data:
-                              tag: vaillant_therme_lockout
-                              push:
-                                sticky: true
-                          continue_on_error: true
-          # Therme aus — nur wenn nicht schon aus (schont API-Budget).
-          - if:
-              - "{{ not (_tl_master_off | bool(false)) }}"
-            then:
-              - if:
-                  - "{{ _tl_off_preset != '' }}"
-                then:
-                  - action: climate.set_preset_mode
-                    target:
-                      entity_id: "{{ inputs.master_climate }}"
-                    data:
-                      preset_mode: "{{ _tl_off_preset }}"
-                    continue_on_error: true
-                else:
-                  - action: climate.turn_off
-                    target:
-                      entity_id: "{{ inputs.master_climate }}"
-                    continue_on_error: true
-          - stop: "Therme-Lockout aktiv — Heizung/Therme aus (CO-Schutz)"
-
-      # ── Entriegeln: Klima ging gerade aus -> Zustand wiederherstellen ──
-      - conditions:
-          - "{{ (trigger.id | default('')) == 'therme_ac_off' }}"
-          - "{{ inputs.therme_lockout_enabled | bool(false) }}"
-        sequence:
-          - if:
-              - "{{ states('scene.vaillant_therme_lockout') not in ['unknown', 'unavailable'] }}"
-            then:
-              - action: scene.turn_on
-                target:
-                  entity_id: scene.vaillant_therme_lockout
-                continue_on_error: true
-            else:
-              - action: climate.turn_on
-                target:
-                  entity_id: "{{ inputs.master_climate }}"
-                continue_on_error: true
-          - if:
-              - "{{ (_notify_targets | length) > 0 }}"
-            then:
-              - repeat:
-                  for_each: "{{ _notify_targets }}"
-                  sequence:
-                    - action: "{{ repeat.item }}"
-                      data:
-                        title: "🔥 Therme wieder ein"
-                        message: "Klima aus → Therme freigegeben, normaler Heizbetrieb.\n(Heizungs-Steuerung)"
-                        data:
-                          tag: vaillant_therme_lockout
-                          push:
-                            sticky: true
-                      continue_on_error: true
-          # KEIN stop -> Leitstand läuft weiter und stellt den Sollwert wieder her.
 
     # ========== ROOM RUNTIME LOOP LOGIC ==========
   - repeat:
@@ -3244,9 +3053,7 @@ actions:
               - conditions:
                   - "{{ _write_path == 'S' }}"
                 sequence:
-                  # Live-Check statt Variable vom Lauf-Start: nach einem
-                  # Scene-Restore der Klima-Verriegelung im selben Lauf waere
-                  # ein zu Beginn eingefrorener Wert veraltet.
+                  # Live-Check: nur schalten, wenn der Master nicht schon aus ist.
                   - if:
                       - >
                         {% if (_summer_off_preset | default('') | string) != '' %}
@@ -3350,6 +3157,18 @@ actions:
   # LEITSTAND: gemeinsame Bausteine für Normal, Expert und Push
   # ════════════════════════════════════════════════════════════
   - variables:
+      # Mobile-App-Notify-Services aus den gewählten Geräten (einzige Stelle)
+      _notify_targets: >
+        {% set raw = inputs.notify_devices %}
+        {% set lst = raw if (raw is iterable and raw is not string) else ([raw] if (raw not in ['', none]) else []) %}
+        {% set ns = namespace(items=[]) %}
+        {% for d in lst %}
+          {% set dn = device_attr(d | string | trim, 'name') %}
+          {% if dn is string and (dn | trim) != '' %}
+            {% set ns.items = ns.items + ['notify.mobile_app_' ~ ((dn | slugify) | replace('-', '_'))] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items | unique | list }}
       _quiet_active: >
         {% if inputs.quiet_schedule | default('') | string | trim not in _empty %}
           {{ is_state(inputs.quiet_schedule, 'on') }}
