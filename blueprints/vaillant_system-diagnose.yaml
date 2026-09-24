@@ -785,7 +785,8 @@ action:
                       {% set state_val = state_obj.state %}
                       {% set changed_dt = state_obj.last_changed | as_datetime %}
                       {% set age = ((as_timestamp(now()) - as_timestamp(changed_dt, as_timestamp(now()))) if changed_dt is not none else 999999) %}
-                      {% if state_val in ['unavailable', 'unknown'] and age >= (trv_health_delay_sec | int(900)) %}
+                      {# Nur im 30-min-Fenster nach Ablauf der Wartezeit → genau 1 Push pro Ausfall (main_loop /30) #}
+                      {% if state_val in ['unavailable', 'unknown'] and age >= (trv_health_delay_sec | int(900)) and age < ((trv_health_delay_sec | int(900)) + 1800) %}
                         {% set ns.items = ns.items + [d.label] %}
                       {% endif %}
                     {% endif %}
@@ -823,16 +824,14 @@ action:
                   {% endif %}
                 {% endfor %}
                 {{ ns.items }}
-          # Mobile Push für TRV/Sensor-Offline NUR bei echten State-Changes, nicht
-          # bei main_loop (30-min-Poll). Die Heizungs-Steuerung hat eigene State-Trigger
-          # und feuert ihren gleichgetaggten Push sobald ein Sensor ausfällt.
-          # Tag vereinheitlicht (`vaillant_sensor_alert`) → iPhone zeigt nur 1 Notification.
+          # Einziger Absender für TRV/Sensor-Offline-Pushes der Suite (die Heizungs-
+          # Steuerung zeigt nur eine HA-Meldung). trv_offline_recent enthält nur Geräte
+          # im 30-min-Fenster nach der Wartezeit → ein Push pro Ausfall, kein Spam.
           - choose:
               - conditions:
                   - "{{ warning_notifications_allowed }}"
                   - "{{ normal_notify_targets_list | length > 0 }}"
                   - "{{ trv_offline_recent | length > 0 }}"
-                  - "{{ trigger.id | default('') != 'main_loop' }}"
                 sequence:
                   - repeat:
                       for_each: "{{ (normal_notify_targets_list | trim).split(',') if (normal_notify_targets_list | trim) != '' else [] }}"
