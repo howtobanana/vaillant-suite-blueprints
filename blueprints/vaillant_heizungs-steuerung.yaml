@@ -2450,21 +2450,18 @@ actions:
           {% endif %}
         {% endfor %}
         {{ ns.is_open }}
-      master_rapid_temp_drop: >
+      # Ist-Temperatur Master: externer Sensor -> Thermostat -> 21 (einzige Quelle)
+      master_current_temp: >
+        {% set climate_curr = state_attr(inputs.master_climate, 'current_temperature') | float(21) if inputs.master_climate | string not in ['', 'sensor.none', 'none'] else 21 %}
         {% if inputs.master_temp_sensor | string not in ['', 'sensor.none', 'none'] %}
-          {% if inputs.master_climate | string not in ['', 'sensor.none', 'none'] %}
-            {% set current_temp = states(inputs.master_temp_sensor) | float(state_attr(inputs.master_climate, 'current_temperature') | float(21)) %}
-          {% else %}
-            {% set current_temp = states(inputs.master_temp_sensor) | float(21) %}
-          {% endif %}
-        {% elif inputs.master_climate | string not in ['', 'sensor.none', 'none'] %}
-          {% set current_temp = state_attr(inputs.master_climate, 'current_temperature') | float(21) %}
+          {{ states(inputs.master_temp_sensor) | float(climate_curr) }}
         {% else %}
-          {% set current_temp = 21 %}
+          {{ climate_curr }}
         {% endif %}
+      master_rapid_temp_drop: >
         {% set eco_anchor = eco_temp | float(inputs.eco_temp_fixed | float(19)) %}
         {% set drop_threshold = inputs.smart_drop_threshold | float(2.0) %}
-        {{ (global_window_open | bool(false)) and (not (master_window_open_too_long | bool(false))) and ((current_temp | float(21)) < ((eco_anchor | float(19)) - (drop_threshold | float(2.0)))) }}
+        {{ (global_window_open | bool(false)) and (not (master_window_open_too_long | bool(false))) and ((master_current_temp | float(21)) < ((eco_anchor | float(19)) - (drop_threshold | float(2.0)))) }}
       master_target_final: >
         {% if master_window_open_too_long | bool(false) %}
           {{ inputs.min_trv_temp | float(12) }}
@@ -3058,17 +3055,7 @@ actions:
                 {{ (master_schedule_active | bool(false)) or (master_presence_detected | bool(false)) or (master_is_manual | bool(false)) }}
               _master_boost_delta: >
                 {% if room_boost_enabled_effective | bool(false) and (master_boost_participates | bool(false)) %}
-                  {% if inputs.master_climate | string not in ['', 'sensor.none', 'none'] %}
-                    {% set fallback_current = state_attr(inputs.master_climate, 'current_temperature') | float(21) %}
-                  {% else %}
-                    {% set fallback_current = 21 %}
-                  {% endif %}
-                  {% if inputs.master_temp_sensor | string not in ['', 'sensor.none', 'none'] %}
-                    {% set master_current = states(inputs.master_temp_sensor) | float(fallback_current) %}
-                  {% else %}
-                    {% set master_current = fallback_current %}
-                  {% endif %}
-                  {{ master_target_final | float(0) - (master_current | float(0)) }}
+                  {{ master_target_final | float(0) - (master_current_temp | float(0)) }}
                 {% else %}
                   {{ none }}
                 {% endif %}
@@ -3136,13 +3123,7 @@ actions:
                      Zwischen LOW und HIGH: aktuellen Zustand halten (sticky → kein Oszillieren).
                      Aktueller Zustand wird via master_set_now (= bereits geschriebener Setpoint) erkannt.
                      Greift nur, wenn base_raw wirklich über eco liegt — forced-min/away/safety-floor unberührt. #}
-                  {% if inputs.master_temp_sensor | string not in ['', 'sensor.none', 'none'] %}
-                    {% set m_current = states(inputs.master_temp_sensor) | float(state_attr(inputs.master_climate, 'current_temperature') | float(21)) %}
-                  {% elif inputs.master_climate | string not in ['', 'sensor.none', 'none'] %}
-                    {% set m_current = state_attr(inputs.master_climate, 'current_temperature') | float(21) %}
-                  {% else %}
-                    {% set m_current = 21 %}
-                  {% endif %}
+                  {% set m_current = master_current_temp | float(21) %}
                   {% set eco_floor = eco_temp | float(inputs.eco_temp_fixed | float(19)) %}
                   {% set eco_result = [eco_floor, master_safety_floor | float(12)] | max %}
                   {% if (base_raw | float(0)) <= (eco_floor | float(0)) %}
@@ -3744,14 +3725,7 @@ actions:
       _l_m_hvac: "{{ master_hvac_action | default('n/a', true) | string }}"
       _l_m_delta: "{{ master_target_delta_abs | default(0) | float(0) }}"
       _l_hvac_icon: "{{ '🔥' if (_l_m_hvac | string) == 'heating' else '💤' }}"
-      _l_m_current_temp: >
-        {%- set climate_curr = state_attr(inputs.master_climate, 'current_temperature') | float(21) -%}
-        {%- set tid = inputs.master_temp_sensor | default('') | string -%}
-        {%- if tid not in ['', 'sensor.none', 'none'] and states(tid) not in ['unknown', 'unavailable', 'none', ''] -%}
-          {{ states(tid) | float(climate_curr) }}
-        {%- else -%}
-          {{ climate_curr }}
-        {%- endif -%}
+      _l_m_current_temp: "{{ master_current_temp | float(21) }}"
       _l_m_sched: "{{ master_schedule_active | default(false) | bool(false) }}"
       _l_m_pres: "{{ master_presence_detected | default(false) | bool(false) }}"
       _l_m_man: "{{ master_is_manual | default(false) | bool(false) }}"
