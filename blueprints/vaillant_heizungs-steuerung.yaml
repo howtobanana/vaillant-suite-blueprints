@@ -1356,15 +1356,6 @@ trigger_variables:
   tv_follower1_window: !input follower1_window
   tv_follower2_window: !input follower2_window
   tv_master_window: !input master_window
-  # Optional helper input guards – used in enabled: templates below to prevent
-  # HA from registering state triggers with an empty entity_id at load time
-  tv_eco_temp_input: !input eco_temp_input
-  tv_away_temp_input: !input away_temp_input
-  tv_master_comfort_input: !input master_comfort_input
-  tv_room2_comfort_input: !input room2_comfort_input
-  tv_room3_comfort_input: !input room3_comfort_input
-  tv_room4_comfort_input: !input room4_comfort_input
-  tv_room5_comfort_input: !input room5_comfort_input
   tv_master_presence_helper: !input master_presence_helper
   tv_room2_presence_helper: !input room2_presence_helper
   tv_room3_presence_helper: !input room3_presence_helper
@@ -3269,11 +3260,8 @@ actions:
                 {{ (max_changes_per_hour_effective | int(10)) - (master_write_budget_used | int(0)) }}
               master_budget_ok: >
                 {{ (master_write_budget_remaining | int(0)) > 0 }}
-              # Alias für Downstream-Kompatibilität
-              master_change_cooldown_ok_step55: >
-                {{ master_budget_ok | bool(false) }}
               # === LAST WRITE AGE (aus letztem Timestamp im Log) ===
-              master_last_update_age_step55: >
+              master_last_write_age_s: >
                 {% set clean = master_write_timestamps_clean | default('', true) | string | trim %}
                 {% set entries = clean.split(',') | reject('eq', '') | list %}
                 {% if entries | length > 0 %}
@@ -3321,13 +3309,13 @@ actions:
                 {{
                   (master_last_write_kind | string == 'raise')
                   and
-                  ((master_last_update_age_step55 | float(999999)) < (master_hold_drop_after_raise_seconds | float(1200)))
+                  ((master_last_write_age_s | float(999999)) < (master_hold_drop_after_raise_seconds | float(1200)))
                 }}
               master_raise_hold_active: >
                 {{
                   (master_last_write_kind | string == 'drop')
                   and
-                  ((master_last_update_age_step55 | float(999999)) < (master_hold_raise_after_drop_seconds | float(600)))
+                  ((master_last_write_age_s | float(999999)) < (master_hold_raise_after_drop_seconds | float(600)))
                 }}
               master_needs_raise: >
                 {{ (master_final_target | float(0)) > ((master_set_now | float(0)) + (inputs.hysteresis | float(0.6))) }}
@@ -3335,7 +3323,7 @@ actions:
                 {{
                   (master_needs_raise | bool(false))
                   and
-                  (master_change_cooldown_ok_step55 | bool(false))
+                  (master_budget_ok | bool(false))
                   and
                   (
                     (not (master_raise_hold_active | bool(false)))
@@ -3348,7 +3336,7 @@ actions:
                 {{
                   (master_needs_global_drop | bool(false))
                   and
-                  (master_change_cooldown_ok_step55 | bool(false))
+                  (master_budget_ok | bool(false))
                   and
                   (
                     (not (master_drop_hold_active | bool(false)))
@@ -3437,11 +3425,11 @@ actions:
                     {% if master_forced_min_active | bool(false) %}
                       {% set _skip_reasons.items = _skip_reasons.items + ['forced_min_bypasses_write_gate'] %}
                     {% endif %}
-                    {% if not (master_change_cooldown_ok_step55 | bool(false)) %}
+                    {% if not (master_budget_ok | bool(false)) %}
                       {% set _skip_reasons.items = _skip_reasons.items + ['budget_exhausted(used=' ~ (master_write_budget_used | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ')'] %}
                     {% endif %}
                     {% if master_drop_hold_active | bool(false) %}
-                      {% set _skip_reasons.items = _skip_reasons.items + ['drop_hold_active(last_write=' ~ (master_last_update_age_step55 | int(0)) ~ 's_ago,hold=' ~ (master_hold_drop_after_raise_seconds | int(0)) ~ 's)'] %}
+                      {% set _skip_reasons.items = _skip_reasons.items + ['drop_hold_active(last_write=' ~ (master_last_write_age_s | int(0)) ~ 's_ago,hold=' ~ (master_hold_drop_after_raise_seconds | int(0)) ~ 's)'] %}
                     {% endif %}
                     {% if master_raise_hold_active | bool(false) %}
                       {% set _skip_reasons.items = _skip_reasons.items + ['raise_hold_active'] %}
@@ -3464,7 +3452,7 @@ actions:
                     sig_drop={{ master_significant_drop | bool(false) }}(delta={{ ((master_set_now | float(0)) - (master_final_target | float(0))) | round(2) }})
                     drop_hold={{ master_drop_hold_active | bool(false) }}
                     hold_bypass={{ master_hold_bypass | bool(false) }}
-                    budget_ok={{ master_change_cooldown_ok_step55 | bool(false) }}({{ master_write_budget_remaining | int(0) }} left)
+                    budget_ok={{ master_budget_ok | bool(false) }}({{ master_write_budget_remaining | int(0) }} left)
                     write_allowed={{ master_write_allowed | bool(false) }}
                     write_path={{ _write_path }}
                     skip_reasons={{ _skip_reasons.items | join(',') if _skip_reasons.items | length > 0 else 'none' }}
@@ -3594,7 +3582,7 @@ actions:
                   - "{{ not (master_forced_min_active | bool(false)) }}"
                   - "{{ (master_needs_global_boost | bool(false)) or (master_significant_drop | bool(false)) }}"
                   - "{{ (master_target_delta_abs | float(0)) > 0.1 }}"
-                  - "{{ master_change_cooldown_ok_step55 | bool(false) }}"
+                  - "{{ master_budget_ok | bool(false) }}"
                   # FIX: Anti-cycling hold gate – significant drops (>= 1.5°C) always
                   # pass through, boosts respect raise-hold unless bypassed by event trigger
                   - >
@@ -3683,7 +3671,7 @@ actions:
           - if:
               - condition: template
                 value_template: >
-                  {% set age_s = master_last_update_age_step55 | float(999999) %}
+                  {% set age_s = master_last_write_age_s | float(999999) %}
                   {% set verify_window_s = 300.0 %}
                   {% set master_entity = inputs.master_climate | string %}
                   {% set master_state = states(master_entity) if master_entity not in ['', 'sensor.none', 'none'] else '' %}
@@ -3837,7 +3825,7 @@ actions:
             {%- else -%}
               {%- set msg.out = msg.out ~ 'Blockiert (Cooldown/Hold)' -%}
             {%- endif -%}
-            {%- set msg.out = msg.out ~ ' | Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ' | Write vor ' ~ (((master_last_update_age_step55 | default(0) | float(0)) // 60) | int) ~ 'm ' ~ (((master_last_update_age_step55 | default(0) | float(0)) % 60) | int) ~ 's' -%}
+            {%- set msg.out = msg.out ~ ' | Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ' | Write vor ' ~ (((master_last_write_age_s | default(0) | float(0)) // 60) | int) ~ 'm ' ~ (((master_last_write_age_s | default(0) | float(0)) % 60) | int) ~ 's' -%}
             {{ msg.out }}
       - if:
           - "{{ _notify_configured | bool(false) }}"
@@ -3943,8 +3931,8 @@ actions:
             {%- else -%}
               {%- set msg.out = msg.out ~ 'Blockiert (Cooldown/Hold)' -%}
             {%- endif -%}
-            {%- set msg.out = msg.out ~ ' | Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ' | Write vor ' ~ (((master_last_update_age_step55 | default(0) | float(0)) // 60) | int) ~ 'm ' ~ (((master_last_update_age_step55 | default(0) | float(0)) % 60) | int) ~ 's' -%}
-            {%- set msg.out = msg.out ~ n ~ 'Raise ' ~ ('✅' if (master_needs_raise | default(false) | bool(false)) else '⬜') ~ ' | Drop ' ~ ('✅' if (master_needs_global_drop | default(false) | bool(false)) else '⬜') ~ ' | Hold ' ~ ('✅' if (master_drop_hold_active | default(false) | bool(false)) or (master_raise_hold_active | default(false) | bool(false)) else '⬜') ~ ' | Bypass ' ~ ('✅' if (master_hold_bypass | default(false) | bool(false)) else '⬜') ~ ' | Letzter: ' ~ (master_last_write_kind | default('?')) ~ ' vor ' ~ (((master_last_update_age_step55 | default(0) | float(0)) // 60) | int) ~ 'm ' ~ (((master_last_update_age_step55 | default(0) | float(0)) % 60) | int) ~ 's' -%}
+            {%- set msg.out = msg.out ~ ' | Budget ' ~ (master_write_budget_remaining | int(0)) ~ '/' ~ (max_changes_per_hour_effective | int(10)) ~ ' | Write vor ' ~ (((master_last_write_age_s | default(0) | float(0)) // 60) | int) ~ 'm ' ~ (((master_last_write_age_s | default(0) | float(0)) % 60) | int) ~ 's' -%}
+            {%- set msg.out = msg.out ~ n ~ 'Raise ' ~ ('✅' if (master_needs_raise | default(false) | bool(false)) else '⬜') ~ ' | Drop ' ~ ('✅' if (master_needs_global_drop | default(false) | bool(false)) else '⬜') ~ ' | Hold ' ~ ('✅' if (master_drop_hold_active | default(false) | bool(false)) or (master_raise_hold_active | default(false) | bool(false)) else '⬜') ~ ' | Bypass ' ~ ('✅' if (master_hold_bypass | default(false) | bool(false)) else '⬜') ~ ' | Letzter: ' ~ (master_last_write_kind | default('?')) ~ ' vor ' ~ (((master_last_write_age_s | default(0) | float(0)) // 60) | int) ~ 'm ' ~ (((master_last_write_age_s | default(0) | float(0)) % 60) | int) ~ 's' -%}
             {{ msg.out }}
 
   # ════════════════════════════════════════════════════════════
