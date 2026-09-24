@@ -11,7 +11,7 @@ blueprint:
     *   🌦️ **Gebäude-Kompensation:** Plan A per Template-Sensor (empfohlen), Plan B per Außensensor-Fallback; wirkt als Aufschlag auf den Master-Sollwert.
     *   ⚡ **Echtzeit-Reaktion:** Sofortige Anpassung bei Statusänderungen ohne Latenz.
     *   🧠 **Fail-Safe:** Mehrstufige Sicherheitslogik (Debounce, Frostschutz, 60min Time-Guard).
-    *   ❄️ **Sommermodus:** Stabile Saison-Erkennung (gleitende Außentemperatur + Hysterese + Haltezeit). Setzt Pre-Heat, Boost und Gebäude-Kompensation aus und steuert einen zentralen `input_boolean`, den Lüftung & Geofencing mitlesen. Optional schaltet er die Therme-Heizung ab (HVAC 'Off', Warmwasser läuft weiter) und setzt alle TRVs auf das TRV-Minimum (Frostschutz bleibt).
+    *   ❄️ **Sommermodus:** Stabile Saison-Erkennung über das 72-h-Außen-Mittel und eine einstellbare Heizgrenze (±1,5 °C Hysterese). Setzt Pre-Heat, Boost und Gebäude-Kompensation aus und steuert einen zentralen `input_boolean`, den Lüftung & Geofencing mitlesen. Optional schaltet er die Therme-Heizung ab (HVAC 'Off', Warmwasser läuft weiter) und setzt alle TRVs auf das TRV-Minimum (Frostschutz bleibt).
     *   🔌 **Therme-Klima-Verriegelung (optional):** Läuft das mobile Klimagerät, wird die Therme abgeschaltet und der Leitstand pausiert; Klima aus → Therme wieder ein. Inkl. Push. Nur für raumluftabhängige Geräte relevant (Unterdruck → CO-Risiko) — raumluftunabhängige Brennwertgeräte dürfen parallel zur Klima laufen. **Kein Ersatz für einen CO-Melder.**
 
     **Das Ökosystem:**
@@ -29,7 +29,7 @@ blueprint:
 
     **Voraussetzungen:**
     Erfordert die **myVaillant** Integration (HACS). Besonderer Dank an die Entwickler dieser Integration für die Bereitstellung der Schnittstelle.
-    Für den Sommermodus: ein **input_boolean**-Helfer (gemeinsamer Saison-Schalter) und – für die automatische Erkennung – idealerweise ein **Statistics**-Helfer (gleitender 72h-Mittelwert, `average_linear`, auf dem Außensensor). Beide unter Einstellungen → Helfer anlegen.
+    Für den Sommermodus: ein **input_boolean**-Helfer (gemeinsamer Saison-Schalter) und – für die automatische Erkennung – ein **Statistics**-Helfer (gleitender 72-h-Mittelwert des Außensensors). Beide unter Einstellungen → Helfer anlegen.
 
     **Haftungsausschluss:**
     Dies ist ein privates Projekt. Der Autor ist kein zertifizierter Installateur. Die Nutzung erfolgt auf eigene Gefahr. Für Schäden an der Anlage oder durch Fehlkonfiguration wird keine Haftung übernommen.
@@ -1097,8 +1097,9 @@ blueprint:
     section_season:
       name: "❄️ Sommermodus (Saison-Erkennung)"
       description: |
-        Stabiler Saison-Schalter: wechselt erst nach Hysterese + Haltezeit und
-        bleibt dann stehen (kein tägliches Pendeln). Bei aktivem Sommermodus
+        Stabiler Saison-Schalter auf Basis eines gleitenden 72-h-Mittels der
+        Außentemperatur mit fester Hysterese (Heizgrenze ±1,5 °C) — kein
+        tägliches Pendeln, keine Monats-Grenzen nötig. Bei aktivem Sommermodus
         werden Pre-Heat, Boost und Gebäude-Kompensation ausgesetzt
         (Frostschutz bleibt). Optional wird zusätzlich die Heizung der Therme
         abgeschaltet (HVAC 'Off', Warmwasser läuft weiter) und alle TRVs gehen
@@ -1107,113 +1108,44 @@ blueprint:
         Geofencing mitgelesen.
       collapsed: true
       input:
-        summer_auto_enable:
-          name: "🔘 Automatische Sommer-Erkennung"
-          description: |
-            AN: Der Sommermodus-Schalter wird automatisch nach den Schwellen
-            unten gesetzt. AUS: nur manuelle Steuerung des input_boolean.
-          default: false
-          selector:
-            boolean:
         summer_mode_boolean:
           name: "🎚️ Sommermodus-Schalter (input_boolean)"
           description: |
-            Gemeinsamer Saison-Schalter. Dieses Blueprint setzt ihn (bei
-            aktiver Automatik) und liest ihn fürs Gating. Lüftung & Geofencing
-            lesen denselben Helfer. Leer = Sommermodus deaktiviert.
+            Gemeinsamer Saison-Schalter. Dieses Blueprint setzt ihn automatisch
+            (wenn unten ein Mittelwert-Sensor gewählt ist) und liest ihn fürs
+            Gating. Lüftung & Geofencing lesen denselben Helfer.
+            Leer = Sommermodus deaktiviert.
             Anlegen: Einstellungen → Helfer → Umschalter (Toggle).
           default: ""
           selector:
             entity:
               domain: input_boolean
         summer_outdoor_mean_sensor:
-          name: "🌡️ Außen-Mittelwert-Sensor (Statistics, empf.)"
+          name: "🌡️ Außen-Mittelwert-Sensor (Statistics-Helfer)"
           description: |
-            Gleitender Außentemperatur-Mittelwert (Statistics-Helfer,
-            average_linear, max_age 72h). Grundlage der stabilen Erkennung.
-            Leer = Fallback auf den Basis-Außensensor (weniger stabil).
+            Gleitender 72-h-Mittelwert der Außentemperatur. Anlegen:
+            Einstellungen → Helfer → Statistik → Quelle = Außensensor,
+            Merkmal "Mittelwert (linear)", Max. Alter 72 h.
+            ⚠️ Keinen Roh-Außensensor wählen — der schwankt Tag/Nacht um die
+            Heizgrenze und der Sommermodus schaltet dann nie sauber.
+            Leer = keine Automatik, Schalter nur manuell.
           default: ""
           selector:
             entity:
               domain: sensor
-        summer_indoor_ref:
-          name: "🌡️ Innen-Referenz-Sensor (opt)"
+        summer_heating_limit:
+          name: "🌡️ Heizgrenze (°C)"
           description: |
-            Innentemperatur-Referenz. Sommer wird nur aktiviert, wenn auch
-            innen warm genug ist (Schutz vor Kälteeinbruch). Leer = Master-
-            Temperatursensor wird verwendet.
-          default: ""
-          selector:
-            entity:
-              domain: sensor
-        summer_on_threshold:
-          name: "🌡️ EIN-Schwelle Außen-Mittel (°C)"
-          description: |
-            Sommermodus EIN, wenn der Außen-Mittelwert ≥ diesem Wert bleibt
-            (über die Haltezeit).
-          default: 18
+            Außen-Mittel, ab dem nicht mehr geheizt werden muss.
+            Sommer EIN bei ≥ Heizgrenze + 1,5 °C, AUS bei < Heizgrenze − 1,5 °C.
+            Richtwerte: Altbau 15, gedämmt 12, Passivhaus 10.
+          default: 15
           selector:
             number:
-              min: 10
-              max: 25
-              step: 0.5
-              unit_of_measurement: "°C"
-        summer_off_threshold:
-          name: "🌡️ AUS-Schwelle Außen-Mittel (°C)"
-          description: |
-            Sommermodus AUS, wenn der Außen-Mittelwert < diesem Wert fällt
-            (über die Haltezeit). Abstand zur EIN-Schwelle = Hysterese/Totband.
-          default: 13
-          selector:
-            number:
-              min: 5
+              min: 8
               max: 20
               step: 0.5
               unit_of_measurement: "°C"
-        summer_indoor_min:
-          name: "🌡️ Innen-Mindesttemperatur (°C)"
-          description: |
-            Sommer nur aktivieren, wenn die Innen-Referenz ≥ diesem Wert ist.
-          default: 21
-          selector:
-            number:
-              min: 16
-              max: 26
-              step: 0.5
-              unit_of_measurement: "°C"
-        summer_dwell_hours:
-          name: "⏱️ Haltezeit (h)"
-          description: |
-            Wie lange eine Schwelle gehalten werden muss, bevor umgeschaltet
-            wird. Verhindert Umschalten bei kurzen Wetterausreißern.
-          default: 24
-          selector:
-            number:
-              min: 1
-              max: 72
-              step: 1
-              unit_of_measurement: "h"
-        summer_month_start:
-          name: "🗓️ Saison-Riegel: Startmonat"
-          description: |
-            Automatik aktiviert Sommer frühestens ab diesem Monat (1–12).
-            Startmonat ≤ Endmonat. 1 und 12 = ganzjährig erlaubt.
-          default: 4
-          selector:
-            number:
-              min: 1
-              max: 12
-              step: 1
-        summer_month_end:
-          name: "🗓️ Saison-Riegel: Endmonat"
-          description: |
-            Automatik aktiviert Sommer längstens bis zu diesem Monat (1–12).
-          default: 10
-          selector:
-            number:
-              min: 1
-              max: 12
-              step: 1
         summer_heat_off_enabled:
           name: "🛑 Sommer: Heizung aus (WW bleibt)"
           description: |
@@ -1361,18 +1293,6 @@ trigger_variables:
   tv_room3_presence_helper: !input room3_presence_helper
   tv_room4_presence_helper: !input room4_presence_helper
   tv_room5_presence_helper: !input room5_presence_helper
-  # Sommermodus-Erkennung
-  tv_summer_auto_enable: !input summer_auto_enable
-  tv_summer_mode_boolean: !input summer_mode_boolean
-  tv_summer_outdoor_mean_sensor: !input summer_outdoor_mean_sensor
-  tv_summer_indoor_ref: !input summer_indoor_ref
-  tv_summer_on_threshold: !input summer_on_threshold
-  tv_summer_off_threshold: !input summer_off_threshold
-  tv_summer_indoor_min: !input summer_indoor_min
-  tv_summer_month_start: !input summer_month_start
-  tv_summer_month_end: !input summer_month_end
-  tv_outdoor_temp_sensor: !input outdoor_temp_sensor
-  tv_master_temp_sensor: !input master_temp_sensor
   # Therme-Klima-Verriegelung
   tv_therme_lockout_enabled: !input therme_lockout_enabled
   tv_therme_lockout_ac: !input therme_lockout_ac
@@ -1646,46 +1566,9 @@ triggers:
     id: ha_start
 
   # ============================================
-  # SOMMERMODUS (Saison-Erkennung)
-  # Außen-Mittelwert über/unter Schwelle für die Haltezeit -> Schalter setzen.
-  # Manuelle Änderungen am Schalter bleiben erhalten, bis die Gegenschwelle
-  # wieder über die Haltezeit gehalten wird ("umschalten und bleiben").
+  # SOMMERMODUS: Schalter-Änderung (auto ODER manuell) -> Leitstand sofort
+  # neu rechnen. Die Erkennung selbst läuft als Abgleich in jedem Lauf.
   # ============================================
-  - trigger: template
-    value_template: >
-      {% set auto = tv_summer_auto_enable | default(false) | bool(false) %}
-      {% set b = tv_summer_mode_boolean | default('') | string %}
-      {% set s = tv_summer_outdoor_mean_sensor | default('') | string %}
-      {% set s = s if s not in ['', 'none', 'sensor.none'] else (tv_outdoor_temp_sensor | default('') | string) %}
-      {% set i = tv_summer_indoor_ref | default('') | string %}
-      {% set i = i if i not in ['', 'none', 'sensor.none'] else (tv_master_temp_sensor | default('') | string) %}
-      {% set on_thr = tv_summer_on_threshold | float(18) %}
-      {% set in_min = tv_summer_indoor_min | float(21) %}
-      {% set m_start = tv_summer_month_start | int(4) %}
-      {% set m_end = tv_summer_month_end | int(10) %}
-      {% set month_ok = (now().month >= m_start) and (now().month <= m_end) %}
-      {% set outdoor_ok = (s not in ['', 'none', 'sensor.none']) and has_value(s) %}
-      {% set indoor_ok = (i in ['', 'none', 'sensor.none']) or (has_value(i) and ((states(i) | float(-99)) >= in_min)) %}
-      {{ auto and (b not in ['', 'none', 'sensor.none'])
-         and outdoor_ok and ((states(s) | float(-99)) >= on_thr)
-         and indoor_ok and month_ok }}
-    for:
-      hours: !input summer_dwell_hours
-    id: season_summer_on
-  - trigger: template
-    value_template: >
-      {% set auto = tv_summer_auto_enable | default(false) | bool(false) %}
-      {% set b = tv_summer_mode_boolean | default('') | string %}
-      {% set s = tv_summer_outdoor_mean_sensor | default('') | string %}
-      {% set s = s if s not in ['', 'none', 'sensor.none'] else (tv_outdoor_temp_sensor | default('') | string) %}
-      {% set off_thr = tv_summer_off_threshold | float(13) %}
-      {% set outdoor_ok = (s not in ['', 'none', 'sensor.none']) and has_value(s) %}
-      {{ auto and (b not in ['', 'none', 'sensor.none'])
-         and outdoor_ok and ((states(s) | float(99)) < off_thr) }}
-    for:
-      hours: !input summer_dwell_hours
-    id: season_summer_off
-  # Schalter-Änderung (auto ODER manuell) -> Leitstand sofort neu rechnen.
   - trigger: event
     event_type: state_changed
     event_data:
@@ -1722,49 +1605,6 @@ actions:
       _presence_debug_enabled: >
         {{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}
   - choose:
-      # Sommermodus EIN: Schalter setzen, dann stoppen (Schalter-Änderung
-      # triggert den Leitstand-Neudurchlauf via summer_mode_changed).
-      - conditions:
-          - condition: trigger
-            id: season_summer_on
-        sequence:
-          - variables:
-              _summer_boolean: !input summer_mode_boolean
-          - condition: template
-            value_template: "{{ (_summer_boolean | string not in ['', 'sensor.none', 'none']) and (_summer_boolean | string | length > 5) }}"
-          - action: input_boolean.turn_on
-            target:
-              entity_id: "{{ _summer_boolean }}"
-          - if:
-              - condition: template
-                value_template: "{{ _presence_debug_enabled | bool(false) }}"
-            then:
-              - action: system_log.write
-                data:
-                  message: "Vaillant Blueprint: Sommermodus AKTIVIERT (Aussen-Mittel >= EIN-Schwelle ueber Haltezeit)"
-                  level: info
-          - stop: ""
-      # Sommermodus AUS
-      - conditions:
-          - condition: trigger
-            id: season_summer_off
-        sequence:
-          - variables:
-              _summer_boolean: !input summer_mode_boolean
-          - condition: template
-            value_template: "{{ (_summer_boolean | string not in ['', 'sensor.none', 'none']) and (_summer_boolean | string | length > 5) }}"
-          - action: input_boolean.turn_off
-            target:
-              entity_id: "{{ _summer_boolean }}"
-          - if:
-              - condition: template
-                value_template: "{{ _presence_debug_enabled | bool(false) }}"
-            then:
-              - action: system_log.write
-                data:
-                  message: "Vaillant Blueprint: Sommermodus DEAKTIVIERT (Aussen-Mittel < AUS-Schwelle ueber Haltezeit)"
-                  level: info
-          - stop: ""
       - conditions:
           - condition: trigger
             id: master_presence_on
@@ -1966,6 +1806,53 @@ actions:
                   level: info
           - stop: ""
 
+  # ===== SOMMERMODUS-ABGLEICH =====
+  # Level- statt flankengesteuert: jeder Lauf (mind. alle 3 min) gleicht den
+  # Schalter mit dem 72h-Außen-Mittel ab. Übersteht HA-Neustarts; im Band
+  # zwischen den Schwellen bleibt der Schalter wie er ist (auch manuell).
+  # Nach dem Umschalten stoppen — summer_mode_changed startet den Lauf neu.
+  - variables:
+      _summer_boolean: !input summer_mode_boolean
+      _summer_mean_sensor: !input summer_outdoor_mean_sensor
+      _summer_limit: !input summer_heating_limit
+      _summer_target: >
+        {% set b = _summer_boolean | default('') | string | trim %}
+        {% set s = _summer_mean_sensor | default('') | string | trim %}
+        {% if b in ['', 'none', 'sensor.none'] or s in ['', 'none', 'sensor.none'] or not has_value(s) or not has_value(b) %}
+          keep
+        {% else %}
+          {% set mean = states(s) | float(0) %}
+          {% set limit = _summer_limit | float(15) %}
+          {% if is_state(b, 'off') and mean >= limit + 1.5 %}
+            on
+          {% elif is_state(b, 'on') and mean < limit - 1.5 %}
+            off
+          {% else %}
+            keep
+          {% endif %}
+        {% endif %}
+  - if:
+      - "{{ _summer_target in ['on', 'off'] }}"
+    then:
+      - if:
+          - "{{ _summer_target == 'on' }}"
+        then:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: "{{ _summer_boolean }}"
+        else:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: "{{ _summer_boolean }}"
+      - action: system_log.write
+        continue_on_error: true
+        data:
+          level: info
+          message: >
+            Vaillant Blueprint: Sommermodus {{ 'AKTIVIERT' if _summer_target == 'on' else 'DEAKTIVIERT' }}
+            (Aussen-Mittel {{ states(_summer_mean_sensor) }} °C, Heizgrenze {{ _summer_limit }} °C ±1,5)
+      - stop: "Sommermodus umgeschaltet — Neuberechnung über summer_mode_changed."
+
   # ===== PRESENCE HELPER SYNC (ha_start / scheduled) =====
   # Template triggers need a False→True transition to fire. After HA restart
   # or automation reload, sensors already "on" won't trigger — helper stays
@@ -2136,7 +2023,6 @@ actions:
         follower2_climate: !input follower2_climate
         follower2_offset: !input follower2_offset
         follower2_window: !input follower2_window
-        summer_auto_enable: !input summer_auto_enable
         summer_mode_boolean: !input summer_mode_boolean
         summer_heat_off_enabled: !input summer_heat_off_enabled
         summer_off_preset: !input summer_off_preset
