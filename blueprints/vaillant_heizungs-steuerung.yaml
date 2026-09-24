@@ -11,7 +11,7 @@ blueprint:
     *   🌦️ **Gebäude-Kompensation:** Plan A per Template-Sensor (empfohlen), Plan B per Außensensor-Fallback; wirkt als Aufschlag auf den Master-Sollwert.
     *   ⚡ **Echtzeit-Reaktion:** Sofortige Anpassung bei Statusänderungen ohne Latenz.
     *   🧠 **Fail-Safe:** Mehrstufige Sicherheitslogik (Debounce, Frostschutz, 60min Time-Guard).
-    *   ❄️ **Sommermodus:** Stabile Saison-Erkennung über das 72-h-Außen-Mittel und eine einstellbare Heizgrenze (±1,5 °C Hysterese). Setzt Pre-Heat, Boost und Gebäude-Kompensation aus und steuert einen zentralen `input_boolean`, den Lüftung & Geofencing mitlesen. Optional schaltet er die Therme-Heizung ab (HVAC 'Off', Warmwasser läuft weiter) und setzt alle TRVs auf das TRV-Minimum (Frostschutz bleibt).
+    *   ❄️ **Sommermodus:** Stabile Saison-Erkennung über das 72-h-Außen-Mittel und eine einstellbare Heizgrenze (±1,5 °C Hysterese). Setzt Pre-Heat, Boost und Gebäude-Kompensation aus und steuert einen zentralen `input_boolean`, den Lüftung & Geofencing mitlesen. Schaltet die Therme-Heizung ab (HVAC 'Off', Warmwasser läuft weiter) und setzt alle TRVs auf das TRV-Minimum (Frostschutz bleibt).
 
     **Das Ökosystem:**
     Entwickelt für den Betrieb im Verbund mit:
@@ -1098,10 +1098,10 @@ blueprint:
         Stabiler Saison-Schalter auf Basis eines gleitenden 72-h-Mittels der
         Außentemperatur mit fester Hysterese (Heizgrenze ±1,5 °C) — kein
         tägliches Pendeln, keine Monats-Grenzen nötig. Bei aktivem Sommermodus
-        werden Pre-Heat, Boost und Gebäude-Kompensation ausgesetzt
-        (Frostschutz bleibt). Optional wird zusätzlich die Heizung der Therme
-        abgeschaltet (HVAC 'Off', Warmwasser läuft weiter) und alle TRVs gehen
-        auf das TRV-Minimum — siehe "Sommer: Heizung aus (WW bleibt)".
+        wird die Heizung der Therme abgeschaltet (HVAC 'Off', Warmwasser läuft
+        weiter), alle TRVs gehen auf das TRV-Minimum, und Pre-Heat, Boost und
+        Gebäude-Kompensation sind ausgesetzt. Frostschutz bleibt über den
+        Zonen-Aus-Modus der Vaillant bzw. das TRV-Minimum erhalten.
         Der gesetzte input_boolean wird auch von Lüftungs-Steuerung und
         Geofencing mitgelesen.
       collapsed: true
@@ -1144,36 +1144,6 @@ blueprint:
               max: 20
               step: 0.5
               unit_of_measurement: "°C"
-        summer_heat_off_enabled:
-          name: "🛑 Sommer: Heizung aus (WW bleibt)"
-          description: |
-            AN (Default): Im Sommermodus wird die Heizung der Therme abgeschaltet
-            (HVAC 'Off') — das Warmwasser läuft normal weiter — und alle TRVs
-            werden auf das TRV-Minimum gesetzt (keine Eco/Komfort-Regelung,
-            kein Pendeln). Frostschutz bleibt über den Zonen-Aus-Modus der
-            Vaillant bzw. das TRV-Minimum erhalten.
-            AUS: Sommermodus senkt wie bisher nur auf Eco/Frost ab, ohne die
-            Therme aktiv abzuschalten.
-            ⚠️ Prüfe einmal per Vaillant-App, ob HVAC 'Off' bei dir wirklich nur
-            die Heizung stoppt und das Warmwasser weiterläuft.
-            Hinweis: Außerhalb des Sommermodus schaltet der Leitstand einen auf
-            'Off' stehenden Master automatisch wieder ein (selbstheilend). Zum
-            bewussten Abschalten den Sommermodus-Schalter oder Away nutzen.
-          default: true
-          selector:
-            boolean:
-        summer_off_preset:
-          name: "⚙️ Sommer-Aus über Preset (opt)"
-          description: |
-            Leer (Default): Abschaltung per climate.turn_off (HVAC 'Off') — nur
-            Heizung aus, Warmwasser bleibt. Falls deine Anlage dafür stattdessen
-            einen bestimmten Preset braucht, hier eintragen → dann wird
-            climate.set_preset_mode genutzt.
-            NICHT "system_off" verwenden — das beendet auch die
-            Warmwasser-Bereitung.
-          default: ""
-          selector:
-            text:
 
     section_debug:
       name: "🛠️ System & Debugging"
@@ -1809,8 +1779,6 @@ actions:
         follower2_offset: !input follower2_offset
         follower2_window: !input follower2_window
         summer_mode_boolean: !input summer_mode_boolean
-        summer_heat_off_enabled: !input summer_heat_off_enabled
-        summer_off_preset: !input summer_off_preset
       rooms_model:
         - key: room2
           role: isolated
@@ -1931,17 +1899,11 @@ actions:
           {{ as_timestamp(now()) }}
         {% endif %}
 
-      # Sommermodus: zentrale Saison-Sperre. Wenn aktiv, werden Pre-Heat,
-      # Boost und Gebäude-Kompensation ausgesetzt (Frostschutz bleibt).
+      # Sommermodus: Therme-Heizung aus (HVAC 'Off', Warmwasser läuft weiter),
+      # TRVs auf Minimum; Pre-Heat, Boost und Gebäude-Kompensation ausgesetzt.
       summer_mode_active: >
         {% set b = inputs.summer_mode_boolean | default('') | string | trim %}
         {{ (b not in _empty) and is_state(b, 'on') }}
-
-      # Sommer-Aus: Therme-Heizung im Sommer abschalten (WW bleibt). Aktiv nur,
-      # wenn Sommermodus AN und das Feature eingeschaltet ist.
-      summer_heat_off_active: >
-        {{ (summer_mode_active | bool(false)) and (inputs.summer_heat_off_enabled | default(true) | bool(true)) }}
-      _summer_off_preset: "{{ inputs.summer_off_preset | default('') | string | trim }}"
 
       # ===== GROUP 2: ROOM STATES =====
       master_schedule_active: >
@@ -2287,16 +2249,16 @@ actions:
           {% endif %}
           {# Sommer-Aus: TRVs hart auf TRV-Minimum — keine Eco/Komfort-Regelung,
              kein Pendeln. Deckt Isolated UND Follower ab (gemeinsamer Pfad). #}
-          {% if summer_heat_off_active | bool(false) %}
+          {% if summer_mode_active | bool(false) %}
             {% set final_raw = inputs.min_trv_temp | float(12) %}
           {% endif %}
           {% set final_target = [inputs.min_trv_temp | float(12), final_raw | float(0)] | max %}
-          {% set needs_heat = (active_for_demand | bool(false)) and ((final_target | float(0)) > ((current_temp | float(0)) + (inputs.hysteresis | float(0.6)))) and (not (summer_heat_off_active | bool(false))) %}
+          {% set needs_heat = (active_for_demand | bool(false)) and ((final_target | float(0)) > ((current_temp | float(0)) + (inputs.hysteresis | float(0.6)))) and (not (summer_mode_active | bool(false))) %}
           {% if role == 'isolated' %}
             {% set boost_delta = (comfort_target | float(0)) - (current_temp | float(0)) %}
             {% set boost_needed = (inputs.enable_room_boost | bool(false)) and (active_for_demand | bool(false)) and (not (window_open_too_long | bool(false))) and ((boost_delta | float(0)) >= threshold) and (not (summer_mode_active | bool(false))) %}
             {% set boost_deactivate = (not (inputs.enable_room_boost | bool(false))) or (not (active_for_demand | bool(false))) or ((boost_delta | float(0)) < (threshold / 2)) %}
-            {% if summer_heat_off_active | bool(false) %}
+            {% if summer_mode_active | bool(false) %}
               {% set mode_label = 'Sommer' %}
             {% elif window_open_too_long | bool(false) %}
               {% set mode_label = 'WindowOpen' %}
@@ -2315,7 +2277,7 @@ actions:
             {% set boost_delta = 0 %}
             {% set boost_needed = false %}
             {% set boost_deactivate = true %}
-            {% if summer_heat_off_active | bool(false) %}
+            {% if summer_mode_active | bool(false) %}
               {% set mode_label = 'Sommer' %}
             {% elif window_open_too_long | bool(false) %}
               {% set mode_label = 'WindowOpen' %}
@@ -2891,14 +2853,14 @@ actions:
               master_write_allowed: >
                 {{
                   (not (master_forced_min_active | bool(false)))
-                  and (not (summer_heat_off_active | bool(false)))
+                  and (not (summer_mode_active | bool(false)))
                   and
                   ((master_raise_allowed | bool(false)) or (master_drop_allowed | bool(false)))
                 }}
               master_hvac_action: >
                 {{ state_attr(inputs.master_climate, 'hvac_action') | default('n/a', true) }}
               master_state: >
-                {% if summer_heat_off_active | bool(false) %}
+                {% if summer_mode_active | bool(false) %}
                   SOMMER
                 {% elif master_forced_min_active | bool(false) %}
                   FORCED_MIN
@@ -2944,7 +2906,7 @@ actions:
               # sind alle Deltas Müll -> nicht gegenregeln; der 3-min-Zyklus holt es nach.
               _write_path: >
                 {% set set_ok = (master_set_now | float(0)) > 0 %}
-                {% if summer_heat_off_active | bool(false) %}
+                {% if summer_mode_active | bool(false) %}
                   S
                 {% elif set_ok and (master_forced_min_active | bool(false)) and ((master_target_delta_abs | float(0)) > 0.5) %}
                   A
@@ -3024,77 +2986,41 @@ actions:
                     write_path={{ _path_label.get(_write_path | string, 'NONE(blocked)') }}
                     skip_reasons={{ _skip_reasons.items | join(',') if _skip_reasons.items | length > 0 else 'none' }}
 
-          # Sommer-Ende / kein Sommer-Aus: stand der Master wegen Sommer auf
-          # 'Off', wird er einmal wieder eingeschaltet; den korrekten Sollwert
-          # schreibt danach der normale Write-Pfad (idempotent, selbstheilend).
+          # Sommer-Ende: stand der Master wegen Sommer auf 'Off', wird er einmal
+          # wieder eingeschaltet; den Sollwert schreibt danach der normale
+          # Write-Pfad (idempotent, selbstheilend).
           - if:
-              - "{{ (not (summer_heat_off_active | bool(false))) and (states(inputs.master_climate) == 'off') }}"
+              - "{{ (not (summer_mode_active | bool(false))) and (states(inputs.master_climate) == 'off') }}"
             then:
               - action: climate.turn_on
                 target:
                   entity_id: "{{ inputs.master_climate }}"
                 continue_on_error: true
-          # Preset-Variante des Sommer-Aus: der Status ist dann nie 'off',
-          # deshalb muss der Preset beim Saisonende explizit zurueckgesetzt
-          # werden, sonst schreibt der Leitstand gegen einen aktiven Preset.
-          - if:
-              - "{{ (not (summer_heat_off_active | bool(false))) and (_summer_off_preset != '') and ((state_attr(inputs.master_climate, 'preset_mode') | string) == _summer_off_preset) }}"
-            then:
-              - action: climate.set_preset_mode
-                target:
-                  entity_id: "{{ inputs.master_climate }}"
-                data:
-                  preset_mode: "none"
-                continue_on_error: true
           - choose:
-              # PATH S (SOMMER): Heizung aus, Warmwasser bleibt. Idempotent —
-              # nur schalten, wenn nicht schon aus (schont API-Budget). Kein
-              # set_temperature; Frostschutz übernimmt der Zonen-Aus-Modus.
+              # PATH S (SOMMER): Heizung aus, Warmwasser bleibt. Nur schalten,
+              # wenn noch nicht aus (Live-Check, schont API-Budget). Frostschutz
+              # übernimmt der Zonen-Aus-Modus der Vaillant.
               - conditions:
                   - "{{ _write_path == 'S' }}"
+                  - "{{ states(inputs.master_climate) != 'off' }}"
                 sequence:
-                  # Live-Check: nur schalten, wenn der Master nicht schon aus ist.
+                  - action: climate.turn_off
+                    target:
+                      entity_id: "{{ inputs.master_climate }}"
+                    continue_on_error: true
+                  # Kommt der Aus-Zustand nicht an: Warnung; Retry macht der 3-min-Zyklus.
+                  - wait_template: "{{ states(inputs.master_climate) == 'off' }}"
+                    timeout: "00:00:20"
+                    continue_on_timeout: true
                   - if:
-                      - >
-                        {% if (_summer_off_preset | default('') | string) != '' %}
-                          {{ (state_attr(inputs.master_climate, 'preset_mode') | string) != _summer_off_preset }}
-                        {% else %}
-                          {{ states(inputs.master_climate) != 'off' }}
-                        {% endif %}
+                      - "{{ not (wait.completed | default(false) | bool(false)) }}"
                     then:
-                      - if:
-                          - "{{ _summer_off_preset != '' }}"
-                        then:
-                          - action: climate.set_preset_mode
-                            target:
-                              entity_id: "{{ inputs.master_climate }}"
-                            data:
-                              preset_mode: "{{ _summer_off_preset }}"
-                            continue_on_error: true
-                        else:
-                          - action: climate.turn_off
-                            target:
-                              entity_id: "{{ inputs.master_climate }}"
-                            continue_on_error: true
-                      # Verifikation analog PATH A/B: kommt der Aus-Zustand
-                      # nicht an, Warnung loggen. Retry macht der 3-min-Zyklus.
-                      - wait_template: >
-                          {% if (_summer_off_preset | default('') | string) != '' %}
-                            {{ (state_attr(inputs.master_climate, 'preset_mode') | string) == _summer_off_preset }}
-                          {% else %}
-                            {{ states(inputs.master_climate) == 'off' }}
-                          {% endif %}
-                        timeout: "00:00:20"
-                        continue_on_timeout: true
-                      - if:
-                          - "{{ not (wait.completed | default(false) | bool(false)) }}"
-                        then:
-                          - action: system_log.write
-                            continue_on_error: true
-                            data:
-                              level: warning
-                              message: >
-                                Vaillant Blueprint: PATH S Sommer-Abschaltung nicht bestaetigt (Master weiterhin '{{ states(inputs.master_climate) }}')
+                      - action: system_log.write
+                        continue_on_error: true
+                        data:
+                          level: warning
+                          message: >
+                            Vaillant Blueprint: PATH S Sommer-Abschaltung nicht bestaetigt (Master weiterhin '{{ states(inputs.master_climate) }}')
               # PATH A/B/C: Sollwert schreiben. Write-Log SOFORT nach dem API-Call
               # (vor dem wait), sonst kann mode:restart den Lauf vor dem Log
               # abbrechen -> ungezählter Write, Budget kaputt.
@@ -3191,7 +3117,7 @@ actions:
       _l_m_guest: "{{ guest_mode_on | default(false) | bool(false) }}"
       _l_m_window: "{{ master_window_open_too_long | default(false) | bool(false) }}"
       _l_m_pre_heat: "{{ master_pre_heat_active | default(false) | bool(false) }}"
-      _l_summer: "{{ summer_heat_off_active | default(false) | bool(false) }}"
+      _l_summer: "{{ summer_mode_active | default(false) | bool(false) }}"
       _l_m_mode_modus: "{{ 'Sommer (Heizung aus)' if (_l_summer | bool(false)) else ('Fenster offen' if (_l_m_window | bool(false)) else ('Not-Aus' if (_l_m_forced | bool(false)) else ('Gast-Modus' if (_l_m_guest | bool(false) and _l_m_away_raw | bool(false)) else ('Abwesend' if ((away_mode_entity_on | default(false) | bool(false)) and not (_l_m_pre_heat | bool(false))) else ('PreHeat' if (_l_m_pre_heat | bool(false)) else 'Heizbetrieb'))))) }}"
       _l_master_head: "🌡️ **Master — {{ master_state | default('ECO', true) }} / {{ _l_m_mode_modus }}** ({{ master_reason | default('base', true) }})"
       _l_temp_line: >-
