@@ -3059,9 +3059,11 @@ actions:
                     or (master_hold_bypass | bool(false))
                   )
                 }}
+              # Im Sommer-Aus ist der Master 'off' (Soll = 0) -> kein Sollwert-Write
               master_write_allowed: >
                 {{
                   (not (master_forced_min_active | bool(false)))
+                  and (not (summer_heat_off_active | bool(false)))
                   and
                   ((master_raise_allowed | bool(false)) or (master_drop_allowed | bool(false)))
                 }}
@@ -3353,11 +3355,11 @@ actions:
         {{ ns.items | unique | join(',') }}
       _notify_configured: "{{ (_notify_targets_list | trim) != '' and not (_quiet_active | bool(false)) }}"
       _alert_notify_configured: "{{ (_notify_targets_list | trim) != '' }}"
+      # Event = kein Routine-Lauf ODER in diesem Lauf wurde ein Sollwert geschrieben
       _is_demand_event: >
         {{
           trigger_id_safe | default('manual') != 'scheduled'
-          or (master_write_allowed | bool(false))
-          or (master_forced_min_active | bool(false) and ((master_target_delta_abs | float(0)) > 0.5))
+          or ((_write_path | default('none', true) | string) in ['A', 'B', 'C'])
         }}
       _l_m_target: "{{ master_final_target | default(0) | float(0) }}"
       _l_m_base: "{{ master_base_required_target | default(0) | float(0) }}"
