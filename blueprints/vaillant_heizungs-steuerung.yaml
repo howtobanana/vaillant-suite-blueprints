@@ -1653,6 +1653,21 @@ actions:
               level: info
       - stop: ""
 
+  # ===== STARTSCHUTZ: Sensoren nach HA-Start/Reload laden lassen =====
+  # Ohne Wartezeit sind Temp-Sensoren noch unavailable → Fallback-Werte (21°C)
+  # → falsche Setpoints. Gilt für JEDEN Trigger: mit mode:restart würde sonst
+  # ein time_pattern- oder Fenster-Lauf in den ersten 120 s den ha_start-Delay
+  # abbrechen und ohne Wartezeit schreiben. this.last_changed = Laden der
+  # Automation (HA-Start oder Reload).
+  - variables:
+      _startup_wait_s: >
+        {{ [120 - (as_timestamp(now()) - as_timestamp(this.last_changed, 0)), 0] | max | int(0) }}
+  - if:
+      - "{{ (_startup_wait_s | int(0)) > 0 }}"
+    then:
+      - delay:
+          seconds: "{{ _startup_wait_s }}"
+
   # ===== SOMMERMODUS-ABGLEICH =====
   # Level- statt flankengesteuert: jeder Lauf (mind. alle 3 min) gleicht den
   # Schalter mit dem 72h-Außen-Mittel ab. Übersteht HA-Neustarts; im Band
@@ -1766,15 +1781,6 @@ actions:
                   target:
                     entity_id: "{{ _helper_id }}"
                   continue_on_error: true
-
-  # ===== STARTUP DELAY: Sensoren nach HA-Restart laden lassen =====
-  # Ohne Delay sind Temp-Sensoren noch unavailable → Fallback-Werte (21°C)
-  # → falsche Setpoints auf TRVs. 120s reichen für Zigbee/Cloud-Sensoren.
-  - if:
-      - "{{ trigger.id | default('manual') == 'ha_start' }}"
-    then:
-      - delay:
-          seconds: 120
 
   - variables:
       # ===== GROUP 1: INPUTS & HELPERS =====
