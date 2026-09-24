@@ -21,9 +21,10 @@ blueprint:
 
     **Zuständigkeit:**
     Dieses Modul steuert die Wärme-Aktorik (Therme + TRVs, inkl. stillem
-    Frostschutz bei offenem Fenster) und benachrichtigt ausschließlich über
-    System-Health (Leitstand, kritische Alerts). Fenster-/Lüftungs-
-    Benachrichtigungen kommen ausschließlich aus der Lüftungs-Steuerung.
+    Frostschutz bei offenem Fenster). Kritische Zustände erscheinen als
+    HA-Meldung; Pushes kommen nur vom optionalen Leitstand. Offline-/Batterie-
+    Pushes kommen aus der System-Diagnose, Fenster-/Lüftungs-Pushes
+    ausschließlich aus der Lüftungs-Steuerung.
 
     **Voraussetzungen:**
     Erfordert die **myVaillant** Integration (HACS). Besonderer Dank an die Entwickler dieser Integration für die Bereitstellung der Schnittstelle.
@@ -1149,7 +1150,7 @@ blueprint:
       name: "🛠️ System & Debugging"
       description: |
         Leitstand und Administrator-Tools.
-        ⚠️ Kritische Alerts (Master offline, NOT-AUS, TRV offline, API-Budget erschöpft) werden **immer** automatisch als Notification gefeuert und löschen sich selbst, sobald das Problem behoben ist.
+        ⚠️ Kritische Zustände (Master offline, NOT-AUS, Temp-Sensor offline, API-Budget erschöpft) erscheinen **immer** als HA-Meldung und verschwinden von selbst, sobald das Problem behoben ist. Aufs Handy gepusht werden sie nicht — Offline-Pushes kommen aus der System-Diagnose.
       collapsed: true
       input:
         quiet_schedule:
@@ -1183,7 +1184,7 @@ blueprint:
           name: "📱 Mobile Push (opt)"
           description: |
             Mobile-App Gerät(e) für Push-Notifications aufs Handy.
-            Wird für **Normal-Leitstand** und **Kritische Alerts** genutzt.
+            Wird nur für den **Normal-Leitstand** genutzt.
             Expert-Verlauf wird NICHT aufs Handy gepusht (zu häufig).
           default: []
           selector:
@@ -3104,7 +3105,6 @@ actions:
       _leitstand_normal: "{{ inputs.enable_leitstand_normal | default(false) | bool(false) and not (_quiet_active | bool(false)) }}"
       _leitstand_expert: "{{ inputs.enable_leitstand_expert | default(false) | bool(false) and not (_quiet_active | bool(false)) }}"
       _notify_configured: "{{ (_notify_targets | length) > 0 and not (_quiet_active | bool(false)) }}"
-      _alert_notify_configured: "{{ (_notify_targets | length) > 0 }}"
       # Event = kein Routine-Lauf ODER in diesem Lauf wurde ein Sollwert geschrieben
       _is_demand_event: >
         {{
@@ -3259,7 +3259,7 @@ actions:
             {{ msg.out }}
 
   # ════════════════════════════════════════════════════════════
-  # ALWAYS-ON ALERT: Fires only on critical problems, auto-dismisses
+  # ALWAYS-ON ALERT: HA-Meldung bei kritischen Problemen, verschwindet von selbst
   # Skip on ha_start — Sensoren sind nach Restart kurz unavailable
   # ════════════════════════════════════════════════════════════
   - variables:
@@ -3310,33 +3310,6 @@ actions:
                 {%- endfor -%}
                 {%- set msg.out = msg.out ~ n ~ n ~ '🕐 Erkannt: ' ~ now().strftime('%H:%M:%S') -%}
                 {{ msg.out }}
-          # Mobile Push nur auf echte State-Changes, nicht bei 3-min-time_pattern-Polls.
-          # Persistent Notification (oben) wird weiterhin auf jeden Eval aktualisiert — das
-          # ist idempotent über die fixe notification_id. Das Handy-Spam kommt nur durch den
-          # repeat-push, den wir hier throtteln.
-          - if:
-              - "{{ _alert_notify_configured | bool(false) }}"
-              - "{{ trigger.id | default('') != 'scheduled' }}"
-            then:
-              - repeat:
-                  for_each: "{{ _notify_targets }}"
-                  sequence:
-                    - action: "{{ repeat.item }}"
-                      continue_on_error: true
-                      data:
-                        title: "⚠️ Heizung — Problem erkannt"
-                        message: >-
-                          {%- set n = '\n' -%}
-                          {%- set msg = namespace(out='') -%}
-                          {%- for item in _alert_problems -%}
-                            {%- if not loop.first -%}{%- set msg.out = msg.out ~ n -%}{%- endif -%}
-                            {%- set msg.out = msg.out ~ item -%}
-                          {%- endfor -%}
-                          {{ msg.out }}
-                        data:
-                          tag: vaillant_sensor_alert
-                          push:
-                            sticky: true
       - conditions:
           - "{{ (_alert_problems | length) == 0 }}"
         sequence:

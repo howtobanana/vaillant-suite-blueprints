@@ -11,6 +11,14 @@
   Flanken-Trigger — übersteht HA-Neustarts (vorher verschluckte ein
   Neustart während der Haltezeit die Umschaltung, und mit Roh-Sensor riss
   die 24-h-Haltezeit täglich ab → Sommermodus blieb hängen).
+- **Sommer schaltet die Heizung immer ab:** "Sommer: Heizung aus (WW bleibt)"
+  und "Sommer-Aus über Preset" entfernt (HVAC 'Off' der myVaillant-Zone
+  lässt das Warmwasser laufen). Die Sommer-Sektion hat damit 3 Regler.
+- **Keine Alert-Pushes mehr aus der Heizung:** Kritische Zustände erscheinen
+  nur noch als HA-Meldung (verschwindet von selbst). Offline-Pushes kommen
+  bereits aus der System-Diagnose (entprellt, ein Absender pro Sachverhalt);
+  NOT-AUS und API-Budget regeln sich selbst. Beseitigt den Push-Spam bei
+  jedem Fenster-/Präsenz-Event, solange ein Problem bestand.
 - Startschutz (120 s nach HA-Start/Reload) gilt jetzt für jeden Trigger;
   vorher konnte ein time_pattern- oder Fenster-Lauf ihn per mode: restart
   umgehen.

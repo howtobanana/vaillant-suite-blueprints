@@ -17,7 +17,7 @@
 | Kühl-Empfehlungen | — | sendet |
 | Mobile Klima als Sensor (läuft sie?) | — | Abluftfenster-Ausnahme |
 | Mobile Klima als Aktor (ausschalten) | — | Klima-Automatik (Auto-Off) |
-| System-Health (offline, Budget, NOT-AUS) | sendet | — |
+| System-Health (offline, Budget, NOT-AUS) | nur HA-Meldung (Offline-Push: System-Diagnose) | — |
 
 Prinzip: Wer den Aktor besitzt, steuert ihn; pro Sachverhalt gibt es genau
 einen Benachrichtigungs-Absender (keine Doppel-Pushes).
