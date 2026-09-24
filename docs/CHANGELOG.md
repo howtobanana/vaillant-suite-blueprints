@@ -28,7 +28,7 @@
   Schreibpfade A/B/C (3 → 1, `_write_path` als einzige Entscheidung — das
   Debug-Log zeigt jetzt den echten Pfad), Leitstand aus gemeinsamen
   Bausteinen, Notify-Liste und Master-Ist-Temperatur nur noch einmal,
-  Leer-Prüfung zentral (`_empty`), toter Code entfernt. ~4040 → ~3600 Zeilen.
+  Leer-Prüfung zentral (`_empty`), toter Code entfernt. Insgesamt ~4040 → ~3400 Zeilen.
 
 ## 2026-07-05 (Lüftung: Totband gegen widersprüchliche Meldungen)
 - "Zeit zum Lüften" und "Fenster zu — zu warm draußen" nutzen jetzt dieselbe
