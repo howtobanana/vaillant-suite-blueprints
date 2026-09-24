@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-24 (Heizung: Review — Sommer-Erkennung, Bugfixes, Aufräumen)
+- **Sommer-Erkennung vereinfacht (Breaking für die Einstellungen):** Statt
+  10 nur noch 3 Regler — Schalter, Außen-Mittelwert-Sensor (Statistics-
+  Helfer, 72 h) und Heizgrenze (Default 15 °C). Sommer EIN bei ≥ Heizgrenze
+  +1,5 °C, AUS bei < Heizgrenze −1,5 °C. Entfallen: Automatik-Schalter
+  (Automatik = Sensor gewählt), Innen-Referenz, Innen-Minimum, EIN-/AUS-
+  Schwelle, Haltezeit, Start-/Endmonat. Kein Fallback mehr auf den
+  Roh-Außensensor. Der Abgleich läuft in jedem Lauf statt über
+  Flanken-Trigger — übersteht HA-Neustarts (vorher verschluckte ein
+  Neustart während der Haltezeit die Umschaltung, und mit Roh-Sensor riss
+  die 24-h-Haltezeit täglich ab → Sommermodus blieb hängen).
+- Startschutz (120 s nach HA-Start/Reload) gilt jetzt für jeden Trigger;
+  vorher konnte ein time_pattern- oder Fenster-Lauf ihn per mode: restart
+  umgehen.
+- Im Sommer-Aus kein "Schreiben erlaubt" und kein Leitstand-Event alle
+  3 min mehr (Master 'off' → Soll 0 wurde als Anhebe-Bedarf gewertet).
+- "TRV Write Failed" verschwindet wieder, sobald das TRV antwortet;
+  Readback wartet bis 15 s statt fix 3 s.
+- Aufgeräumt ohne Verhaltensänderung: Präsenz-Branches (10 → 1),
+  Schreibpfade A/B/C (3 → 1, `_write_path` als einzige Entscheidung — das
+  Debug-Log zeigt jetzt den echten Pfad), Leitstand aus gemeinsamen
+  Bausteinen, Notify-Liste und Master-Ist-Temperatur nur noch einmal,
+  Leer-Prüfung zentral (`_empty`), toter Code entfernt. ~4040 → ~3600 Zeilen.
+
 ## 2026-07-05 (Lüftung: Totband gegen widersprüchliche Meldungen)
 - "Zeit zum Lüften" und "Fenster zu — zu warm draußen" nutzen jetzt dieselbe
   Temperatur-Linie (innen + Kühl-Offset); der "zu warm"-Alert feuert erst
