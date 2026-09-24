@@ -1274,6 +1274,8 @@ blueprint:
               multiple: true
 
 trigger_variables:
+  # Werte, die ein leeres optionales Entity-Input bedeuten (Trigger + Aktionen)
+  _empty: ['', 'none', 'None', 'sensor.none']
   tv_master_presence_sensors: !input master_presence_sensors
   tv_room2_presence_sensors: !input room2_presence_sensors
   tv_room3_presence_sensors: !input room3_presence_sensors
@@ -1303,14 +1305,14 @@ triggers:
   # ============================================
   - trigger: template
     value_template: >
-      {% set sensors = tv_master_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+      {% set sensors = tv_master_presence_sensors | default([], true) | reject('in', _empty) | list %}
       {{ (sensors | length > 0) and ((expand(sensors) | selectattr('state', 'eq', 'on') | list | length) > 0) }}
     for:
       minutes: !input presence_activation_delay
     id: master_presence_on
   - trigger: template
     value_template: >
-      {% set sensors = tv_master_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+      {% set sensors = tv_master_presence_sensors | default([], true) | reject('in', _empty) | list %}
       {% set on_count = expand(sensors) | selectattr('state', 'eq', 'on') | list | length %}
       {% set off_count = expand(sensors) | selectattr('state', 'eq', 'off') | list | length %}
       {{ (sensors | length > 0) and ((on_count + off_count) == (sensors | length)) and (on_count == 0) }}
@@ -1319,14 +1321,14 @@ triggers:
     id: master_presence_off
   - trigger: template
     value_template: >
-      {% set sensors = tv_room2_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+      {% set sensors = tv_room2_presence_sensors | default([], true) | reject('in', _empty) | list %}
       {{ (sensors | length > 0) and ((expand(sensors) | selectattr('state', 'eq', 'on') | list | length) > 0) }}
     for:
       minutes: !input presence_activation_delay
     id: room2_presence_on
   - trigger: template
     value_template: >
-      {% set sensors = tv_room2_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+      {% set sensors = tv_room2_presence_sensors | default([], true) | reject('in', _empty) | list %}
       {% set on_count = expand(sensors) | selectattr('state', 'eq', 'on') | list | length %}
       {% set off_count = expand(sensors) | selectattr('state', 'eq', 'off') | list | length %}
       {{ (sensors | length > 0) and ((on_count + off_count) == (sensors | length)) and (on_count == 0) }}
@@ -1335,14 +1337,14 @@ triggers:
     id: room2_presence_off
   - trigger: template
     value_template: >
-      {% set sensors = tv_room3_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+      {% set sensors = tv_room3_presence_sensors | default([], true) | reject('in', _empty) | list %}
       {{ (sensors | length > 0) and ((expand(sensors) | selectattr('state', 'eq', 'on') | list | length) > 0) }}
     for:
       minutes: !input presence_activation_delay
     id: room3_presence_on
   - trigger: template
     value_template: >
-      {% set sensors = tv_room3_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+      {% set sensors = tv_room3_presence_sensors | default([], true) | reject('in', _empty) | list %}
       {% set on_count = expand(sensors) | selectattr('state', 'eq', 'on') | list | length %}
       {% set off_count = expand(sensors) | selectattr('state', 'eq', 'off') | list | length %}
       {{ (sensors | length > 0) and ((on_count + off_count) == (sensors | length)) and (on_count == 0) }}
@@ -1351,14 +1353,14 @@ triggers:
     id: room3_presence_off
   - trigger: template
     value_template: >
-      {% set sensors = tv_room4_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+      {% set sensors = tv_room4_presence_sensors | default([], true) | reject('in', _empty) | list %}
       {{ (sensors | length > 0) and ((expand(sensors) | selectattr('state', 'eq', 'on') | list | length) > 0) }}
     for:
       minutes: !input presence_activation_delay
     id: room4_presence_on
   - trigger: template
     value_template: >
-      {% set sensors = tv_room4_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+      {% set sensors = tv_room4_presence_sensors | default([], true) | reject('in', _empty) | list %}
       {% set on_count = expand(sensors) | selectattr('state', 'eq', 'on') | list | length %}
       {% set off_count = expand(sensors) | selectattr('state', 'eq', 'off') | list | length %}
       {{ (sensors | length > 0) and ((on_count + off_count) == (sensors | length)) and (on_count == 0) }}
@@ -1367,14 +1369,14 @@ triggers:
     id: room4_presence_off
   - trigger: template
     value_template: >
-      {% set sensors = tv_room5_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+      {% set sensors = tv_room5_presence_sensors | default([], true) | reject('in', _empty) | list %}
       {{ (sensors | length > 0) and ((expand(sensors) | selectattr('state', 'eq', 'on') | list | length) > 0) }}
     for:
       minutes: !input presence_activation_delay
     id: room5_presence_on
   - trigger: template
     value_template: >
-      {% set sensors = tv_room5_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+      {% set sensors = tv_room5_presence_sensors | default([], true) | reject('in', _empty) | list %}
       {% set on_count = expand(sensors) | selectattr('state', 'eq', 'on') | list | length %}
       {% set off_count = expand(sensors) | selectattr('state', 'eq', 'off') | list | length %}
       {{ (sensors | length > 0) and ((on_count + off_count) == (sensors | length)) and (on_count == 0) }}
@@ -1387,73 +1389,73 @@ triggers:
   # ============================================
   - trigger: template
     value_template: >
-      {{ (tv_room2_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room2_window, 'on') }}
+      {{ (tv_room2_window | string not in _empty) and is_state(tv_room2_window, 'on') }}
     for:
       seconds: !input window_heat_delay
     id: room2_window_open_30s
   - trigger: template
     value_template: >
-      {{ (tv_room2_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room2_window, 'off') }}
+      {{ (tv_room2_window | string not in _empty) and is_state(tv_room2_window, 'off') }}
     id: room2_window_closed
   - trigger: template
     value_template: >
-      {{ (tv_room3_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room3_window, 'on') }}
+      {{ (tv_room3_window | string not in _empty) and is_state(tv_room3_window, 'on') }}
     for:
       seconds: !input window_heat_delay
     id: room3_window_open_30s
   - trigger: template
     value_template: >
-      {{ (tv_room3_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room3_window, 'off') }}
+      {{ (tv_room3_window | string not in _empty) and is_state(tv_room3_window, 'off') }}
     id: room3_window_closed
   - trigger: template
     value_template: >
-      {{ (tv_room4_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room4_window, 'on') }}
+      {{ (tv_room4_window | string not in _empty) and is_state(tv_room4_window, 'on') }}
     for:
       seconds: !input window_heat_delay
     id: room4_window_open_30s
   - trigger: template
     value_template: >
-      {{ (tv_room4_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room4_window, 'off') }}
+      {{ (tv_room4_window | string not in _empty) and is_state(tv_room4_window, 'off') }}
     id: room4_window_closed
   - trigger: template
     value_template: >
-      {{ (tv_room5_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room5_window, 'on') }}
+      {{ (tv_room5_window | string not in _empty) and is_state(tv_room5_window, 'on') }}
     for:
       seconds: !input window_heat_delay
     id: room5_window_open_30s
   - trigger: template
     value_template: >
-      {{ (tv_room5_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_room5_window, 'off') }}
+      {{ (tv_room5_window | string not in _empty) and is_state(tv_room5_window, 'off') }}
     id: room5_window_closed
   - trigger: template
     value_template: >
-      {{ (tv_follower1_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_follower1_window, 'on') }}
+      {{ (tv_follower1_window | string not in _empty) and is_state(tv_follower1_window, 'on') }}
     for:
       seconds: !input window_heat_delay
     id: follower1_window_open_30s
   - trigger: template
     value_template: >
-      {{ (tv_follower1_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_follower1_window, 'off') }}
+      {{ (tv_follower1_window | string not in _empty) and is_state(tv_follower1_window, 'off') }}
     id: follower1_window_closed
   - trigger: template
     value_template: >
-      {{ (tv_follower2_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_follower2_window, 'on') }}
+      {{ (tv_follower2_window | string not in _empty) and is_state(tv_follower2_window, 'on') }}
     for:
       seconds: !input window_heat_delay
     id: follower2_window_open_30s
   - trigger: template
     value_template: >
-      {{ (tv_follower2_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_follower2_window, 'off') }}
+      {{ (tv_follower2_window | string not in _empty) and is_state(tv_follower2_window, 'off') }}
     id: follower2_window_closed
   - trigger: template
     value_template: >
-      {{ (tv_master_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_master_window, 'on') }}
+      {{ (tv_master_window | string not in _empty) and is_state(tv_master_window, 'on') }}
     for:
       seconds: !input window_heat_delay
     id: master_window_open_30s
   - trigger: template
     value_template: >
-      {{ (tv_master_window | string not in ['', 'sensor.none', 'none']) and is_state(tv_master_window, 'off') }}
+      {{ (tv_master_window | string not in _empty) and is_state(tv_master_window, 'off') }}
     id: master_window_closed
 
   # ============================================
@@ -1499,12 +1501,12 @@ triggers:
     id: room5_comfort_input_change
   - trigger: template
     value_template: >
-      {% set helpers = tv_away_mode_boolean | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+      {% set helpers = tv_away_mode_boolean | default([], true) | reject('in', _empty) | list %}
       {{ (helpers | length > 0) and ((expand(helpers) | selectattr('state', 'eq', 'on') | list | length) > 0) }}
     id: away_mode_on
   - trigger: template
     value_template: >
-      {% set helpers = tv_away_mode_boolean | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+      {% set helpers = tv_away_mode_boolean | default([], true) | reject('in', _empty) | list %}
       {% set on_count = expand(helpers) | selectattr('state', 'eq', 'on') | list | length %}
       {% set off_count = expand(helpers) | selectattr('state', 'eq', 'off') | list | length %}
       {{ (helpers | length > 0) and ((on_count + off_count) == (helpers | length)) and (on_count == 0) }}
@@ -1512,12 +1514,12 @@ triggers:
   - trigger: template
     value_template: >
       {% set eid = tv_guest_mode_boolean | default('') | string %}
-      {{ eid not in ['', 'sensor.none', 'none'] and is_state(eid, 'on') }}
+      {{ eid not in _empty and is_state(eid, 'on') }}
     id: guest_mode_on
   - trigger: template
     value_template: >
       {% set eid = tv_guest_mode_boolean | default('') | string %}
-      {% set valid = eid not in ['', 'sensor.none', 'none'] %}
+      {% set valid = eid not in _empty %}
       {{ valid and is_state(eid, 'off') }}
     id: guest_mode_off
 
@@ -1582,13 +1584,13 @@ triggers:
     value_template: >
       {% set en = tv_therme_lockout_enabled | default(false) | bool(false) %}
       {% set ac = tv_therme_lockout_ac | default('') | string | trim %}
-      {{ en and (ac not in ['', 'none', 'None', 'sensor.none']) and (states(ac) not in ['off', 'unavailable', 'unknown', '', 'none']) }}
+      {{ en and (ac not in _empty) and (states(ac) not in ['off', 'unavailable', 'unknown', '', 'none']) }}
     id: therme_ac_on
   - trigger: template
     value_template: >
       {% set en = tv_therme_lockout_enabled | default(false) | bool(false) %}
       {% set ac = tv_therme_lockout_ac | default('') | string | trim %}
-      {{ en and (ac not in ['', 'none', 'None', 'sensor.none']) and (states(ac) == 'off') }}
+      {{ en and (ac not in _empty) and (states(ac) == 'off') }}
     id: therme_ac_off
 
 conditions: []
@@ -1630,7 +1632,7 @@ actions:
           _presence_on: "{{ trigger.id.endswith('_on') }}"
           presence_helper_entity: "{{ _presence_helpers[_presence_room] | default('', true) | string }}"
       - condition: template
-        value_template: "{{ (presence_helper_entity not in ['', 'sensor.none', 'none']) and (presence_helper_entity | length > 5) }}"
+        value_template: "{{ (presence_helper_entity not in _empty) and (presence_helper_entity | length > 5) }}"
       - if:
           - "{{ _presence_on | bool(false) }}"
         then:
@@ -1680,7 +1682,7 @@ actions:
       _summer_target: >
         {% set b = _summer_boolean | default('') | string | trim %}
         {% set s = _summer_mean_sensor | default('') | string | trim %}
-        {% if b in ['', 'none', 'sensor.none'] or s in ['', 'none', 'sensor.none'] or not has_value(s) or not has_value(b) %}
+        {% if b in _empty or s in _empty or not has_value(s) or not has_value(b) %}
           keep
         {% else %}
           {% set mean = states(s) | float(0) %}
@@ -1727,20 +1729,20 @@ actions:
           _now: "{{ as_timestamp(now()) | float(0) }}"
       - repeat:
           for_each:
-            - sensors: "{{ tv_master_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list }}"
+            - sensors: "{{ tv_master_presence_sensors | default([], true) | reject('in', _empty) | list }}"
               helper: "{{ tv_master_presence_helper | default('') | string }}"
-            - sensors: "{{ tv_room2_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list }}"
+            - sensors: "{{ tv_room2_presence_sensors | default([], true) | reject('in', _empty) | list }}"
               helper: "{{ tv_room2_presence_helper | default('') | string }}"
-            - sensors: "{{ tv_room3_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list }}"
+            - sensors: "{{ tv_room3_presence_sensors | default([], true) | reject('in', _empty) | list }}"
               helper: "{{ tv_room3_presence_helper | default('') | string }}"
-            - sensors: "{{ tv_room4_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list }}"
+            - sensors: "{{ tv_room4_presence_sensors | default([], true) | reject('in', _empty) | list }}"
               helper: "{{ tv_room4_presence_helper | default('') | string }}"
-            - sensors: "{{ tv_room5_presence_sensors | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list }}"
+            - sensors: "{{ tv_room5_presence_sensors | default([], true) | reject('in', _empty) | list }}"
               helper: "{{ tv_room5_presence_helper | default('') | string }}"
           sequence:
             - variables:
                 _helper_id: "{{ repeat.item.helper | string }}"
-                _helper_valid: "{{ _helper_id not in ['', 'sensor.none', 'none'] and (_helper_id | length) > 5 }}"
+                _helper_valid: "{{ _helper_id not in _empty and (_helper_id | length) > 5 }}"
                 _has_sensors: "{{ (repeat.item.sensors | length) > 0 }}"
             # --- Sync OFF → ON: helper is off but sensor(s) have been on long enough ---
             - if:
@@ -1978,7 +1980,7 @@ actions:
               'room5_comfort_input_change'
             ])
             and
-            (helper_input_trigger_entity | string not in ['', 'sensor.none', 'none'])
+            (helper_input_trigger_entity | string not in _empty)
           )
           or
           (trigger_id_safe in ['away_mode_on', 'away_mode_off'])
@@ -1987,7 +1989,7 @@ actions:
         {{
           (helper_input_trigger | bool(false))
           and
-          (helper_input_trigger_entity | string not in ['', 'sensor.none', 'none'])
+          (helper_input_trigger_entity | string not in _empty)
           and
           (trigger_id_safe not in ['away_mode_on', 'away_mode_off'])
         }}
@@ -2006,7 +2008,7 @@ actions:
       # Boost und Gebäude-Kompensation ausgesetzt (Frostschutz bleibt).
       summer_mode_active: >
         {% set b = inputs.summer_mode_boolean | default('') | string | trim %}
-        {{ (b not in ['', 'sensor.none', 'none', 'None']) and is_state(b, 'on') }}
+        {{ (b not in _empty) and is_state(b, 'on') }}
 
       # Sommer-Aus: Therme-Heizung im Sommer abschalten (WW bleibt). Aktiv nur,
       # wenn Sommermodus AN und das Feature eingeschaltet ist.
@@ -2018,11 +2020,11 @@ actions:
       therme_lockout_active: >
         {% set en = inputs.therme_lockout_enabled | default(false) | bool(false) %}
         {% set ac = inputs.therme_lockout_ac | default('') | string | trim %}
-        {{ en and (ac not in ['', 'none', 'None', 'sensor.none']) and (states(ac) not in ['off', 'unavailable', 'unknown', '', 'none']) }}
+        {{ en and (ac not in _empty) and (states(ac) not in ['off', 'unavailable', 'unknown', '', 'none']) }}
 
       # ===== GROUP 2: ROOM STATES =====
       master_schedule_active: >
-        {% if inputs.master_schedule | string not in ['', 'sensor.none', 'none'] %}
+        {% if inputs.master_schedule | string not in _empty %}
           {{ is_state(inputs.master_schedule, 'on') }}
         {% else %}
           {{ false }}
@@ -2030,7 +2032,7 @@ actions:
       # Smart Presence Evaluation: Check helper OR check if physical sensor has been ON longer than the delay (survives HA restarts)
       master_presence_fresh: >
         {% set _h_eid = inputs.master_presence_helper | string %}
-        {% if _h_eid in ['', 'sensor.none', 'none'] %}
+        {% if _h_eid in _empty %}
           {% set helper = false %}
         {% else %}
           {# Case-insensitive: also handles 'On', 'True', '1' from non-standard boolean helpers #}
@@ -2049,16 +2051,16 @@ actions:
       master_presence_detected: >
         {{ master_presence_fresh | bool(false) }}
       master_sched_valid: >
-        {{ inputs.master_schedule | string not in ['', 'sensor.none', 'none'] }}
+        {{ inputs.master_schedule | string not in _empty }}
       master_helper_valid: >
-        {{ inputs.master_presence_helper | string not in ['', 'sensor.none', 'none'] }}
+        {{ inputs.master_presence_helper | string not in _empty }}
       master_sensors_valid: >
-        {{ (inputs.master_presence_sensors | reject('in', ['', 'sensor.none', 'none']) | list | length > 0) if inputs.master_presence_sensors else false }}
+        {{ (inputs.master_presence_sensors | reject('in', _empty) | list | length > 0) if inputs.master_presence_sensors else false }}
       master_is_manual: >
         {{ (not (master_sched_valid | bool(false))) and (not (master_helper_valid | bool(false))) and (not (master_sensors_valid | bool(false))) }}
       master_pre_heat_active: >
         {% set _ph_eid = inputs.master_pre_heat_helper | string %}
-        {% if _ph_eid in ['', 'sensor.none', 'none'] %}
+        {% if _ph_eid in _empty %}
           {{ false }}
         {% else %}
           {{ ((states(_ph_eid) | string | lower) in ['on', 'true', '1']) and not (summer_mode_active | bool(false)) }}
@@ -2066,14 +2068,14 @@ actions:
       # ===== TARGET CALCULATION PREREQUISITES =====
       guest_mode_on: >
         {% set eid = inputs.guest_mode_boolean | default('') | string %}
-        {{ eid not in ['', 'sensor.none', 'none'] and is_state(eid, 'on') }}
+        {{ eid not in _empty and is_state(eid, 'on') }}
       away_mode_helper_set: >
-        {{ (inputs.away_mode_boolean | reject('in', ['', 'sensor.none', 'none']) | list | length) > 0 if inputs.away_mode_boolean else false }}
+        {{ (inputs.away_mode_boolean | reject('in', _empty) | list | length) > 0 if inputs.away_mode_boolean else false }}
       away_mode_raw: >
         {% if away_mode_helper_set | bool(false) %}
           {% set ns = namespace(active=false) %}
           {% for ent in inputs.away_mode_boolean %}
-            {% if ent | string not in ['', 'sensor.none', 'none'] and is_state(ent, 'on') %}
+            {% if ent | string not in _empty and is_state(ent, 'on') %}
               {% set ns.active = true %}
             {% endif %}
           {% endfor %}
@@ -2086,21 +2088,21 @@ actions:
       # ===== GROUP 3: DEMAND CALCULATION =====
       eco_temp: >
         {% set _eid = inputs.eco_temp_input | string %}
-        {% if _eid not in ['', 'sensor.none', 'none'] and states(_eid) not in ['unknown', 'unavailable', 'none', ''] %}
+        {% if _eid not in _empty and states(_eid) not in ['unknown', 'unavailable', 'none', ''] %}
           {{ states(_eid) | float(inputs.eco_temp_fixed) }}
         {% else %}
           {{ inputs.eco_temp_fixed }}
         {% endif %}
       away_temp: >
         {% set _eid = inputs.away_temp_input | string %}
-        {% if _eid not in ['', 'sensor.none', 'none'] and states(_eid) not in ['unknown', 'unavailable', 'none', ''] %}
+        {% if _eid not in _empty and states(_eid) not in ['unknown', 'unavailable', 'none', ''] %}
           {{ states(_eid) | float(inputs.away_temp_fixed) }}
         {% else %}
           {{ inputs.away_temp_fixed }}
         {% endif %}
       master_comfort_temp: >
         {% set _eid = inputs.master_comfort_input | string %}
-        {% if _eid not in ['', 'sensor.none', 'none'] and states(_eid) not in ['unknown', 'unavailable', 'none', ''] %}
+        {% if _eid not in _empty and states(_eid) not in ['unknown', 'unavailable', 'none', ''] %}
           {{ states(_eid) | float(inputs.master_comfort_fixed) }}
         {% else %}
           {{ inputs.master_comfort_fixed }}
@@ -2121,7 +2123,7 @@ actions:
       # ===== GROUP 4: TARGET CALCULATION =====
       # (master_target_temp is resolved in the previous variables block)
       master_humidity: >
-        {% if inputs.master_humidity_sensor | string not in ['', 'sensor.none', 'none'] %}
+        {% if inputs.master_humidity_sensor | string not in _empty %}
           {{ states(inputs.master_humidity_sensor) | float(50) }}
         {% else %}
           {{ 50 }}
@@ -2140,10 +2142,10 @@ actions:
 
       # ===== GROUP 5: SAFETY & STATUS =====
       outdoor_temp_sensor_configured: >
-        {{ inputs.outdoor_temp_sensor | string not in ['', 'sensor.none', 'none'] }}
+        {{ inputs.outdoor_temp_sensor | string not in _empty }}
       outdoor_temp_raw: >
         {% set o_id = inputs.outdoor_temp_sensor | string %}
-        {% if o_id not in ['', 'sensor.none', 'none'] and states(o_id) not in ['unknown', 'unavailable', 'none'] %}
+        {% if o_id not in _empty and states(o_id) not in ['unknown', 'unavailable', 'none'] %}
           {{ state_attr(o_id, 'temperature') if o_id.startswith('weather.') else states(o_id) }}
         {% else %}
           none
@@ -2160,7 +2162,7 @@ actions:
         {{ (outdoor_temp_sensor_configured | bool(false)) and (raw | string not in ['unknown', 'unavailable', 'none', 'None', '']) }}
       master_window_open_too_long: >
         {% set w = inputs.master_window | default('sensor.none', true) | string %}
-        {% if w | lower not in ['', 'sensor.none', 'none'] and is_state(w, 'on') %}
+        {% if w | lower not in _empty and is_state(w, 'on') %}
           {% set w_state = states[w] %}
           {% if w_state is not none and w_state.last_changed is not none %}
             {% set open_ts = as_timestamp(w_state.last_changed, as_timestamp(now())) | float(0) %}
@@ -2183,15 +2185,15 @@ actions:
           inputs.follower2_window | string
         ] %}
           {% set window_entity_id = w_id | string %}
-          {% if (window_entity_id | lower) not in ['', 'sensor.none', 'none'] and (states(window_entity_id) == 'on') %}
+          {% if (window_entity_id | lower) not in _empty and (states(window_entity_id) == 'on') %}
             {% set ns.is_open = true %}
           {% endif %}
         {% endfor %}
         {{ ns.is_open }}
       # Ist-Temperatur Master: externer Sensor -> Thermostat -> 21 (einzige Quelle)
       master_current_temp: >
-        {% set climate_curr = state_attr(inputs.master_climate, 'current_temperature') | float(21) if inputs.master_climate | string not in ['', 'sensor.none', 'none'] else 21 %}
-        {% if inputs.master_temp_sensor | string not in ['', 'sensor.none', 'none'] %}
+        {% set climate_curr = state_attr(inputs.master_climate, 'current_temperature') | float(21) if inputs.master_climate | string not in _empty else 21 %}
+        {% if inputs.master_temp_sensor | string not in _empty %}
           {{ states(inputs.master_temp_sensor) | float(climate_curr) }}
         {% else %}
           {{ climate_curr }}
@@ -2210,7 +2212,7 @@ actions:
           {{ master_target_temp | float(eco_temp | float(inputs.eco_temp_fixed | float(19))) }}
         {% endif %}
       master_climate_available: >
-        {{ inputs.master_climate | string not in ['', 'sensor.none', 'none'] and states(inputs.master_climate) not in ['unavailable', 'unknown'] }}
+        {{ inputs.master_climate | string not in _empty and states(inputs.master_climate) not in ['unavailable', 'unknown'] }}
       master_active_for_followers: >
         {{ (master_schedule_active | bool(false)) or (master_presence_detected | bool(false)) or (master_is_manual | bool(false)) or (master_pre_heat_active | bool(false)) }}
       rooms_runtime: >
@@ -2227,16 +2229,16 @@ actions:
           {% set temp_sensor = room.temp_sensor | string if room.temp_sensor is defined else '' %}
           {% set schedule = room.schedule | string if room.schedule is defined else '' %}
           {% set presence_helper = room.presence_helper | string if room.presence_helper is defined else '' %}
-          {% set presence_sensors_sanitized = (room.presence_sensors if room.presence_sensors is defined else []) | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+          {% set presence_sensors_sanitized = (room.presence_sensors if room.presence_sensors is defined else []) | default([], true) | reject('in', _empty) | list %}
           {% set pre_heat_helper = room.pre_heat_helper | string if room.pre_heat_helper is defined else '' %}
           {% set comfort_input = room.comfort_input | string if room.comfort_input is defined else '' %}
           {% set comfort_fixed = room.comfort_fixed | float(20) if room.comfort_fixed is defined else 20 %}
           {% set offset = room.offset | float(0) if room.offset is defined else 0 %}
-          {% set climate_ok = (climate not in ['', 'sensor.none', 'none']) and (states(climate) not in ['unknown', 'unavailable']) %}
-          {% set sched_valid = schedule not in ['', 'sensor.none', 'none'] %}
-          {% set helper_valid = presence_helper not in ['', 'sensor.none', 'none'] %}
+          {% set climate_ok = (climate not in _empty) and (states(climate) not in ['unknown', 'unavailable']) %}
+          {% set sched_valid = schedule not in _empty %}
+          {% set helper_valid = presence_helper not in _empty %}
           {% set sensors_valid = (presence_sensors_sanitized | length) > 0 %}
-          {% set pre_heat_valid = (role == 'isolated') and pre_heat_helper not in ['', 'sensor.none', 'none'] %}
+          {% set pre_heat_valid = (role == 'isolated') and pre_heat_helper not in _empty %}
           {% set pre_heat_active = pre_heat_valid and ((states(pre_heat_helper) | string | lower) in ['on', 'true', '1']) and not (summer_mode_active | bool(false)) %}
           {% set schedule_active = (role == 'isolated') and (sched_valid) and is_state(schedule, 'on') %}
           {# Case-insensitive boolean check: handles 'on', 'On', 'true', '1' from non-standard helpers #}
@@ -2263,7 +2265,7 @@ actions:
           {% else %}
             {% set active_for_demand = master_active_for_followers | bool(false) %}
           {% endif %}
-          {% set comfort_input_valid = comfort_input not in ['', 'sensor.none', 'none'] %}
+          {% set comfort_input_valid = comfort_input not in _empty %}
           {# Also require the entity state to be a readable value, not unavailable/unknown #}
           {% set comfort_input_readable = comfort_input_valid and states(comfort_input) not in ['unknown', 'unavailable', 'none', ''] %}
           {% set comfort_config_ok = (role != 'isolated') or (comfort_input_valid) or ((comfort_fixed | float(0)) > 0) %}
@@ -2289,7 +2291,7 @@ actions:
             {% set comfort_target = [inputs.min_trv_temp | float(12), (master_target_final | float(inputs.min_trv_temp | float(12))) + (offset | float(0))] | max %}
             {% set base_target = comfort_target | float(0) %}
           {% endif %}
-          {% set window_sanitized = [window] | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+          {% set window_sanitized = [window] | default([], true) | reject('in', _empty) | list %}
           {% set window_open_too_long = false %}
           {% if (window_sanitized | length) > 0 and is_state(window, 'on') %}
             {% set w_state = expand(window_sanitized) | first %}
@@ -2308,7 +2310,7 @@ actions:
             {% endif %}
           {% endif %}
           {# current_temp und current_setpoint werden vor final_raw benötigt (Deadband-Hysterese) #}
-          {% if temp_sensor not in ['', 'sensor.none', 'none'] and states(temp_sensor) not in ['unknown', 'unavailable', 'none', ''] %}
+          {% if temp_sensor not in _empty and states(temp_sensor) not in ['unknown', 'unavailable', 'none', ''] %}
             {% if climate_ok %}
               {% set current_temp = states(temp_sensor) | float(state_attr(climate, 'current_temperature') | float(21)) %}
             {% else %}
@@ -2464,7 +2466,7 @@ actions:
       - >
         {% set ph_eid = inputs.master_pre_heat_helper | string %}
         {% set now_ts = as_timestamp(now()) | float(0) %}
-        {% set ph_changed = as_timestamp(states[ph_eid].last_changed, now_ts) | float(now_ts) if ph_eid not in ['', 'sensor.none', 'none'] else now_ts %}
+        {% set ph_changed = as_timestamp(states[ph_eid].last_changed, now_ts) | float(now_ts) if ph_eid not in _empty else now_ts %}
         {% set timeout_s = (inputs.pre_heat_timeout | float(60)) * 60 %}
         {% set timed_out = (now_ts - ph_changed) >= timeout_s %}
         {% set presence_took_over = master_presence_detected | bool(false) %}
@@ -2482,7 +2484,7 @@ actions:
         - variables:
             _ph_room: "{{ repeat.item }}"
             _ph_helper: "{{ _ph_room.pre_heat_helper | default('') | string }}"
-            _ph_valid: "{{ _ph_helper not in ['', 'sensor.none', 'none'] }}"
+            _ph_valid: "{{ _ph_helper not in _empty }}"
             _ph_on: "{{ _ph_valid and ((states(_ph_helper) | string | lower) in ['on', 'true', '1']) }}"
         - if:
             - "{{ _ph_on | bool(false) }}"
@@ -2512,9 +2514,9 @@ actions:
               seconds: "{{ helper_input_settle_seconds }}"
           - choose:
               - conditions:
-                  - "{{ helper_input_trigger_entity | string not in ['', 'sensor.none', 'none'] }}"
+                  - "{{ helper_input_trigger_entity | string not in _empty }}"
                   - >
-                    {% set helper_entities = [helper_input_trigger_entity] | default([], true) | reject('in', ['', 'sensor.none', 'none']) | list %}
+                    {% set helper_entities = [helper_input_trigger_entity] | default([], true) | reject('in', _empty) | list %}
                     {% set so = (expand(helper_entities) | first) if (helper_entities | length) > 0 else none %}
                     {% if so is not none and so.last_changed is defined %}
                       {{ as_timestamp(so.last_changed, 0) > ((helper_input_trigger_ts | float(0)) + 0.5) }}
@@ -2740,7 +2742,7 @@ actions:
                 {% endfor %}
                 {{ ns.vals }}
               master_presence_priority_active: >
-                {% if inputs.master_presence_priority_helper | string not in ['', 'sensor.none', 'none'] %}
+                {% if inputs.master_presence_priority_helper | string not in _empty %}
                   {{ is_state(inputs.master_presence_priority_helper, 'on') }}
                 {% else %}
                   {{ inputs.enable_master_presence_priority | bool(false) }}
@@ -2768,7 +2770,7 @@ actions:
                   0.0
                 {% else %}
                   {% set c_id = inputs.weather_compensation_sensor | string %}
-                  {% if c_id not in ['', 'sensor.none', 'none'] and states(c_id) not in ['unknown', 'unavailable', 'none', ''] %}
+                  {% if c_id not in _empty and states(c_id) not in ['unknown', 'unavailable', 'none', ''] %}
                     {{ states(c_id) | float(0) }}
                   {% elif outdoor_temp_valid | bool(false) %}
                     {% set outdoor_q = (((outdoor_temp | float(0)) * 2) | round(0) / 2) %}
@@ -2938,7 +2940,7 @@ actions:
               max_changes_per_hour_effective: "{{ [[inputs.max_changes_per_hour | float(10), 5] | max, 20] | min }}"
               # === WRITE LOG PARSING ===
               master_write_log_configured: >
-                {{ inputs.master_write_log_helper | string not in ['', 'sensor.none', 'none'] }}
+                {{ inputs.master_write_log_helper | string not in _empty }}
               master_write_log_raw: >
                 {% if master_write_log_configured | bool(false) %}
                   {{ states(inputs.master_write_log_helper) | default('', true) | trim }}
@@ -3331,8 +3333,8 @@ actions:
                   {% set age_s = master_last_write_age_s | float(999999) %}
                   {% set verify_window_s = 300.0 %}
                   {% set master_entity = inputs.master_climate | string %}
-                  {% set master_state = states(master_entity) if master_entity not in ['', 'sensor.none', 'none'] else '' %}
-                  {% set master_entity_valid = (master_entity not in ['', 'sensor.none', 'none']) and (master_state not in ['unknown', 'unavailable', 'none', '']) %}
+                  {% set master_state = states(master_entity) if master_entity not in _empty else '' %}
+                  {% set master_entity_valid = (master_entity not in _empty) and (master_state not in ['unknown', 'unavailable', 'none', '']) %}
                   {% set actual = (state_attr(master_entity, 'temperature') | float(0)) if master_entity_valid else 0.0 %}
                   {% set mismatch = ((actual | float(0)) - (master_final_target | float(0))) | abs %}
                   {{ (_debug_log_enabled | bool(false)) and (master_entity_valid | bool(false)) and (age_s <= verify_window_s) and ((mismatch | float(0)) > 0.11) }}
@@ -3349,7 +3351,7 @@ actions:
   # ════════════════════════════════════════════════════════════
   - variables:
       _quiet_active: >
-        {% if inputs.quiet_schedule | default('') | string | trim not in ['', 'none', 'None'] %}
+        {% if inputs.quiet_schedule | default('') | string | trim not in _empty %}
           {{ is_state(inputs.quiet_schedule, 'on') }}
         {% else %}
           {{ false }}
@@ -3405,7 +3407,7 @@ actions:
           {%- set rk = room.key | default('?') | string -%}
           {%- set wid = room.window | default('') | string -%}
           {%- set dev = ('✅' if (room.climate_ok | default(false) | bool(false)) else '❌') ~ 'TRV' -%}
-          {%- if wid not in ['', 'sensor.none', 'none'] -%}
+          {%- if wid not in _empty -%}
             {%- set dev = dev ~ '  ' ~ ('✅' if states(wid) not in ['unknown', 'unavailable'] else '❌') ~ 'Fenster' -%}
           {%- endif -%}
           {%- if (room.presence_sensors_sanitized | default([]) | length) > 0 -%}
@@ -3531,13 +3533,13 @@ actions:
           {%- set ns.items = ns.items + ['🟡 API-Budget erschöpft'] -%}
         {%- endif -%}
         {%- set master_ts = inputs.master_temp_sensor | default('') | string -%}
-        {%- if master_ts not in ['', 'sensor.none', 'none'] and states(master_ts) in ['unavailable', 'unknown'] -%}
+        {%- if master_ts not in _empty and states(master_ts) in ['unavailable', 'unknown'] -%}
           {%- set ns.items = ns.items + ['🟠 Temp-Sensor offline: Master'] -%}
         {%- endif -%}
         {%- for room in rooms_runtime_list | default([], true) -%}
           {%- if room.enabled | default(false) | bool(false) -%}
             {%- set ts_eid = room.temp_sensor | default('') | string -%}
-            {%- if ts_eid not in ['', 'sensor.none', 'none'] and states(ts_eid) in ['unavailable', 'unknown'] -%}
+            {%- if ts_eid not in _empty and states(ts_eid) in ['unavailable', 'unknown'] -%}
               {%- set rl = state_attr(room.climate | default(''), 'friendly_name') | default(room.key | default('?'), true) -%}
               {%- set ns.items = ns.items + ['🟠 Temp-Sensor offline: ' ~ rl] -%}
             {%- endif -%}
