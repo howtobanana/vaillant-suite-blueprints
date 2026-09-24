@@ -16,9 +16,18 @@
   lässt das Warmwasser laufen). Die Sommer-Sektion hat damit 3 Regler.
 - **Keine Alert-Pushes mehr aus der Heizung:** Kritische Zustände erscheinen
   nur noch als HA-Meldung (verschwindet von selbst). Offline-Pushes kommen
-  bereits aus der System-Diagnose (entprellt, ein Absender pro Sachverhalt);
+  aus der System-Diagnose (siehe unten, ein Absender pro Sachverhalt);
   NOT-AUS und API-Budget regeln sich selbst. Beseitigt den Push-Spam bei
   jedem Fenster-/Präsenz-Event, solange ein Problem bestand.
+- **System-Diagnose: TRV/Sensor-Offline-Push repariert.** Der Zweig war
+  unerreichbar (verlangte `main_loop` und zugleich nicht `main_loop`) und
+  verließ sich auf die Heizung. Jetzt genau ein Push pro Ausfall: ein Gerät
+  zählt nur im 30-min-Fenster nach der Wartezeit als offline.
+- `source_url` aller Blueprints zeigte auf den nicht existierenden Branch
+  `main` (404) → jetzt `vaillant-suite`. In HA liegen Diagnose und Lüftung
+  jetzt unter den Repo-Dateinamen (`vaillant_system-diagnose.yaml`,
+  `vaillant_lüftungs-steuerung.yaml` statt `vaillant_health_monitor.yaml` /
+  `vaillant_ventilation.yaml`); Einstellungen unverändert.
 - Startschutz (120 s nach HA-Start/Reload) gilt jetzt für jeden Trigger;
   vorher konnte ein time_pattern- oder Fenster-Lauf ihn per mode: restart
   umgehen.
