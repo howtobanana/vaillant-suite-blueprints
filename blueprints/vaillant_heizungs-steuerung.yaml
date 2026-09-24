@@ -3130,8 +3130,12 @@ actions:
       _l_flags_line: >-
         {{ '✅' if (master_presence_detected | default(false) | bool(false)) else '⬜' }} Präsenz | {{ '✅' if (master_schedule_active | default(false) | bool(false)) else '⬜' }} Zeitplan | {{ '✅' if (master_is_manual | default(false) | bool(false)) else '⬜' }} Manuell | {{ '✅' if ((master_sensors_valid | default(false) | bool(false)) or (master_helper_valid | default(false) | bool(false))) else '⬜' }} Sensoren | {{ '🔥' if (_l_m_pre_heat | bool(false)) else '⬜' }} PreHeat{{ ' 🪟' if (_l_m_window | bool(false)) else '' }}
       _l_write_age: >-
-        {%- set age = master_last_write_age_s | default(0) | float(0) -%}
-        {{ (age // 60) | int }}m {{ (age % 60) | int }}s
+        {%- set age = master_last_write_age_s | default(999999) | float(999999) -%}
+        {%- if age >= 3600 -%}
+          über 60 min
+        {%- else -%}
+          {{ (age // 60) | int }}m {{ (age % 60) | int }}s
+        {%- endif -%}
       _l_write_line: >-
         {%- set p = _write_path | default('none', true) | string -%}
         {%- if p == 'S' -%}
