@@ -33,7 +33,7 @@ blueprint:
     **Version:** 1.0 | **Autor:** BananaPower
 
   domain: automation
-  source_url: https://raw.githubusercontent.com/howtobanana/vaillant-suite-blueprints/main/blueprints/vaillant_l%C3%BCftungs-steuerung.yaml
+  source_url: https://raw.githubusercontent.com/howtobanana/vaillant-suite-blueprints/vaillant-suite/blueprints/vaillant_l%C3%BCftungs-steuerung.yaml
   author: "bananapower"
 
   input:
