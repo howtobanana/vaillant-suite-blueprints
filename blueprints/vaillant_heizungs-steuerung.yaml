@@ -2667,8 +2667,14 @@ actions:
                     temperature: "{{ room_final_target }}"
                   continue_on_error: true
                 # --- TRV write verification ---
-                - delay:
-                    seconds: 3
+                # wait_template statt wait_for_trigger: der Readback kann schon
+                # stimmen (optimistisches Update) — dann sofort weiter.
+                # Schlafende TRVs melden oft erst nach Sekunden → bis 15 s warten.
+                - wait_template: >
+                    {{ states(room_climate) in ['unavailable', 'unknown']
+                       or (((state_attr(room_climate, 'temperature') | float(-999)) - (room_final_target | float(0))) | abs) <= 0.5 }}
+                  timeout: "00:00:15"
+                  continue_on_timeout: true
                 - variables:
                     trv_readback: >
                       {{ state_attr(room_climate, 'temperature') | float(-999) }}
@@ -2693,9 +2699,14 @@ actions:
                               Readback: {{ trv_readback | round(1) }}°C
                               Entity-State: {{ trv_entity_state }}
 
-                              Möglicherweise ist das Gerät in Zigbee2MQTT
-                              offline — bitte prüfen und ggf. neu pairen.
+                              Gerät offline? Funkverbindung und Batterie prüfen.
                             notification_id: "trv_fail_{{ room_climate | replace('.', '_') }}"
+                  default:
+                    # TRV antwortet (wieder) → evtl. alte Fehlermeldung entfernen
+                    - action: persistent_notification.dismiss
+                      continue_on_error: true
+                      data:
+                        notification_id: "trv_fail_{{ room_climate | replace('.', '_') }}"
 
   # ===== STEP 5.5: MASTER TARGET AGGREGATION & WRITE =====
   - choose:
