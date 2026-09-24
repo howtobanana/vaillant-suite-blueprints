@@ -1604,207 +1604,54 @@ actions:
       enable_leitstand_expert: !input enable_leitstand_expert
       _presence_debug_enabled: >
         {{ (enable_leitstand_normal | default(false) | bool(false)) or (enable_leitstand_expert | default(false) | bool(false)) }}
-  - choose:
-      - conditions:
-          - condition: trigger
-            id: master_presence_on
-        sequence:
-          - variables:
-              presence_helper_entity: !input master_presence_helper
-          - condition: template
-            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
+  # Präsenz-Helper setzen: ein Branch für master/room2–5 × on/off
+  - if:
+      - condition: trigger
+        id:
+          - master_presence_on
+          - master_presence_off
+          - room2_presence_on
+          - room2_presence_off
+          - room3_presence_on
+          - room3_presence_off
+          - room4_presence_on
+          - room4_presence_off
+          - room5_presence_on
+          - room5_presence_off
+    then:
+      - variables:
+          _presence_helpers:
+            master: !input master_presence_helper
+            room2: !input room2_presence_helper
+            room3: !input room3_presence_helper
+            room4: !input room4_presence_helper
+            room5: !input room5_presence_helper
+          _presence_room: "{{ trigger.id.split('_presence_')[0] }}"
+          _presence_on: "{{ trigger.id.endswith('_on') }}"
+          presence_helper_entity: "{{ _presence_helpers[_presence_room] | default('', true) | string }}"
+      - condition: template
+        value_template: "{{ (presence_helper_entity not in ['', 'sensor.none', 'none']) and (presence_helper_entity | length > 5) }}"
+      - if:
+          - "{{ _presence_on | bool(false) }}"
+        then:
           - action: input_boolean.turn_on
             target:
               entity_id: "{{ presence_helper_entity }}"
-          - if:
-              - condition: template
-                value_template: "{{ _presence_debug_enabled | bool(false) }}"
-            then:
-              - action: system_log.write
-                data:
-                  message: "Vaillant Blueprint: Master Presence ACTIVATED (sensor ON >{{ presence_activation_delay }}min)"
-                  level: info
-          - stop: ""
-      - conditions:
-          - condition: trigger
-            id: master_presence_off
-        sequence:
-          - variables:
-              presence_helper_entity: !input master_presence_helper
-          - condition: template
-            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
+        else:
           - action: input_boolean.turn_off
             target:
               entity_id: "{{ presence_helper_entity }}"
-          - if:
-              - condition: template
-                value_template: "{{ _presence_debug_enabled | bool(false) }}"
-            then:
-              - action: system_log.write
-                data:
-                  message: "Vaillant Blueprint: Master Presence DEACTIVATED (sensor OFF >{{ presence_deactivation_delay }}min)"
-                  level: info
-          - stop: ""
-      - conditions:
-          - condition: trigger
-            id: room2_presence_on
-        sequence:
-          - variables:
-              presence_helper_entity: !input room2_presence_helper
+      - if:
           - condition: template
-            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
-          - action: input_boolean.turn_on
-            target:
-              entity_id: "{{ presence_helper_entity }}"
-          - if:
-              - condition: template
-                value_template: "{{ _presence_debug_enabled | bool(false) }}"
-            then:
-              - action: system_log.write
-                data:
-                  message: "Vaillant Blueprint: Room2 Presence ACTIVATED"
-                  level: info
-          - stop: ""
-      - conditions:
-          - condition: trigger
-            id: room2_presence_off
-        sequence:
-          - variables:
-              presence_helper_entity: !input room2_presence_helper
-          - condition: template
-            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
-          - action: input_boolean.turn_off
-            target:
-              entity_id: "{{ presence_helper_entity }}"
-          - if:
-              - condition: template
-                value_template: "{{ _presence_debug_enabled | bool(false) }}"
-            then:
-              - action: system_log.write
-                data:
-                  message: "Vaillant Blueprint: Room2 Presence DEACTIVATED"
-                  level: info
-          - stop: ""
-      - conditions:
-          - condition: trigger
-            id: room3_presence_on
-        sequence:
-          - variables:
-              presence_helper_entity: !input room3_presence_helper
-          - condition: template
-            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
-          - action: input_boolean.turn_on
-            target:
-              entity_id: "{{ presence_helper_entity }}"
-          - if:
-              - condition: template
-                value_template: "{{ _presence_debug_enabled | bool(false) }}"
-            then:
-              - action: system_log.write
-                data:
-                  message: "Vaillant Blueprint: Room3 Presence ACTIVATED"
-                  level: info
-          - stop: ""
-      - conditions:
-          - condition: trigger
-            id: room3_presence_off
-        sequence:
-          - variables:
-              presence_helper_entity: !input room3_presence_helper
-          - condition: template
-            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
-          - action: input_boolean.turn_off
-            target:
-              entity_id: "{{ presence_helper_entity }}"
-          - if:
-              - condition: template
-                value_template: "{{ _presence_debug_enabled | bool(false) }}"
-            then:
-              - action: system_log.write
-                data:
-                  message: "Vaillant Blueprint: Room3 Presence DEACTIVATED"
-                  level: info
-          - stop: ""
-      - conditions:
-          - condition: trigger
-            id: room4_presence_on
-        sequence:
-          - variables:
-              presence_helper_entity: !input room4_presence_helper
-          - condition: template
-            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
-          - action: input_boolean.turn_on
-            target:
-              entity_id: "{{ presence_helper_entity }}"
-          - if:
-              - condition: template
-                value_template: "{{ _presence_debug_enabled | bool(false) }}"
-            then:
-              - action: system_log.write
-                data:
-                  message: "Vaillant Blueprint: Room4 Presence ACTIVATED"
-                  level: info
-          - stop: ""
-      - conditions:
-          - condition: trigger
-            id: room4_presence_off
-        sequence:
-          - variables:
-              presence_helper_entity: !input room4_presence_helper
-          - condition: template
-            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
-          - action: input_boolean.turn_off
-            target:
-              entity_id: "{{ presence_helper_entity }}"
-          - if:
-              - condition: template
-                value_template: "{{ _presence_debug_enabled | bool(false) }}"
-            then:
-              - action: system_log.write
-                data:
-                  message: "Vaillant Blueprint: Room4 Presence DEACTIVATED"
-                  level: info
-          - stop: ""
-      - conditions:
-          - condition: trigger
-            id: room5_presence_on
-        sequence:
-          - variables:
-              presence_helper_entity: !input room5_presence_helper
-          - condition: template
-            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
-          - action: input_boolean.turn_on
-            target:
-              entity_id: "{{ presence_helper_entity }}"
-          - if:
-              - condition: template
-                value_template: "{{ _presence_debug_enabled | bool(false) }}"
-            then:
-              - action: system_log.write
-                data:
-                  message: "Vaillant Blueprint: Room5 Presence ACTIVATED"
-                  level: info
-          - stop: ""
-      - conditions:
-          - condition: trigger
-            id: room5_presence_off
-        sequence:
-          - variables:
-              presence_helper_entity: !input room5_presence_helper
-          - condition: template
-            value_template: "{{ (presence_helper_entity | string not in ['', 'sensor.none', 'none']) and (presence_helper_entity | string | length > 5) }}"
-          - action: input_boolean.turn_off
-            target:
-              entity_id: "{{ presence_helper_entity }}"
-          - if:
-              - condition: template
-                value_template: "{{ _presence_debug_enabled | bool(false) }}"
-            then:
-              - action: system_log.write
-                data:
-                  message: "Vaillant Blueprint: Room5 Presence DEACTIVATED"
-                  level: info
-          - stop: ""
+            value_template: "{{ _presence_debug_enabled | bool(false) }}"
+        then:
+          - action: system_log.write
+            data:
+              message: >
+                Vaillant Blueprint: {{ _presence_room }} Presence {{ 'ACTIVATED' if (_presence_on | bool(false)) else 'DEACTIVATED' }}
+                (Sensor {{ 'ON' if (_presence_on | bool(false)) else 'OFF' }} > {{ presence_activation_delay if (_presence_on | bool(false)) else presence_deactivation_delay }} min)
+              level: info
+      - stop: ""
 
   # ===== SOMMERMODUS-ABGLEICH =====
   # Level- statt flankengesteuert: jeder Lauf (mind. alle 3 min) gleicht den
