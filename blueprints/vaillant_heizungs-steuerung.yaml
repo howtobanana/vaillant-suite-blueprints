@@ -259,6 +259,28 @@ blueprint:
           selector:
             entity:
               domain: climate
+        master_hvac_mode:
+          name: "⚙️ Betriebsart der Zone"
+          description: |
+
+            **Handbetrieb (empfohlen):** Der Sollwert gilt dauerhaft, kein Ablauf.
+            Zone einmalig umstellen: Aktion `mypyllant.set_zone_operating_mode` mit Modus MANUAL.
+            Fällt HA aus, bleibt der letzte Sollwert stehen.
+
+            **Zeitprogramm:** Jeder Sollwert ist eine Quick-Veto (myVaillant-Standard 3 h).
+            Die Automation erneuert sie vor dem Ablauf; fällt HA aus, gilt nach Ablauf
+            wieder das Vaillant-Zeitprogramm (dessen Sollwerte deshalb niedrig halten).
+
+            Nach dem Sommermodus wird die Zone wieder in diese Betriebsart geschaltet.
+
+          default: auto
+          selector:
+            select:
+              options:
+                - label: "Handbetrieb (MANUAL)"
+                  value: heat_cool
+                - label: "Zeitprogramm + Quick-Veto"
+                  value: auto
         master_comfort_input:
           name: "🌡️ Master Komfort Helper (opt)"
           description: |
@@ -1717,6 +1739,7 @@ actions:
         notify_devices: !input notify_devices
         quiet_schedule: !input quiet_schedule
         master_climate: !input master_climate
+        master_hvac_mode: !input master_hvac_mode
         master_write_log_helper: !input master_write_log_helper
         master_comfort_input: !input master_comfort_input
         master_comfort_fixed: !input master_comfort_fixed
@@ -2561,7 +2584,7 @@ actions:
                 {% endif %}
 
               weather_modifier: >
-                {% if (inputs.enable_weather_compensation | bool(false)) and (not (master_forced_min_active | bool(false))) and ((master_base_required_target | float(0)) > ((master_safety_floor | float(12)) + 0.1)) %}
+                {% if (inputs.enable_weather_compensation | bool(false)) and (not (master_forced_min_active | bool(false))) and (not (away_mode_active_effective | bool(false))) and ((master_base_required_target | float(0)) > ((master_safety_floor | float(12)) + 0.1)) %}
                   {{ weather_compensation_add | float(0) }}
                 {% else %}
                   0.0
@@ -2722,10 +2745,15 @@ actions:
               master_write_log_kind: >
                 {% set raw = master_write_log_raw | string %}
                 {% if ':' in raw %}
-                  {{ raw.split(':')[0] | trim | lower }}
+                  {{ raw.split(':')[0].split('@')[0] | trim | lower }}
                 {% else %}
                   sync
                 {% endif %}
+              # Zuletzt geschriebener Sollwert (Format kind@soll:ts,...), -1 = unbekannt
+              master_write_log_target: >
+                {% set raw = master_write_log_raw | string %}
+                {% set head = raw.split(':')[0] if ':' in raw else '' %}
+                {{ head.split('@')[1] | float(-1) if '@' in head else -1 }}
               master_write_log_timestamps_raw: >
                 {% set raw = master_write_log_raw | string %}
                 {% if ':' in raw %}
@@ -2905,10 +2933,31 @@ actions:
               # (Budget, Raise-Hold) | C = normal (Budget + Holds) | none = nichts
               # Soll-0-Guard: meldet die Vaillant-Cloud kurz Soll 0 (Poll-Artefakt),
               # sind alle Deltas Müll -> nicht gegenregeln; der 3-min-Zyklus holt es nach.
+              # Quick-Veto-Restlaufzeit (nur Zeitprogramm-Betrieb). Ein bereits
+              # abgelaufenes Veto, das HA noch nicht abgefragt hat, zählt als 0.
+              master_veto_remaining_s: >
+                {% set end_ts = as_timestamp(state_attr(inputs.master_climate, 'quick_veto_end_date_time'), 0) | float(0) %}
+                {% if (inputs.master_hvac_mode | default('auto', true) | string) != 'auto' or states(inputs.master_climate) != 'auto' or end_ts < 86400 %}
+                  -1
+                {% else %}
+                  {{ [end_ts - (as_timestamp(now()) | float(0)), 0] | max }}
+                {% endif %}
+              # myVaillant meldet einen Write oft erst mit dem nächsten Abruf (bis 30 min).
+              # Denselben Sollwert so lange nicht erneut schreiben (VAILLANT-5).
+              master_same_write_pending: >
+                {{ (((master_write_log_target | float(-1)) - (master_final_target | float(0))) | abs) < 0.1
+                   and (master_last_write_age_s | float(999999)) < 1800 }}
               _write_path: >
                 {% set set_ok = (master_set_now | float(0)) > 0 %}
                 {% if summer_mode_active | bool(false) %}
                   S
+                {% elif master_same_write_pending | bool(false) %}
+                  none
+                {% elif set_ok and (master_veto_remaining_s | float(-1)) >= 0
+                        and (master_veto_remaining_s | float(-1)) < 2100
+                        and (master_last_write_age_s | float(999999)) > 2400
+                        and (master_budget_ok | bool(false)) %}
+                  R
                 {% elif set_ok and (master_forced_min_active | bool(false)) and ((master_target_delta_abs | float(0)) > 0.5) %}
                   A
                 {% elif set_ok and not (master_forced_min_active | bool(false))
@@ -2970,7 +3019,7 @@ actions:
                     {% if master_hold_bypass | bool(false) %}
                       {% set _skip_reasons.items = _skip_reasons.items + ['hold_bypassed_by_trigger'] %}
                     {% endif %}
-                    {% set _path_label = {'S': 'S(sommer)', 'A': 'A(forced_min)', 'B': 'B(sig_drop/boost)', 'C': 'C(normal)'} %}
+                    {% set _path_label = {'S': 'S(sommer)', 'A': 'A(forced_min)', 'B': 'B(sig_drop/boost)', 'C': 'C(normal)', 'R': 'R(veto_renew)'} %}
                     🔍 DEMAND RESOLUTION | trigger={{ trigger_id_safe | default('n/a') }}
                     presence_detected={{ master_presence_detected | bool(false) }}
                     schedule_active={{ master_schedule_active | bool(false) }}
@@ -2987,15 +3036,17 @@ actions:
                     write_path={{ _path_label.get(_write_path | string, 'NONE(blocked)') }}
                     skip_reasons={{ _skip_reasons.items | join(',') if _skip_reasons.items | length > 0 else 'none' }}
 
-          # Sommer-Ende: stand der Master wegen Sommer auf 'Off', wird er einmal
-          # wieder eingeschaltet; den Sollwert schreibt danach der normale
+          # Sommer-Ende: stand der Master wegen Sommer auf 'Off', wird er einmal in die
+          # gewählte Betriebsart (master_hvac_mode) geschaltet; den Sollwert schreibt danach der normale
           # Write-Pfad (idempotent, selbstheilend).
           - if:
               - "{{ (not (summer_mode_active | bool(false))) and (states(inputs.master_climate) == 'off') }}"
             then:
-              - action: climate.turn_on
+              - action: climate.set_hvac_mode
                 target:
                   entity_id: "{{ inputs.master_climate }}"
+                data:
+                  hvac_mode: "{{ inputs.master_hvac_mode | default('auto', true) }}"
                 continue_on_error: true
           - choose:
               # PATH S (SOMMER): Heizung aus, Warmwasser bleibt. Nur schalten,
@@ -3026,7 +3077,7 @@ actions:
               # (vor dem wait), sonst kann mode:restart den Lauf vor dem Log
               # abbrechen -> ungezählter Write, Budget kaputt.
               - conditions:
-                  - "{{ _write_path in ['A', 'B', 'C'] }}"
+                  - "{{ _write_path in ['A', 'B', 'C', 'R'] }}"
                 sequence:
                   - action: climate.set_temperature
                     target:
@@ -3042,7 +3093,7 @@ actions:
                           entity_id: "{{ inputs.master_write_log_helper }}"
                         data:
                           value: >
-                            {% set kind = master_write_kind_current | default('sync', true) | string %}
+                            {% set kind = (master_write_kind_current | default('sync', true) | string) ~ '@' ~ (master_final_target | float(0)) %}
                             {% set existing = master_write_timestamps_clean | default('', true) | string | trim %}
                             {% set now_ts = as_timestamp(now()) | int(0) | string %}
                             {% set new_ts = (existing ~ ',' ~ now_ts) if (existing | length > 0) else now_ts %}
@@ -3109,7 +3160,7 @@ actions:
       _is_demand_event: >
         {{
           trigger_id_safe | default('manual') != 'scheduled'
-          or ((_write_path | default('none', true) | string) in ['A', 'B', 'C'])
+          or ((_write_path | default('none', true) | string) in ['A', 'B', 'C', 'R'])
         }}
       _l_m_target: "{{ master_final_target | default(0) | float(0) }}"
       _l_m_forced: "{{ master_forced_min_active | default(false) | bool(false) }}"
@@ -3140,7 +3191,7 @@ actions:
         {%- set p = _write_path | default('none', true) | string -%}
         {%- if p == 'S' -%}
           {%- set st = 'Sommer (kein Sollwert-Write)' -%}
-        {%- elif p in ['A', 'B', 'C'] -%}
+        {%- elif p in ['A', 'B', 'C', 'R'] -%}
           {%- set st = 'Geschrieben (Pfad ' ~ p ~ ')' -%}
         {%- elif not (master_needs_raise | default(false) | bool(false)) and not (master_needs_global_drop | default(false) | bool(false)) -%}
           {%- set st = 'Blockiert (kein Δ)' -%}
