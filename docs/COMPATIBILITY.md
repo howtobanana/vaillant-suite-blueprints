@@ -25,8 +25,8 @@ einen Benachrichtigungs-Absender (keine Doppel-Pushes).
 ## Integrationsprinzip
 - Gemeinsame Helper/Entities zwischen Modulen müssen konsistent konfiguriert werden.
 - Geofencing und Core sollen denselben Away-Helper verwenden.
-- Die Klima-Entity wird in Heizung (Verriegelung) und Lüftung (Abluft/Auto-Off)
-  separat konfiguriert — beide müssen auf dieselbe Entity zeigen.
+- Die Klima-Entity wird nur in der Lüftung konfiguriert (Abluft/Auto-Off);
+  die Therme-Klima-Verriegelung der Heizung wurde am 24.09.2026 entfernt.
 - Away-Quellen: Heizung nutzt den Away-Helper (via Geofencing/Urlaubsschalter),
   Lüftung liest die Anwesenheits-Zone direkt. Konsistent, solange Geofencing
   den Helper aus derselben Zone speist (kleine Latenz möglich).

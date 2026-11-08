@@ -8,12 +8,8 @@ Dieses Repository enthält die Vaillant Automations-Suite für Home Assistant.
 - `blueprints/vaillant_lüftungs-steuerung.yaml`
 - `blueprints/vaillant_system-diagnose.yaml`
 
-## Zusatzmodul
-- `blueprints/vaillant_notification_tester.yaml`
-
 ## Struktur
 - `blueprints/` aktive produktive Blueprints
-- `releases/legacy/` alte Snapshots und Zwischenstände
 - `docs/` Doku, Changelog, Kompatibilität
 
 ## Namensregel
