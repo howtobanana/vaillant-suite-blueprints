@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-08 (Heizung: Quick-Veto-Ablauf, Handbetrieb, Kompensation)
+- **Neue Einstellung „Betriebsart der Zone“:** Handbetrieb (MANUAL, empfohlen)
+  oder Zeitprogramm + Quick-Veto. Im Handbetrieb gilt der Sollwert dauerhaft.
+  Zone einmalig mit `mypyllant.set_zone_operating_mode` (MANUAL) umstellen.
+  Nach dem Sommermodus wird die Zone wieder in diese Betriebsart geschaltet.
+- **Quick-Veto wird vor dem Ablauf erneuert** (Zeitprogramm-Betrieb, Pfad R bei
+  < 35 min Rest). Vorher heizte die Therme nach jedem Ablauf (alle 3 h) bis zu
+  30 min nach ihrem Zeitprogramm, auch bei Abwesenheit.
+- **Gebäude-Kompensation wirkt nicht mehr bei Abwesenheit** (hob den
+  Abwesend-Sollwert um bis zu 3 °C an).
+- **Keine Doppel-Writes:** Das Write-Log merkt sich den Sollwert
+  (`kind@soll:ts,...`); derselbe Wert wird 30 min lang nicht erneut geschrieben,
+  weil myVaillant ihn oft erst mit dem nächsten Abruf meldet.
+
 ## 2026-09-24 (Heizung: Review — Sommer-Erkennung, Bugfixes, Aufräumen)
 - **Sommer-Erkennung vereinfacht (Breaking für die Einstellungen):** Statt
   10 nur noch 3 Regler — Schalter, Außen-Mittelwert-Sensor (Statistics-
